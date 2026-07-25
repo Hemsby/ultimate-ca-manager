@@ -24,6 +24,30 @@ from . import ws_security
 
 logger = logging.getLogger(__name__)
 
+# ``cryptography``'s CertificateSigningRequest.is_signature_valid reports
+# False for a SHA-1-signed CSR even when the signature is mathematically
+# valid (confirmed by verifying the same signature manually with
+# public_key.verify(..., hashes.SHA1())) -- it isn't reporting tampering,
+# it's refusing to vouch for a weak hash algorithm. Windows' certreq.exe
+# defaults to SHA-1 unless an INF explicitly sets HashAlgorithm=sha256, so
+# this is a real, common case worth a specific message rather than the
+# generic "signature invalid" one, which reads as if the request were
+# corrupted.
+_WEAK_CSR_HASH_ALGORITHMS = {'md5', 'sha1'}
+
+
+def _weak_csr_hash_algorithm(csr):
+    """The CSR's signature hash algorithm name, if it's one of the weak
+    ones ``is_signature_valid`` refuses to validate. None otherwise
+    (including when the algorithm can't be determined at all, e.g. Ed25519)."""
+    try:
+        algo = csr.signature_hash_algorithm
+    except Exception:
+        return None
+    if algo is not None and algo.name in _WEAK_CSR_HASH_ALGORITHMS:
+        return algo.name
+    return None
+
 
 def _validate_csr(csr, require_pop=True):
     """Similar to EST's ``_validate_est_csr``: proof of possession,
@@ -49,10 +73,17 @@ def _validate_csr(csr, require_pop=True):
     """
     if require_pop:
         try:
-            if not csr.is_signature_valid:
-                return 'CSR signature invalid (proof of possession failed)'
+            signature_valid = csr.is_signature_valid
         except Exception:
-            return 'CSR signature invalid'
+            signature_valid = False
+        if not signature_valid:
+            weak_algo = _weak_csr_hash_algorithm(csr)
+            if weak_algo:
+                return (
+                    f'CSR signed with an unsupported hash algorithm ({weak_algo}); '
+                    'use SHA-256 or stronger'
+                )
+            return 'CSR signature invalid (proof of possession failed)'
 
     cn_attrs = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
     has_cn = bool(cn_attrs and str(cn_attrs[0].value).strip())

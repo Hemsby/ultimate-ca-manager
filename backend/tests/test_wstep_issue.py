@@ -2,9 +2,11 @@
 import base64
 
 import pytest
+from asn1crypto import algos as asn1_algos
+from asn1crypto import csr as asn1_csr
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.x509.oid import NameOID
 from lxml import etree
@@ -71,6 +73,27 @@ def _make_csr(common_name='device.example.test', key=None):
         x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
     ).sign(key, hashes.SHA256())
     return csr, key
+
+
+def _make_sha1_csr(common_name='device.example.test'):
+    """A SHA-1-signed CSR. ``cryptography``'s own CSR builder refuses to
+    sign with SHA-1 at all (UnsupportedAlgorithm), so this reuses a
+    normally-built CSR's TBS bytes (hash-algorithm-independent) and signs
+    them directly with the RSA private key primitive, which still permits
+    SHA-1 -- matching how a real client like certreq.exe (default
+    HashAlgorithm) actually produces one."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    csr_sha256 = x509.CertificateSigningRequestBuilder().subject_name(
+        x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+    ).sign(key, hashes.SHA256())
+    tbs = csr_sha256.tbs_certrequest_bytes
+    signature = key.sign(tbs, padding.PKCS1v15(), hashes.SHA1())
+    new_csr = asn1_csr.CertificationRequest({
+        'certification_request_info': asn1_csr.CertificationRequestInfo.load(tbs),
+        'signature_algorithm': asn1_algos.SignedDigestAlgorithm({'algorithm': 'sha1_rsa'}),
+        'signature': signature,
+    })
+    return x509.load_der_x509_csr(new_csr.dump()), key
 
 
 def _build_rst(csr, message_id='urn:uuid:test-rst-1'):
@@ -215,3 +238,17 @@ def test_issue_rejects_empty_cn(client, wstep_config):
     csr = x509.CertificateSigningRequestBuilder().subject_name(x509.Name([])).sign(key, hashes.SHA256())
     r = client.post(ISSUE_URL, data=_build_rst(csr), headers=_basic_auth())
     assert r.status_code == 400
+
+
+def test_issue_rejects_sha1_csr_with_specific_message(client, wstep_config):
+    """A SHA-1-signed CSR is genuinely proof-of-possession-valid (confirmed
+    by manually verifying the signature), but ``cryptography``'s
+    ``is_signature_valid`` refuses to vouch for it -- real-world clients
+    hit this via certreq.exe, which defaults to SHA-1 unless an INF
+    explicitly sets HashAlgorithm=sha256. The rejection message should
+    name the actual cause rather than the generic PoP-failure wording."""
+    csr, _key = _make_sha1_csr('sha1-csr.example.test')
+    r = client.post(ISSUE_URL, data=_build_rst(csr), headers=_basic_auth())
+    assert r.status_code == 400
+    assert b'sha1' in r.data.lower()
+    assert b'SHA-256' in r.data
