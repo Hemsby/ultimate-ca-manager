@@ -19,6 +19,37 @@ from .constraints_mixin import ConstraintsMixin
 
 logger = logging.getLogger(__name__)
 
+_MS_CERTIFICATE_TEMPLATE_OID = x509.ObjectIdentifier('1.3.6.1.4.1.311.21.7')
+
+
+def _certificate_template_extension(template_oid, major=100, minor=0):
+    """Build the Microsoft CertificateTemplateOID extension (MS-CRTD):
+    ``SEQUENCE { templateID OBJECT IDENTIFIER, major INTEGER, minor
+    INTEGER }``. ``cryptography`` has no native type for it, so it's
+    hand-built with asn1crypto and wrapped as UnrecognizedExtension —
+    same approach already used for CMC parsing in
+    services/wstep/rst_parser.py. major/minor are arbitrary (Windows
+    doesn't validate them against anything server-side); 100/0 mirrors
+    a typical real ADCS template's default major version."""
+    from asn1crypto import core as asn1_core
+
+    class _TemplateVersion(asn1_core.Integer):
+        pass
+
+    class _CertificateTemplateOID(asn1_core.Sequence):
+        _fields = [
+            ('template_id', asn1_core.ObjectIdentifier),
+            ('template_major_version', _TemplateVersion),
+            ('template_minor_version', _TemplateVersion, {'optional': True}),
+        ]
+
+    der = _CertificateTemplateOID({
+        'template_id': template_oid,
+        'template_major_version': major,
+        'template_minor_version': minor,
+    }).dump()
+    return x509.UnrecognizedExtension(_MS_CERTIFICATE_TEMPLATE_OID, der)
+
 
 _LEAF_CA_ONLY_EXTENSION_OIDS = frozenset({
     ExtensionOID.NAME_CONSTRAINTS,
@@ -133,17 +164,26 @@ class CSROperationsMixin:
         extra_ekus: Optional[List[str]] = None,
         renewal_of=None,
         allow_sensitive_ekus: bool = False,
+        require_pop: bool = True,
+        ms_certificate_template_oid: Optional[str] = None,
     ) -> bytes:
         """Sign a CSR with a CA. ``renewal_of``: existing certificate this
         signing renews — its names are graced by NameConstraints validation.
         ``allow_sensitive_ekus``: keep OCSPSigning/timeStamping from the CSR —
         reserved for the admin Sign-CSR path (an operator explicitly signing a
-        delegated responder/TSA CSR); protocol enrollees never get them."""
+        delegated responder/TSA CSR); protocol enrollees never get them.
+        ``require_pop=False`` skips the self-signature (proof-of-possession)
+        check — only WSTEP passes this, for CSRs unwrapped from a PKCS#7/CMC
+        envelope whose inner CertificationRequest isn't reliably self-signed
+        by real Windows clients (see wstep_service._validate_csr, which
+        makes the same exception for the same reason).
+        ``ms_certificate_template_oid``: see the extension-building block
+        below — only WSTEP passes this."""
         from utils.eku_validation import normalize_extra_ekus, to_object_identifiers, merge_eku_lists
 
         # Load CSR
         csr = x509.load_pem_x509_csr(csr_pem, default_backend())
-        if not csr.is_signature_valid:
+        if require_pop and not csr.is_signature_valid:
             raise ValueError("CSR has invalid signature")
 
         # NameConstraints enforcement
@@ -452,6 +492,20 @@ class CSROperationsMixin:
         if ocsp_must_staple:
             builder = builder.add_extension(
                 x509.TLSFeature([x509.TLSFeatureType.status_request]),
+                critical=False,
+            )
+
+        # Microsoft Certificate Template extension (szOID_CERTIFICATE_TEMPLATE,
+        # 1.3.6.1.4.1.311.21.7) — only WSTEP passes this. Real Windows clients
+        # read this back off the issued cert to confirm it matches the policy
+        # they selected via XCEP; a cert with no template property at all was
+        # observed failing CX509Enrollment::Enroll with CERTSRV_E_PROPERTY_EMPTY
+        # ("the requested property value is empty") during real-client interop
+        # testing. `cryptography` has no built-in type for this MS-CRTD
+        # extension, so it's hand-built and added as UnrecognizedExtension.
+        if ms_certificate_template_oid:
+            builder = builder.add_extension(
+                _certificate_template_extension(ms_certificate_template_oid),
                 critical=False,
             )
 

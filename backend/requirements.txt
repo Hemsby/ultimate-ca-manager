@@ -118,11 +118,13 @@ defusedxml>=0.7.1
 # parsing and construction. Mature manylinux + Windows wheels, no native
 # lib beyond libxml2 (already pulled in transitively by other deps).
 lxml>=5.0
-# XML-DSig signing of the WS-Trust RSTR envelope is a Phase 2/3 concern
-# (add only if real Windows-client interop testing shows an unsigned
-# envelope is rejected). No new dependency needed for it either way:
-# xmlsec is already installed transitively via python3-saml (SAML SSO),
-# so it is the tool to reach for rather than adding a second signing lib.
+# WS-Security XML-DSig verification for WSTEP's Certificate-bound renewal
+# binding (a real Windows CES client signs the RST with its current
+# certificate's private key; UCM verifies that signature before treating
+# it as an authenticated renewal request). Was already a transitive
+# dependency via python3-saml (SAML SSO); listed directly now that WSTEP
+# relies on it explicitly rather than incidentally.
+xmlsec>=1.3.13
 
 # Certificate conformance linting (RFC 5280 / CA-Browser Forum).
 # Pure-python wheel; its deps (pyasn1, pyasn1-modules, cryptography) are

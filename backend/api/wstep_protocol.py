@@ -1,0 +1,291 @@
+"""
+MS-WSTEP Protocol Implementation (WS-Trust X.509v3 Token Enrollment
+Extensions) https://docs.microsoft.com/openspecs/windows_protocols/ms-wstep/
+
+Two endpoints matching real ADCS CES naming convention, one per auth
+binding (advertised to clients via XCEP's CAURI mechanism,
+``services/xcep/policy_builder.py``):
+
+- ``/ADCertificateService_CES_UsernamePassword/service.svc`` — initial
+  enrollment, HTTP Basic auth (matches EST/XCEP's Basic-Auth pattern).
+- ``/ADCertificateService_CES_Certificate/service.svc`` — renewal, the
+  RST itself is WS-Security signed with the client's current certificate
+  (see ``services/wstep/ws_security.py``); no HTTP-level auth.
+
+Both parse a ``RequestSecurityToken`` (RST) SOAP request and return a
+``RequestSecurityTokenResponseCollection`` (RSTR) SOAP response, per
+``services/wstep/rst_parser.py`` and ``services/wstep/rstr_builder.py``.
+Errors are returned as SOAP faults (``services/wstep/soap_envelope.py``),
+not plain-text bodies, since XML/SOAP clients parse faults specifically.
+"""
+import hmac
+import logging
+
+from cryptography import x509
+from cryptography.hazmat.primitives.serialization import Encoding
+from flask import Blueprint, Response, request
+
+from models import CA, AuditLog, Certificate, SystemConfig, db
+from services.ca_service import CAService
+from services.wstep import CES_CERTIFICATE_PATH, CES_USERNAME_PASSWORD_PATH
+from services.wstep import wstep_service
+from services.wstep.cmc_response import build_cmc_full_pki_response
+from services.wstep.rst_parser import RSTParseError, parse_rst
+from services.wstep.rstr_builder import build_issue_response
+from services.wstep.soap_envelope import build_soap_fault, extract_username_token
+from utils.db_transaction import safe_commit
+from utils.trusted_proxy import client_ip
+
+logger = logging.getLogger(__name__)
+
+bp = Blueprint('wstep_protocol', __name__)
+
+# WS-Security signature blocks add real overhead over XCEP's GetPolicies
+# budget; 128 KB is still generous for an actual CSR + signed envelope.
+WSTEP_MAX_BODY_BYTES = 128 * 1024
+
+SOAP_XML_MIME = 'application/soap+xml'
+
+
+def _wstep_enabled():
+    row = SystemConfig.query.filter_by(key='wstep_enabled').first()
+    return bool(row and (row.value or '').lower() == 'true')
+
+
+@bp.before_request
+def _enforce_wstep_enabled():
+    """When WSTEP is administratively disabled every endpoint here behaves
+    as if not configured, matching EST/XCEP's ``_enforce_*_enabled``."""
+    if not _wstep_enabled():
+        return Response('WSTEP disabled', status=503)
+
+
+def _read_wstep_body():
+    """Read the request body, hard-capped at WSTEP_MAX_BODY_BYTES.
+
+    Reads at most one byte past the cap so a chunked/unbounded body can't
+    be buffered into memory before the size is known — same rationale as
+    EST's ``_read_est_body_text``/XCEP's ``_read_xcep_body_text``.
+    """
+    raw = request.stream.read(WSTEP_MAX_BODY_BYTES + 1)
+    if len(raw) > WSTEP_MAX_BODY_BYTES:
+        return None, Response('Request body too large', status=413)
+    return raw, None
+
+
+def _check_credentials(username, password):
+    if not username or not password:
+        return False
+    wstep_username = SystemConfig.query.filter_by(key='wstep_username').first()
+    wstep_password = SystemConfig.query.filter_by(key='wstep_password').first()
+    if not (wstep_username and wstep_password and wstep_username.value and wstep_password.value):
+        return False
+
+    username_match = hmac.compare_digest(username, wstep_username.value)
+    from werkzeug.security import check_password_hash
+    if wstep_password.value.startswith(('scrypt:', 'pbkdf2:')):
+        password_match = check_password_hash(wstep_password.value, password)
+    else:
+        password_match = hmac.compare_digest(password, wstep_password.value)
+    return username_match and password_match
+
+
+def _authenticate_username_password(security_header):
+    """WS-Security UsernameToken first (real client behavior — see the
+    matching note on XCEP's ``_authenticate_xcep_client``), HTTP Basic as
+    a fallback. Returns (authenticated: bool, username: str or None)."""
+    token_username, token_password = extract_username_token(security_header)
+    if token_username:
+        return _check_credentials(token_username, token_password), token_username
+
+    auth = request.authorization
+    if auth and auth.username is not None and auth.password is not None:
+        return _check_credentials(auth.username, auth.password), auth.username
+
+    return False, None
+
+
+def _resolve_wstep_ca():
+    """Return (ca, error_response) for the single configured WSTEP CA."""
+    ca_refid = SystemConfig.query.filter_by(key='wstep_ca_refid').first()
+    if not ca_refid or not ca_refid.value:
+        logger.warning("WSTEP request refused: WSTEP not configured")
+        return None, _fault_response('WSTEP not configured', status=503)
+    ca = CA.query.filter_by(refid=ca_refid.value).first()
+    if not ca:
+        logger.warning("WSTEP request refused: configured CA %r not found", ca_refid.value)
+        return None, _fault_response('WSTEP not configured', status=503)
+    return ca, None
+
+
+def _validity_days():
+    row = SystemConfig.query.filter_by(key='wstep_validity_days').first()
+    try:
+        return int(row.value) if row and row.value else 365
+    except (TypeError, ValueError):
+        return 365
+
+
+def _fault_response(reason, status=500, relates_to=None):
+    (logger.error if status >= 500 else logger.debug)("WSTEP fault (status=%s): %s", status, reason)
+    body = build_soap_fault(reason, relates_to=relates_to)
+    return Response(body, status=status, content_type=f'{SOAP_XML_MIME}; charset=utf-8')
+
+
+def _request_id_for(cert):
+    """The issued cert's own DB row ID, for RSTR's wstep:RequestID — see
+    build_issue_response's docstring. None if the row can't be found
+    (shouldn't happen; CAService.sign_csr_from_crypto just created it),
+    in which case build_issue_response omits the element rather than
+    faking a value."""
+    db_cert = Certificate.query.filter_by(serial_number=str(cert.serial_number)).first()
+    return db_cert.id if db_cert else None
+
+
+def _cmc_response_der_for(ca, cert, parsed):
+    """CMC full PKI response DER for build_issue_response's
+    cmc_response_der, or None when not applicable — see cmc_response.py
+    for why this is built at all. Only meaningful for CMC-wrapped
+    requests (parsed.was_pkcs7_wrapped); real Windows clients sending a
+    plain PKCS#10 BinarySecurityToken have no CMC bodyPartID to
+    reference, and haven't been observed needing this. Failure here
+    shouldn't fail the whole enrollment (the plain X509v3 token still
+    works standalone for those requests) — logged and skipped."""
+    if not parsed.was_pkcs7_wrapped:
+        return None
+    try:
+        chain_pems = CAService.get_certificate_chain(ca.refid) or []
+        chain_ders = [
+            x509.load_pem_x509_certificate(
+                pem.encode() if isinstance(pem, str) else pem
+            ).public_bytes(Encoding.DER)
+            for pem in chain_pems
+        ]
+        return build_cmc_full_pki_response(
+            cert.public_bytes(Encoding.DER), chain_ders, parsed.cmc_body_part_id
+        )
+    except Exception as e:
+        logger.warning("WSTEP: failed to build CMC full PKI response: %s", e)
+        return None
+
+
+def _audit_issuance(action, subject, username):
+    log = AuditLog(
+        action=action,
+        resource_type='certificate',
+        resource_name=subject,
+        username=username,
+        details=f'WSTEP enrollment from {client_ip()}',
+    )
+    db.session.add(log)
+    safe_commit(logger, "WSTEP enrollment audit commit failed")
+
+
+@bp.route(CES_USERNAME_PASSWORD_PATH, methods=['GET', 'POST', 'HEAD'])
+def issue_username_password():
+    """WSTEP RST over the UsernamePassword-authenticated CES endpoint —
+    initial enrollment only (no existing identity to renew from).
+
+    Accepts GET/HEAD as well as POST so a reachability probe doesn't fall
+    through to UCM's frontend SPA route (200 OK, HTML), but they don't
+    trigger an HTTP Basic challenge — see the matching note on XCEP's
+    ``get_policies`` for why that actively breaks a real client. Real
+    credentials arrive as a WS-Security UsernameToken inside the RST's
+    ``wsse:Security`` header, so auth can't be checked until the body is
+    parsed; HTTP Basic remains a fallback for simpler test clients.
+    """
+    if request.method in ('GET', 'HEAD'):
+        return Response('', status=200, content_type='text/html; charset=utf-8')
+
+    cl = request.content_length
+    if cl is not None and cl > WSTEP_MAX_BODY_BYTES:
+        return Response('Request body too large', status=413)
+
+    body, err = _read_wstep_body()
+    if err is not None:
+        return err
+
+    try:
+        parsed = parse_rst(body)
+    except RSTParseError as e:
+        return _fault_response(f'Malformed request: {e}', status=400)
+
+    authenticated, username = _authenticate_username_password(parsed.security_header)
+    if not authenticated:
+        return _fault_response('Authentication failed', status=400, relates_to=parsed.message_id)
+
+    ca, ca_error = _resolve_wstep_ca()
+    if ca_error:
+        return ca_error
+
+    cert_pem, error = wstep_service.issue(
+        ca, parsed.csr_der, _validity_days(), require_pop=not parsed.was_pkcs7_wrapped
+    )
+    if error:
+        return _fault_response(error, status=400, relates_to=parsed.message_id)
+
+    try:
+        cert = x509.load_pem_x509_certificate(cert_pem.encode())
+        response_body = build_issue_response(
+            cert, relates_to=parsed.message_id, request_id=_request_id_for(cert),
+            cmc_response_der=_cmc_response_der_for(ca, cert, parsed),
+        )
+    except Exception as e:
+        logger.error("WSTEP: failed to build RSTR: %s", e)
+        return _fault_response('Internal server error', status=500, relates_to=parsed.message_id)
+
+    _audit_issuance('certificate.issued', cert.subject.rfc4514_string(), username)
+    return Response(response_body, status=200, content_type=f'{SOAP_XML_MIME}; charset=utf-8')
+
+
+@bp.route(CES_CERTIFICATE_PATH, methods=['GET', 'POST', 'HEAD'])
+def renew_certificate_bound():
+    """WSTEP RST over the Certificate-authenticated CES endpoint —
+    renewal, authenticated via WS-Security XML-DSig signing of the RST
+    with the client's current certificate's private key, not HTTP-level
+    auth.
+
+    Accepts GET/HEAD as well as POST — same rationale as the
+    UsernamePassword endpoint above, though this binding has no HTTP-level
+    auth to challenge (the RST's own signature is the auth), so GET/HEAD
+    just need to avoid falling through to the frontend SPA route.
+    """
+    cl = request.content_length
+    if cl is not None and cl > WSTEP_MAX_BODY_BYTES:
+        return Response('Request body too large', status=413)
+
+    if request.method in ('GET', 'HEAD'):
+        return Response('', status=200, content_type='text/html; charset=utf-8')
+
+    ca, ca_error = _resolve_wstep_ca()
+    if ca_error:
+        return ca_error
+
+    body, err = _read_wstep_body()
+    if err is not None:
+        return err
+
+    try:
+        parsed = parse_rst(body)
+    except RSTParseError as e:
+        return _fault_response(f'Malformed request: {e}', status=400)
+
+    cert_pem, error = wstep_service.renew(
+        ca, parsed.csr_der, parsed.security_header, _validity_days(),
+        require_pop=not parsed.was_pkcs7_wrapped,
+    )
+    if error:
+        return _fault_response(error, status=400, relates_to=parsed.message_id)
+
+    try:
+        cert = x509.load_pem_x509_certificate(cert_pem.encode())
+        response_body = build_issue_response(
+            cert, relates_to=parsed.message_id, request_id=_request_id_for(cert),
+            cmc_response_der=_cmc_response_der_for(ca, cert, parsed),
+        )
+    except Exception as e:
+        logger.error("WSTEP: failed to build RSTR: %s", e)
+        return _fault_response('Internal server error', status=500, relates_to=parsed.message_id)
+
+    _audit_issuance('certificate.renewed', cert.subject.rfc4514_string(), 'wstep-client-cert')
+    return Response(response_body, status=200, content_type=f'{SOAP_XML_MIME}; charset=utf-8')

@@ -1618,6 +1618,15 @@ def register_blueprints(app):
     except ImportError:
         pass
 
+    # MS-WSTEP Protocol (WS-Trust Enrollment) - certificate issuance/renewal
+    # for Windows autoenrollment clients, discovered via MS-XCEP above.
+    try:
+        from api.wstep_protocol import bp as wstep_bp
+        app.register_blueprint(wstep_bp)
+        app.logger.info("✓ MS-WSTEP protocol enabled")
+    except ImportError:
+        pass
+
     # TSA Protocol (RFC 3161) - /tsa
     try:
         from api.tsa_protocol import bp as tsa_bp

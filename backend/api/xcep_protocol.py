@@ -2,18 +2,33 @@
 MS-XCEP Protocol Implementation (Certificate Enrollment Policy Protocol)
 https://docs.microsoft.com/openspecs/windows_protocols/ms-xcep/
 
-Phase 1: read-only ``GetPolicies`` — lets Windows clients (MMC "Request
-New Certificate", certreq, GPO autoenrollment) discover which certificate
-templates/CAs UCM exposes for enrollment. Issuance (MS-WSTEP) and
-Kerberos/SPNEGO auth are later phases; this endpoint authenticates with
-username/password only, matching EST's Basic-Auth path — XCEP policy
-retrieval is lightly authenticated by design, real hardening happens at
-WSTEP issuance time.
+Read-only ``GetPolicies`` — lets Windows clients (MMC "Request New
+Certificate", certreq, GPO autoenrollment) discover which certificate
+templates/CAs UCM exposes for enrollment, and where to actually send an
+enrollment request (MS-WSTEP, ``api/wstep_protocol.py``) via the CAURI
+mechanism. Kerberos/SPNEGO auth is a later phase; this endpoint
+authenticates with username/password only.
+
+Credentials arrive as a WS-Security ``wsse:UsernameToken`` inside the
+SOAP message header, not an HTTP ``Authorization: Basic`` header —
+confirmed against the published MS-XCEP "Initial GetPolicies Client
+Request" example. A real Windows client configured for this
+UsernamePassword binding refuses to respond to an HTTP Basic challenge
+(reports WS_E_SERVER_REQUIRES_BASIC_AUTH) since that's a different
+security binding than the one it's using. HTTP Basic is still accepted
+as a fallback (simpler to exercise from curl/tests), but the endpoint
+never *challenges* for it — GET/HEAD probes get a plain 200, and POST
+auth failures are reported as SOAP faults, not a 401.
 """
-from flask import Blueprint, request, Response
-from models import CA, SystemConfig, CertificateTemplate
 import hmac
 import logging
+
+from flask import Blueprint, Response, request
+
+from models import CA, CertificateTemplate, SystemConfig
+from services.wstep import CES_CERTIFICATE_PATH, CES_USERNAME_PASSWORD_PATH
+from services.wstep.soap_envelope import build_soap_fault, extract_username_token
+from services.xcep.request_parser import GetPoliciesParseError, parse_get_policies
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +54,8 @@ def _enforce_xcep_enabled():
         return Response('XCEP disabled', status=503)
 
 
-def _read_xcep_body_text():
-    """Read the request body as text, hard-capped at XCEP_MAX_BODY_BYTES.
+def _read_xcep_body():
+    """Read the request body, hard-capped at XCEP_MAX_BODY_BYTES.
 
     Reads at most one byte past the cap so a chunked/unbounded body can't
     be buffered into memory before the size is known — same rationale as
@@ -49,36 +64,38 @@ def _read_xcep_body_text():
     raw = request.stream.read(XCEP_MAX_BODY_BYTES + 1)
     if len(raw) > XCEP_MAX_BODY_BYTES:
         return None, Response('Request body too large', status=413)
-    try:
-        return raw.decode('utf-8'), None
-    except UnicodeDecodeError:
-        return None, Response('Invalid request body encoding', status=400)
+    return raw, None
 
 
-def _authenticate_xcep_client():
-    """Username/password only for Phase 1 (see module docstring).
-    Returns (authenticated: bool, username: str or None)."""
-    auth = request.authorization
-    if not auth:
-        return False, None
-
+def _check_credentials(username, password):
+    if not username or not password:
+        return False
     xcep_username = SystemConfig.query.filter_by(key='xcep_username').first()
     xcep_password = SystemConfig.query.filter_by(key='xcep_password').first()
     if not (xcep_username and xcep_password and xcep_username.value and xcep_password.value):
-        return False, None
+        return False
 
-    if auth.username is None or auth.password is None:
-        return False, None
-
-    username_match = hmac.compare_digest(auth.username, xcep_username.value)
+    username_match = hmac.compare_digest(username, xcep_username.value)
     from werkzeug.security import check_password_hash
     if xcep_password.value.startswith(('scrypt:', 'pbkdf2:')):
-        password_match = check_password_hash(xcep_password.value, auth.password)
+        password_match = check_password_hash(xcep_password.value, password)
     else:
-        password_match = hmac.compare_digest(auth.password, xcep_password.value)
+        password_match = hmac.compare_digest(password, xcep_password.value)
+    return username_match and password_match
 
-    if username_match and password_match:
-        return True, auth.username
+
+def _authenticate_xcep_client(security_header):
+    """WS-Security UsernameToken first (real client behavior), HTTP Basic
+    as a fallback (simpler to exercise from curl/tests). Returns
+    (authenticated: bool, username: str or None)."""
+    token_username, token_password = extract_username_token(security_header)
+    if token_username:
+        return _check_credentials(token_username, token_password), token_username
+
+    auth = request.authorization
+    if auth and auth.username is not None and auth.password is not None:
+        return _check_credentials(auth.username, auth.password), auth.username
+
     return False, None
 
 
@@ -87,49 +104,84 @@ def _resolve_xcep_ca():
     ca_refid = SystemConfig.query.filter_by(key='xcep_ca_refid').first()
     if not ca_refid or not ca_refid.value:
         logger.warning("XCEP request refused: XCEP not configured")
-        return None, Response('XCEP not configured', status=503)
+        return None, build_soap_fault('XCEP not configured')
     ca = CA.query.filter_by(refid=ca_refid.value).first()
     if not ca:
         logger.warning("XCEP request refused: configured CA %r not found", ca_refid.value)
-        return None, Response('XCEP not configured', status=503)
+        return None, build_soap_fault('XCEP not configured')
     return ca, None
 
 
-@bp.route('/ADPolicyProvider_CEP_UsernamePassword/service.svc', methods=['POST'])
+@bp.route('/ADPolicyProvider_CEP_UsernamePassword/service.svc', methods=['GET', 'POST', 'HEAD'])
 def get_policies():
     """MS-XCEP GetPolicies over the UsernamePassword-authenticated CEP
     endpoint. The URL shape follows Microsoft's own convention of
     encoding the auth binding in the CEP path (Kerberos/Certificate
-    variants land in Phase 3 once SPNEGO auth exists)."""
+    variants land in Phase 3 once SPNEGO auth exists).
+
+    Accepts GET/HEAD as well as POST so a client's initial reachability
+    probe doesn't fall through to UCM's frontend SPA catch-all route
+    (200 OK, HTML) — but unlike an earlier version of this endpoint,
+    GET/HEAD do **not** trigger an HTTP Basic challenge, since that
+    actively breaks a real client expecting message-level (UsernameToken)
+    auth instead (see module docstring).
+    """
+    if request.method in ('GET', 'HEAD'):
+        return Response('', status=200, content_type='text/html; charset=utf-8')
+
     cl = request.content_length
     if cl is not None and cl > XCEP_MAX_BODY_BYTES:
         return Response('Request body too large', status=413)
 
-    authenticated, _username = _authenticate_xcep_client()
-    if not authenticated:
-        return Response(
-            'Authentication required',
-            status=401,
-            headers={'WWW-Authenticate': 'Basic realm="XCEP"'},
-        )
-
-    ca, ca_error = _resolve_xcep_ca()
-    if ca_error:
-        return ca_error
-
-    # The request body is currently unparsed: GetPolicies carries no
-    # client-supplied filtering UCM needs for Phase 1 (every pinned/active
-    # template is offered). Still enforce the body cap so a client can't
-    # send an oversized payload, and surface malformed encoding early.
-    _body_text, err = _read_xcep_body_text()
+    body, err = _read_xcep_body()
     if err is not None:
         return err
 
     try:
+        parsed = parse_get_policies(body)
+    except GetPoliciesParseError as e:
+        return Response(
+            build_soap_fault(f'Malformed request: {e}'),
+            status=400, content_type=f'{SOAP_XML_MIME}; charset=utf-8',
+        )
+
+    authenticated, _username = _authenticate_xcep_client(parsed.security_header)
+    if not authenticated:
+        return Response(
+            build_soap_fault('Authentication failed', relates_to=parsed.message_id),
+            status=400, content_type=f'{SOAP_XML_MIME}; charset=utf-8',
+        )
+
+    ca, ca_error = _resolve_xcep_ca()
+    if ca_error:
+        return Response(ca_error, status=503, content_type=f'{SOAP_XML_MIME}; charset=utf-8')
+
+    try:
         templates = CertificateTemplate.query.filter_by(is_active=True).all()
-        from services.xcep.policy_builder import build_get_policies_response
-        xml_body = build_get_policies_response(ca, templates)
+        from services.xcep.policy_builder import (
+            AUTH_CLIENT_CERTIFICATE,
+            AUTH_USERNAME_PASSWORD,
+            build_get_policies_response,
+        )
+        # Always advertised, regardless of whether WSTEP is currently
+        # enabled: MS-XCEP's CAURICollection requires at least one cAURI
+        # entry (minOccurs="1"), so an empty list here would itself make
+        # the response schema-invalid. If WSTEP is administratively
+        # disabled, hitting these URLs 503s cleanly (same as EST/SCEP's
+        # own "advertised but not configured" behavior) rather than never
+        # being discoverable at all.
+        base = request.url_root.rstrip('/')
+        enrollment_uris = (
+            (AUTH_USERNAME_PASSWORD, f'{base}{CES_USERNAME_PASSWORD_PATH}', False),
+            (AUTH_CLIENT_CERTIFICATE, f'{base}{CES_CERTIFICATE_PATH}', True),
+        )
+        xml_body = build_get_policies_response(
+            ca, templates, enrollment_uris=enrollment_uris, message_id=parsed.message_id,
+        )
         return Response(xml_body, status=200, content_type=f'{SOAP_XML_MIME}; charset=utf-8')
     except Exception as e:
         logger.error(f"XCEP GetPolicies failed: {e}")
-        return Response('Internal server error', status=500)
+        return Response(
+            build_soap_fault('Internal server error', relates_to=parsed.message_id),
+            status=500, content_type=f'{SOAP_XML_MIME}; charset=utf-8',
+        )

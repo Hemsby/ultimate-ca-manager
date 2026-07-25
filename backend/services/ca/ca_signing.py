@@ -42,6 +42,8 @@ class CASigningMixin:
         validity_days: int = 365,
         source: str = 'manual',
         renewal_of: x509.Certificate = None,
+        require_pop: bool = True,
+        ms_certificate_template_oid: str = None,
     ) -> Tuple[str, str]:
         """
         Sign a CSR (x509 object) using a CA.
@@ -52,6 +54,10 @@ class CASigningMixin:
             csr: x509 CertificateSigningRequest object
             validity_days: Certificate validity in days
             source: Origin of the request (est, auto-renewal, etc.)
+            require_pop: forwarded to TrustStoreService.sign_csr — see its
+                docstring. Only WSTEP passes False.
+            ms_certificate_template_oid: forwarded to TrustStoreService.sign_csr
+                — see its docstring. Only WSTEP passes this.
 
         Returns:
             Tuple of (cert_pem_string, serial_number_string)
@@ -88,6 +94,8 @@ class CASigningMixin:
             cps_uri=cps_uri,
             cps_oid=cps_oid,
             renewal_of=renewal_of,
+            require_pop=require_pop,
+            ms_certificate_template_oid=ms_certificate_template_oid,
         )
 
         # Extract serial number
