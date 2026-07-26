@@ -1,0 +1,196 @@
+"""Interoperability tests for MS-XCEP's Kerberos-bound CEP endpoint (Phase 3).
+
+No real KDC is available in a unit test environment, so these exercise the
+HTTP Negotiate plumbing (config gating, 401 challenge shape, CAURI
+advertising) and monkeypatch ``negotiate_auth.authenticate_negotiate`` for
+the "ticket already verified" path, rather than minting a real Kerberos
+ticket. See ``services/kerberos/negotiate_auth.py``'s module docstring and
+memory/project_xcep_wstep_lab_testing.md for the real end-to-end check
+against a lab AD domain.
+"""
+import base64
+import json
+
+import pytest
+from lxml import etree
+
+from models import CA, CATemplatePin, CertificateTemplate, db
+from models.system_config import SystemConfig
+from services.kerberos import negotiate_auth
+from services.wstep.soap_envelope import SOAP_NS
+
+XCEP_KRB_URL = '/ADPolicyProvider_CEP_Kerberos/service.svc'
+XCEP_USERPASS_URL = '/ADPolicyProvider_CEP_UsernamePassword/service.svc'
+XCEP_NS = 'http://schemas.microsoft.com/windows/pki/2009/01/enrollmentpolicy'
+XCEP_USER = 'xcep-krb-test'
+XCEP_PASSWORD = 'xcep-krb-password'
+
+
+def _set_config(key, value):
+    row = SystemConfig.query.filter_by(key=key).first()
+    if row is None:
+        db.session.add(SystemConfig(key=key, value=value))
+    else:
+        row.value = value
+    db.session.commit()
+
+
+@pytest.fixture(scope='module')
+def xcep_kerberos_config(app, create_ca):
+    ca_data = create_ca(cn='XCEP Kerberos CA')
+    keys = ('xcep_enabled', 'xcep_ca_refid', 'xcep_username', 'xcep_password')
+    with app.app_context():
+        previous = {
+            key: (SystemConfig.query.filter_by(key=key).first().value
+                  if SystemConfig.query.filter_by(key=key).first() else None)
+            for key in keys
+        }
+        ca = db.session.get(CA, ca_data['id'])
+        _set_config('xcep_enabled', 'true')
+        _set_config('xcep_ca_refid', ca.refid)
+        _set_config('xcep_username', XCEP_USER)
+        _set_config('xcep_password', XCEP_PASSWORD)
+
+        template = CertificateTemplate(
+            name='XCEP Kerberos Web Server',
+            template_type='web_server',
+            key_type='RSA-2048',
+            validity_days=365,
+            digest='sha256',
+            dn_template=json.dumps({'CN': '{hostname}'}),
+            extensions_template=json.dumps({
+                'key_usage': ['digitalSignature', 'keyEncipherment'],
+                'extended_key_usage': ['serverAuth'],
+            }),
+            is_active=True,
+        )
+        db.session.add(template)
+        db.session.commit()
+        pin = CATemplatePin(ca_id=ca.id, template_id=template.id)
+        db.session.add(pin)
+        db.session.commit()
+        template_id = template.id
+        pin_id = pin.id
+
+    yield {'ca': ca_data}
+
+    with app.app_context():
+        pin_row = db.session.get(CATemplatePin, pin_id)
+        if pin_row:
+            db.session.delete(pin_row)
+        tmpl = db.session.get(CertificateTemplate, template_id)
+        if tmpl:
+            db.session.delete(tmpl)
+        db.session.commit()
+        for key, value in previous.items():
+            row = SystemConfig.query.filter_by(key=key).first()
+            if value is None:
+                if row is not None:
+                    db.session.delete(row)
+            elif row is None:
+                db.session.add(SystemConfig(key=key, value=value))
+            else:
+                row.value = value
+        db.session.commit()
+
+
+def _cauri_auth_values(response_bytes):
+    root = etree.fromstring(response_bytes)
+    cauris = root.findall(f'.//{{{XCEP_NS}}}cAURI')
+    return {c.find(f'{{{XCEP_NS}}}clientAuthentication').text for c in cauris}
+
+
+def test_kerberos_endpoint_503_when_not_configured(client, xcep_kerberos_config, monkeypatch):
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: False)
+    r = client.post(XCEP_KRB_URL)
+    assert r.status_code == 503
+
+
+def test_kerberos_endpoint_503_when_library_unavailable(client, xcep_kerberos_config, monkeypatch):
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: False)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+    r = client.post(XCEP_KRB_URL)
+    assert r.status_code == 503
+
+
+def test_kerberos_endpoint_challenges_without_authorization_header(client, xcep_kerberos_config, monkeypatch):
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+    r = client.post(XCEP_KRB_URL)
+    assert r.status_code == 401
+    assert r.headers.get('WWW-Authenticate') == 'Negotiate'
+
+
+def test_kerberos_endpoint_rejects_failed_negotiation(client, xcep_kerberos_config, monkeypatch):
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+    monkeypatch.setattr(
+        negotiate_auth, 'authenticate_negotiate',
+        lambda auth_header, connection_key: negotiate_auth.NegotiateResult(status='failed', error='bad ticket'),
+    )
+    r = client.post(XCEP_KRB_URL, headers={'Authorization': 'Negotiate bm90YXJlYWx0b2tlbg=='})
+    assert r.status_code == 401
+    assert r.headers.get('WWW-Authenticate') == 'Negotiate'
+
+
+def test_kerberos_get_policies_succeeds_and_echoes_mutual_auth_token(client, xcep_kerberos_config, monkeypatch):
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+    monkeypatch.setattr(
+        negotiate_auth, 'authenticate_negotiate',
+        lambda auth_header, connection_key: negotiate_auth.NegotiateResult(
+            status='authenticated', client_principal='HOST$@HAGLAND.DOMAIN',
+            response_token_b64='bXV0dWFsLXRva2Vu',
+        ),
+    )
+
+    body = f'<s:Envelope xmlns:s="{SOAP_NS}"><s:Body/></s:Envelope>'.encode()
+    r = client.post(
+        XCEP_KRB_URL, data=body,
+        headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+    )
+    assert r.status_code == 200
+    assert r.headers.get('WWW-Authenticate') == 'Negotiate bXV0dWFsLXRva2Vu'
+
+    auth_values = _cauri_auth_values(r.data)
+    assert '2' in auth_values  # AUTH_KERBEROS
+    assert '4' in auth_values  # AUTH_USERNAME_PASSWORD, still advertised too
+
+
+def _basic_auth():
+    token = base64.b64encode(f'{XCEP_USER}:{XCEP_PASSWORD}'.encode()).decode()
+    return {'Authorization': f'Basic {token}'}
+
+
+def test_kerberos_cauri_omitted_when_not_configured(client, xcep_kerberos_config, monkeypatch):
+    """The primary (UsernamePassword) CEP endpoint's CAURI collection
+    should not include the Kerberos entry when Kerberos isn't configured --
+    it's shared response-building logic (`_handle_get_policies`), so this
+    also guards the conditional against regressing for every CEP binding."""
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: False)
+
+    body = f'<s:Envelope xmlns:s="{SOAP_NS}"><s:Body/></s:Envelope>'.encode()
+    r = client.post(
+        XCEP_USERPASS_URL, data=body,
+        headers={**_basic_auth(), 'Content-Type': 'application/soap+xml'},
+    )
+    assert r.status_code == 200
+    assert '2' not in _cauri_auth_values(r.data)  # AUTH_KERBEROS
+
+
+def test_kerberos_cauri_present_via_userpass_endpoint_when_configured(client, xcep_kerberos_config, monkeypatch):
+    """CAURI advertises every configured binding from any CEP endpoint that
+    served the response, regardless of which binding authenticated this
+    particular request -- matches real ADCS."""
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+
+    body = f'<s:Envelope xmlns:s="{SOAP_NS}"><s:Body/></s:Envelope>'.encode()
+    r = client.post(
+        XCEP_USERPASS_URL, data=body,
+        headers={**_basic_auth(), 'Content-Type': 'application/soap+xml'},
+    )
+    assert r.status_code == 200
+    assert '2' in _cauri_auth_values(r.data)  # AUTH_KERBEROS

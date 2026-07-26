@@ -2,7 +2,7 @@
 MS-WSTEP Protocol Implementation (WS-Trust X.509v3 Token Enrollment
 Extensions) https://docs.microsoft.com/openspecs/windows_protocols/ms-wstep/
 
-Two endpoints matching real ADCS CES naming convention, one per auth
+Three endpoints matching real ADCS CES naming convention, one per auth
 binding (advertised to clients via XCEP's CAURI mechanism,
 ``services/xcep/policy_builder.py``):
 
@@ -11,6 +11,11 @@ binding (advertised to clients via XCEP's CAURI mechanism,
 - ``/ADCertificateService_CES_Certificate/service.svc`` — renewal, the
   RST itself is WS-Security signed with the client's current certificate
   (see ``services/wstep/ws_security.py``); no HTTP-level auth.
+- ``/ADCertificateService_CES_Kerberos/service.svc`` — initial enrollment
+  or renewal for a domain-joined machine (GPO autoenrollment's usual
+  path), authenticated via HTTP-transport-level ``Authorization:
+  Negotiate`` (RFC 4559 — see ``services/kerberos/negotiate_auth.py``),
+  not WS-Security like the other two bindings.
 
 Both parse a ``RequestSecurityToken`` (RST) SOAP request and return a
 ``RequestSecurityTokenResponseCollection`` (RSTR) SOAP response, per
@@ -27,7 +32,8 @@ from flask import Blueprint, Response, request
 
 from models import CA, AuditLog, Certificate, SystemConfig, db
 from services.ca_service import CAService
-from services.wstep import CES_CERTIFICATE_PATH, CES_USERNAME_PASSWORD_PATH
+from services.kerberos import negotiate_auth
+from services.wstep import CES_CERTIFICATE_PATH, CES_KERBEROS_PATH, CES_USERNAME_PASSWORD_PATH
 from services.wstep import wstep_service
 from services.wstep.cmc_response import build_cmc_full_pki_response
 from services.wstep.rst_parser import RSTParseError, parse_rst
@@ -181,6 +187,31 @@ def _audit_issuance(action, subject, username):
     safe_commit(logger, "WSTEP enrollment audit commit failed")
 
 
+def _issue_and_respond(ca, parsed, username, action='certificate.issued'):
+    """Shared issuance + RSTR-building + audit logging for every CES
+    binding that issues (as opposed to renews) a certificate, once that
+    binding's own auth check has already succeeded.
+    """
+    cert_pem, error = wstep_service.issue(
+        ca, parsed.csr_der, _validity_days(), require_pop=not parsed.was_pkcs7_wrapped
+    )
+    if error:
+        return _fault_response(error, status=400, relates_to=parsed.message_id)
+
+    try:
+        cert = x509.load_pem_x509_certificate(cert_pem.encode())
+        response_body = build_issue_response(
+            cert, relates_to=parsed.message_id, request_id=_request_id_for(cert),
+            cmc_response_der=_cmc_response_der_for(ca, cert, parsed),
+        )
+    except Exception as e:
+        logger.error("WSTEP: failed to build RSTR: %s", e)
+        return _fault_response('Internal server error', status=500, relates_to=parsed.message_id)
+
+    _audit_issuance(action, cert.subject.rfc4514_string(), username)
+    return Response(response_body, status=200, content_type=f'{SOAP_XML_MIME}; charset=utf-8')
+
+
 @bp.route(CES_USERNAME_PASSWORD_PATH, methods=['GET', 'POST', 'HEAD'])
 def issue_username_password():
     """WSTEP RST over the UsernamePassword-authenticated CES endpoint —
@@ -218,24 +249,60 @@ def issue_username_password():
     if ca_error:
         return ca_error
 
-    cert_pem, error = wstep_service.issue(
-        ca, parsed.csr_der, _validity_days(), require_pop=not parsed.was_pkcs7_wrapped
-    )
-    if error:
-        return _fault_response(error, status=400, relates_to=parsed.message_id)
+    return _issue_and_respond(ca, parsed, username)
+
+
+@bp.route(CES_KERBEROS_PATH, methods=['GET', 'POST', 'HEAD'])
+def issue_kerberos():
+    """WSTEP RST over the Kerberos-authenticated CES endpoint — what GPO
+    machine autoenrollment uses for both initial enrollment and renewal,
+    since it authenticates via the machine's own Kerberos identity rather
+    than an existing certificate (contrast with the Certificate-bound
+    endpoint above, which is renewal-only by construction).
+
+    Auth is HTTP-transport-level (``Authorization: Negotiate``), so unlike
+    the UsernamePassword endpoint it's checked *before* the body is read at
+    all — same reject-before-work shape as ``_enforce_wstep_enabled``.
+    """
+    if request.method in ('GET', 'HEAD'):
+        return Response('', status=200, content_type='text/html; charset=utf-8')
+
+    if not negotiate_auth.is_library_available() or not negotiate_auth.is_configured():
+        return Response('Kerberos binding not configured', status=503)
+
+    cl = request.content_length
+    if cl is not None and cl > WSTEP_MAX_BODY_BYTES:
+        return Response('Request body too large', status=413)
+
+    connection_key = request.environ.get('REMOTE_ADDR')
+    result = negotiate_auth.authenticate_negotiate(request.headers.get('Authorization'), connection_key)
+    if result.status != 'authenticated':
+        if result.status not in ('challenge', 'continue'):
+            logger.warning("WSTEP Kerberos auth failed: %s", result.error)
+        # 'continue': an intermediate SPNEGO leg (e.g. a request-mic round) --
+        # the real-world client may open a fresh TCP connection per leg, so
+        # this is keyed on source IP, not the full connection tuple (see
+        # services/kerberos/negotiate_auth.py's module docstring).
+        headers = {'WWW-Authenticate': f'Negotiate {result.response_token_b64}' if result.response_token_b64 else 'Negotiate'}
+        return Response('', status=401, headers=headers)
+
+    ca, ca_error = _resolve_wstep_ca()
+    if ca_error:
+        return ca_error
+
+    body, err = _read_wstep_body()
+    if err is not None:
+        return err
 
     try:
-        cert = x509.load_pem_x509_certificate(cert_pem.encode())
-        response_body = build_issue_response(
-            cert, relates_to=parsed.message_id, request_id=_request_id_for(cert),
-            cmc_response_der=_cmc_response_der_for(ca, cert, parsed),
-        )
-    except Exception as e:
-        logger.error("WSTEP: failed to build RSTR: %s", e)
-        return _fault_response('Internal server error', status=500, relates_to=parsed.message_id)
+        parsed = parse_rst(body)
+    except RSTParseError as e:
+        return _fault_response(f'Malformed request: {e}', status=400)
 
-    _audit_issuance('certificate.issued', cert.subject.rfc4514_string(), username)
-    return Response(response_body, status=200, content_type=f'{SOAP_XML_MIME}; charset=utf-8')
+    response = _issue_and_respond(ca, parsed, result.client_principal)
+    if result.response_token_b64 and response.status_code == 200:
+        response.headers['WWW-Authenticate'] = f'Negotiate {result.response_token_b64}'
+    return response
 
 
 @bp.route(CES_CERTIFICATE_PATH, methods=['GET', 'POST', 'HEAD'])

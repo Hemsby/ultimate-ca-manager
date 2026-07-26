@@ -1,0 +1,162 @@
+"""Interoperability tests for MS-WSTEP's Kerberos-bound CES endpoint (Phase 3).
+
+Same constraint as test_xcep_kerberos_policy.py: no real KDC in a unit test
+environment, so ``negotiate_auth.authenticate_negotiate`` is monkeypatched
+for the "ticket already verified" path. Real end-to-end verification is a
+lab AD exercise (see memory/project_xcep_wstep_lab_testing.md).
+"""
+import base64
+
+import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.serialization import Encoding
+from cryptography.x509.oid import NameOID
+from lxml import etree
+
+from models import CA, AuditLog, db
+from models.system_config import SystemConfig
+from services.kerberos import negotiate_auth
+from services.wstep.soap_envelope import ADDRESSING_NS, SOAP_NS, WST_NS, WSSE_NS
+
+ISSUE_URL = '/ADCertificateService_CES_Kerberos/service.svc'
+KERBEROS_PRINCIPAL = 'HOST$@HAGLAND.DOMAIN'
+
+
+def _set_config(key, value):
+    row = SystemConfig.query.filter_by(key=key).first()
+    if row is None:
+        db.session.add(SystemConfig(key=key, value=value))
+    else:
+        row.value = value
+    db.session.commit()
+
+
+@pytest.fixture(scope='module')
+def wstep_kerberos_config(app, create_ca):
+    ca_data = create_ca(cn='WSTEP Kerberos CA')
+    keys = ('wstep_enabled', 'wstep_ca_refid', 'wstep_validity_days')
+    with app.app_context():
+        previous = {
+            key: (SystemConfig.query.filter_by(key=key).first().value
+                  if SystemConfig.query.filter_by(key=key).first() else None)
+            for key in keys
+        }
+        ca = db.session.get(CA, ca_data['id'])
+        _set_config('wstep_enabled', 'true')
+        _set_config('wstep_ca_refid', ca.refid)
+        _set_config('wstep_validity_days', '30')
+
+    yield ca_data
+
+    with app.app_context():
+        for key, value in previous.items():
+            row = SystemConfig.query.filter_by(key=key).first()
+            if value is None:
+                if row is not None:
+                    db.session.delete(row)
+            elif row is None:
+                db.session.add(SystemConfig(key=key, value=value))
+            else:
+                row.value = value
+        db.session.commit()
+
+
+def _make_csr(common_name='machine.hagland.domain'):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    csr = x509.CertificateSigningRequestBuilder().subject_name(
+        x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+    ).sign(key, hashes.SHA256())
+    return csr, key
+
+
+def _build_rst(csr, message_id='urn:uuid:test-krb-rst-1'):
+    NSMAP = {'s': SOAP_NS, 'a': ADDRESSING_NS, 'wst': WST_NS, 'wsse': WSSE_NS}
+    envelope = etree.Element('{%s}Envelope' % SOAP_NS, nsmap=NSMAP)
+    header = etree.SubElement(envelope, '{%s}Header' % SOAP_NS)
+    etree.SubElement(header, '{%s}MessageID' % ADDRESSING_NS).text = message_id
+    body = etree.SubElement(envelope, '{%s}Body' % SOAP_NS)
+    rst = etree.SubElement(body, '{%s}RequestSecurityToken' % WST_NS)
+    etree.SubElement(rst, '{%s}TokenType' % WST_NS).text = (
+        'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3'
+    )
+    etree.SubElement(rst, '{%s}RequestType' % WST_NS).text = (
+        'http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue'
+    )
+    bst = etree.SubElement(
+        rst, '{%s}BinarySecurityToken' % WSSE_NS,
+        ValueType='http://schemas.microsoft.com/windows/pki/2009/01/enrollment#PKCS10',
+        EncodingType='base64',
+    )
+    bst.text = base64.b64encode(csr.public_bytes(Encoding.DER)).decode()
+    return etree.tostring(envelope, xml_declaration=True, encoding='UTF-8')
+
+
+def _issued_cert_from_rstr(response_bytes):
+    root = etree.fromstring(response_bytes)
+    bst_el = root.find(f'.//{{{WSSE_NS}}}BinarySecurityToken')
+    assert bst_el is not None and bst_el.text
+    return x509.load_der_x509_certificate(base64.b64decode(bst_el.text))
+
+
+def _authenticated_result(token_b64=None):
+    return negotiate_auth.NegotiateResult(
+        status='authenticated', client_principal=KERBEROS_PRINCIPAL, response_token_b64=token_b64,
+    )
+
+
+def test_issue_503_when_not_configured(client, wstep_kerberos_config, monkeypatch):
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: False)
+    csr, _key = _make_csr()
+    r = client.post(ISSUE_URL, data=_build_rst(csr), headers={'Authorization': 'Negotiate dG9rZW4='})
+    assert r.status_code == 503
+
+
+def test_issue_challenges_without_authorization_header(client, wstep_kerberos_config, monkeypatch):
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+    csr, _key = _make_csr()
+    r = client.post(ISSUE_URL, data=_build_rst(csr))
+    assert r.status_code == 401
+    assert r.headers.get('WWW-Authenticate') == 'Negotiate'
+
+
+def test_issue_rejects_failed_negotiation(client, wstep_kerberos_config, monkeypatch):
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+    monkeypatch.setattr(
+        negotiate_auth, 'authenticate_negotiate',
+        lambda auth_header, connection_key: negotiate_auth.NegotiateResult(status='failed', error='bad ticket'),
+    )
+    csr, _key = _make_csr()
+    r = client.post(ISSUE_URL, data=_build_rst(csr), headers={'Authorization': 'Negotiate dG9rZW4='})
+    assert r.status_code == 401
+
+
+def test_issue_succeeds_with_authenticated_negotiation(client, app, wstep_kerberos_config, monkeypatch):
+    monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+    monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+    monkeypatch.setattr(
+        negotiate_auth, 'authenticate_negotiate',
+        lambda auth_header, connection_key: _authenticated_result('bXV0dWFsLXRva2Vu'),
+    )
+
+    csr, key = _make_csr()
+    r = client.post(
+        ISSUE_URL, data=_build_rst(csr),
+        headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+    )
+    assert r.status_code == 200
+    assert r.headers.get('WWW-Authenticate') == 'Negotiate bXV0dWFsLXRva2Vu'
+
+    cert = _issued_cert_from_rstr(r.data)
+    assert cert.public_key().public_numbers() == key.public_key().public_numbers()
+
+    with app.app_context():
+        log = (AuditLog.query
+               .filter_by(action='certificate.issued', username=KERBEROS_PRINCIPAL)
+               .order_by(AuditLog.id.desc())
+               .first())
+        assert log is not None

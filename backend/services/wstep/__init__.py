@@ -11,3 +11,4 @@ circular import between the XCEP and WSTEP API modules.
 # currently supports.
 CES_USERNAME_PASSWORD_PATH = '/ADCertificateService_CES_UsernamePassword/service.svc'
 CES_CERTIFICATE_PATH = '/ADCertificateService_CES_Certificate/service.svc'
+CES_KERBEROS_PATH = '/ADCertificateService_CES_Kerberos/service.svc'
