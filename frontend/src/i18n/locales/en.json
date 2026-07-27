@@ -2286,6 +2286,7 @@
       "webhooks": "Webhooks",
       "about": "About",
       "microsoftCA": "Microsoft CA",
+      "adConnector": "Active Directory",
       "ct": "CT",
       "autoRenewal": "Auto-Renewal",
       "scheduler": "Scheduler"
@@ -4288,6 +4289,28 @@
       "upnRequired": "UPN is required when Enroll on Behalf Of is enabled",
       "hint": "Requires an enrollment agent certificate configured on the CA. The template must allow enrollment on behalf of other users."
     }
+  },
+  "adConnector": {
+    "title": "Active Directory Connector",
+    "subtitle": "UCM's own connection to Active Directory, independent of SSO login",
+    "helpTitle": "Active Directory Connector",
+    "helpDescription": "Lets UCM query Active Directory directly -- currently used to resolve a Kerberos machine account's computer object when GPO autoenrollment submits a certificate request with no subject, so UCM can derive one from AD the same way a real Windows CA would. Separate from any LDAP provider configured under SSO: that's for logging into UCM, this is for certificate-related AD lookups, and works independently of whether SSO is set up at all.",
+    "server": "Server",
+    "serverPlaceholder": "dc1.corp.local",
+    "port": "Port",
+    "useSsl": "Use LDAPS",
+    "verifySsl": "Verify SSL Certificate",
+    "caBundle": "Custom CA Bundle (PEM)",
+    "baseDn": "Base DN",
+    "baseDnPlaceholder": "DC=corp,DC=local",
+    "bindDn": "Bind DN",
+    "bindDnPlaceholder": "CN=svc-ucm,CN=Users,DC=corp,DC=local",
+    "bindPassword": "Bind Password",
+    "notConfigured": "Not configured",
+    "notConfiguredDesc": "No Active Directory connection configured yet",
+    "testConnection": "Test Connection",
+    "testSuccess": "Connection successful",
+    "testFailed": "Connection test failed"
   },
   "certInput": {
     "modePaste": "Paste",

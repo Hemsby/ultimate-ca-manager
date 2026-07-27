@@ -15,8 +15,9 @@ from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.x509.oid import NameOID
 from lxml import etree
 
-from models import CA, AuditLog, db
+from models import CA, ADConnectorConfig, AuditLog, Certificate, db
 from models.system_config import SystemConfig
+from services.ad_connector import lookup as ad_lookup
 from services.kerberos import negotiate_auth
 from services.wstep.soap_envelope import ADDRESSING_NS, SOAP_NS, WST_NS, WSSE_NS
 
@@ -67,6 +68,16 @@ def _make_csr(common_name='machine.hagland.domain'):
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     csr = x509.CertificateSigningRequestBuilder().subject_name(
         x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+    ).sign(key, hashes.SHA256())
+    return csr, key
+
+
+def _make_naked_csr():
+    """No CN, no SAN -- what real Windows GPO machine autoenrollment
+    submits, trusting the CA to derive the subject from AD."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    csr = x509.CertificateSigningRequestBuilder().subject_name(
+        x509.Name([])
     ).sign(key, hashes.SHA256())
     return csr, key
 
@@ -160,3 +171,99 @@ def test_issue_succeeds_with_authenticated_negotiation(client, app, wstep_kerber
                .order_by(AuditLog.id.desc())
                .first())
         assert log is not None
+
+
+def _configure_ad_connector(app):
+    with app.app_context():
+        ADConnectorConfig.query.delete()
+        config = ADConnectorConfig(
+            server='dc1.hagland.domain', base_dn='DC=hagland,DC=domain',
+            bind_dn='svc-ucm', enabled=True,
+        )
+        config.bind_password = 'irrelevant'
+        db.session.add(config)
+        db.session.commit()
+
+
+class TestNakedCsrSubjectDerivation:
+    """Real Windows GPO machine autoenrollment submits a CSR with no CN and
+    no SAN for machine templates, trusting the CA to derive the subject
+    from AD -- see services/ad_connector/lookup.py and
+    wstep_service.issue's kerberos_principal handling."""
+
+    def test_naked_csr_with_successful_ad_lookup_gets_derived_subject(
+        self, client, app, wstep_kerberos_config, monkeypatch
+    ):
+        _configure_ad_connector(app)
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: _authenticated_result(),
+        )
+        monkeypatch.setattr(
+            ad_lookup, 'lookup_computer_dns_hostname',
+            lambda sam_account_name: 'win11.hagland.domain',
+        )
+
+        csr, key = _make_naked_csr()
+        r = client.post(
+            ISSUE_URL, data=_build_rst(csr),
+            headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+        )
+        assert r.status_code == 200
+
+        cert = _issued_cert_from_rstr(r.data)
+        assert cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == 'win11.hagland.domain'
+        assert cert.public_key().public_numbers() == key.public_key().public_numbers()
+
+        with app.app_context():
+            db_cert = Certificate.query.filter_by(serial_number=str(cert.serial_number)).first()
+            assert db_cert is not None
+            assert db_cert.subject_cn == 'win11.hagland.domain'
+
+    def test_naked_csr_with_failed_ad_lookup_still_rejected(
+        self, client, app, wstep_kerberos_config, monkeypatch
+    ):
+        _configure_ad_connector(app)
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: _authenticated_result(),
+        )
+        monkeypatch.setattr(ad_lookup, 'lookup_computer_dns_hostname', lambda sam_account_name: None)
+
+        csr, _key = _make_naked_csr()
+        r = client.post(
+            ISSUE_URL, data=_build_rst(csr),
+            headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+        )
+        assert r.status_code == 400
+
+    def test_naked_csr_from_user_principal_not_eligible_for_derivation(
+        self, client, app, wstep_kerberos_config, monkeypatch
+    ):
+        """A user Kerberos principal (no trailing $) submitting a naked CSR
+        must still be rejected -- derivation is machine-principal-only,
+        even if the AD Connector is configured and would succeed."""
+        _configure_ad_connector(app)
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: negotiate_auth.NegotiateResult(
+                status='authenticated', client_principal='alice@HAGLAND.DOMAIN',
+            ),
+        )
+        monkeypatch.setattr(
+            ad_lookup, 'lookup_computer_dns_hostname',
+            lambda sam_account_name: 'should-not-be-called.hagland.domain',
+        )
+
+        csr, _key = _make_naked_csr()
+        r = client.post(
+            ISSUE_URL, data=_build_rst(csr),
+            headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+        )
+        assert r.status_code == 400

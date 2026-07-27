@@ -1,0 +1,76 @@
+import { useTranslation } from 'react-i18next'
+import { IdentificationBadge, TestTube, Power, PencilSimple, ArrowsClockwise } from '@phosphor-icons/react'
+import { Button, Badge, HelpCard, DetailHeader, DetailContent } from '../../components'
+import { formatDate } from '../../lib/utils'
+
+export default function AdConnectorSection({ adConnectorConfig, adConnectorLoading, adConnectorTesting, handleAdConnectorEdit, handleAdConnectorToggle, handleAdConnectorTest, hasPermission }) {
+  const { t } = useTranslation()
+  const configured = Boolean(adConnectorConfig?.server)
+
+  return (
+    <DetailContent>
+      <DetailHeader
+        icon={IdentificationBadge}
+        title={t('adConnector.title')}
+        subtitle={t('adConnector.subtitle')}
+      />
+
+      <HelpCard variant="info" title={t('adConnector.helpTitle')} className="mb-4">
+        {t('adConnector.helpDescription')}
+      </HelpCard>
+
+      {adConnectorLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <div className="w-6 h-6 border-2 border-accent-primary-op30 border-t-accent-primary rounded-full animate-spin" />
+        </div>
+      ) : (
+        <div className="flex items-center justify-between p-4 bg-tertiary-50 border border-border rounded-lg">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center icon-bg-blue">
+              <IdentificationBadge size={20} weight="bold" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-text-primary">{t('adConnector.title')}</span>
+                {configured ? (
+                  <Badge variant={adConnectorConfig.enabled ? 'success' : 'secondary'} size="sm">
+                    {adConnectorConfig.enabled ? t('common.enabled') : t('common.disabled')}
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" size="sm">{t('adConnector.notConfigured')}</Badge>
+                )}
+              </div>
+              <p className="text-xs text-text-secondary">
+                {configured ? `${adConnectorConfig.server}:${adConnectorConfig.port}` : t('adConnector.notConfiguredDesc')}
+              </p>
+              {adConnectorConfig?.last_test_at && (
+                <p className="text-xs text-text-tertiary">
+                  {t('adConnector.testConnection')}: {adConnectorConfig.last_test_result === 'success' ? '✓' : '✗'} {formatDate(adConnectorConfig.last_test_at)}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {configured && (
+              <>
+                <Button type="button" size="sm" variant="secondary" onClick={handleAdConnectorTest} disabled={adConnectorTesting} title={t('adConnector.testConnection')}>
+                  {adConnectorTesting ? <ArrowsClockwise size={14} className="animate-spin" /> : <TestTube size={14} />}
+                </Button>
+                {hasPermission('write:ad_connector') && (
+                  <Button type="button" size="sm" variant="secondary" onClick={handleAdConnectorToggle} title={adConnectorConfig.enabled ? t('common.disable') : t('common.enable')}>
+                    <Power size={14} />
+                  </Button>
+                )}
+              </>
+            )}
+            {hasPermission('write:ad_connector') && (
+              <Button type="button" size="sm" variant="secondary" onClick={handleAdConnectorEdit} title={t('common.edit')}>
+                <PencilSimple size={14} />
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+    </DetailContent>
+  )
+}

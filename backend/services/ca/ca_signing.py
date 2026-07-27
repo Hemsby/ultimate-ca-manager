@@ -44,6 +44,7 @@ class CASigningMixin:
         renewal_of: x509.Certificate = None,
         require_pop: bool = True,
         ms_certificate_template_oid: str = None,
+        override_subject: x509.Name = None,
     ) -> Tuple[str, str]:
         """
         Sign a CSR (x509 object) using a CA.
@@ -58,6 +59,8 @@ class CASigningMixin:
                 docstring. Only WSTEP passes False.
             ms_certificate_template_oid: forwarded to TrustStoreService.sign_csr
                 — see its docstring. Only WSTEP passes this.
+            override_subject: forwarded to TrustStoreService.sign_csr — see
+                its docstring. Only WSTEP's Kerberos binding passes this.
 
         Returns:
             Tuple of (cert_pem_string, serial_number_string)
@@ -96,6 +99,7 @@ class CASigningMixin:
             renewal_of=renewal_of,
             require_pop=require_pop,
             ms_certificate_template_oid=ms_certificate_template_oid,
+            override_subject=override_subject,
         )
 
         # Extract serial number
@@ -109,12 +113,15 @@ class CASigningMixin:
         # Store certificate in database
         cert_pem_str = cert_pem_bytes.decode('utf-8') if isinstance(cert_pem_bytes, bytes) else cert_pem_bytes
 
-        # Extract CN
+        # Extract CN from the issued certificate's own subject, not the
+        # CSR's -- for WSTEP's Kerberos binding, override_subject can mean
+        # the two differ entirely (a naked CSR issued with a server-derived
+        # subject), and the issued cert's subject is what's actually true.
         cn = ''
         try:
-            cn = csr.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
+            cn = cert_obj.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
         except (IndexError, Exception):
-            cn = csr.subject.rfc4514_string()
+            cn = cert_obj.subject.rfc4514_string()
 
         cert_pem_raw = cert_pem_bytes if isinstance(cert_pem_bytes, bytes) else cert_pem_bytes.encode()
 

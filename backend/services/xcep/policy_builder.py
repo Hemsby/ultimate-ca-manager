@@ -128,6 +128,26 @@ _ECDSA_CRYPTO_PROVIDERS = ('Microsoft Software Key Storage Provider',)
 # rather than deriving it server-side from AD attributes (which UCM, not
 # being AD-backed, has no equivalent source for anyway).
 _SUBJECT_NAME_FLAGS = 0x00000001 | 0x00010000
+
+# Machine templates get a different subjectNameFlags value: CT_FLAG_SUBJECT_
+# REQUIRE_DNS_AS_CN (0x10000000) | CT_FLAG_SUBJECT_ALT_REQUIRE_DNS (0x08000000),
+# with none of _SUBJECT_NAME_FLAGS's enrollee-supplies bits. Confirmed against
+# the lab's real ADCS Enterprise CA: its built-in "Computer" template's own
+# msPKI-Certificate-Name-Flag AD attribute is exactly 0x18000000, with no
+# ENROLLEE_SUPPLIES_SUBJECT bit at all. That's not an AD-attribute quirk --
+# it's load-bearing for unattended GPO machine autoenrollment: with the
+# enrollee-supplies-subject flags, Windows' interactive "Request New
+# Certificate" wizard shows a "more information is required" prompt (a human
+# must fill in Properties > Subject), which the unattended background
+# autoenrollment engine has no way to satisfy -- confirmed against the lab
+# that autoenrollment silently declines every other eligible machine template
+# with zero errors logged, while a manually-supplied-subject enrollment of the
+# same template type succeeds. These auto-derive bits tell Windows to build
+# CN/SAN from the computer's own DNS name itself, with no prompt needed --
+# unlike the user-template rationale above, this doesn't require UCM to
+# derive anything server-side; the machine already knows its own identity.
+_MACHINE_SUBJECT_NAME_FLAGS = 0x10000000 | 0x08000000
+
 # enrollmentFlags: none of the AD-attribute-writeback / S/MIME bits apply.
 _ENROLLMENT_FLAGS = 0
 
@@ -395,9 +415,11 @@ def build_get_policies_response(ca, templates, enrollment_uris=(), message_id=No
 
         _nil_element(attributes, 'supersededPolicies')
         _nil_element(attributes, 'privateKeyFlags')
-        etree.SubElement(attributes, '{%s}subjectNameFlags' % XCEP_NS).text = str(_SUBJECT_NAME_FLAGS)
+        is_machine_template = template.template_type in _MACHINE_TEMPLATE_TYPES
+        subject_name_flags = _MACHINE_SUBJECT_NAME_FLAGS if is_machine_template else _SUBJECT_NAME_FLAGS
+        etree.SubElement(attributes, '{%s}subjectNameFlags' % XCEP_NS).text = str(subject_name_flags)
         etree.SubElement(attributes, '{%s}enrollmentFlags' % XCEP_NS).text = str(_ENROLLMENT_FLAGS)
-        if template.template_type in _MACHINE_TEMPLATE_TYPES:
+        if is_machine_template:
             etree.SubElement(attributes, '{%s}generalFlags' % XCEP_NS).text = str(_GENERAL_MACHINE_TYPE)
         else:
             _nil_element(attributes, 'generalFlags')

@@ -49,7 +49,20 @@ def _weak_csr_hash_algorithm(csr):
     return None
 
 
-def _validate_csr(csr, require_pop=True):
+def _is_naked_csr(csr):
+    """No CN and no SubjectAlternativeName at all -- what real Windows GPO
+    machine autoenrollment deliberately submits for machine templates,
+    trusting the CA to derive the subject from AD (see
+    ``issue``'s ``kerberos_principal`` handling and
+    ``services/ad_connector/lookup.py``). Factored out of ``_validate_csr``
+    so ``issue()`` can check the same condition directly, rather than
+    string-matching ``_validate_csr``'s error message."""
+    cn_attrs = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+    has_cn = bool(cn_attrs and str(cn_attrs[0].value).strip())
+    return not has_cn and _san_values(csr) is None
+
+
+def _validate_csr(csr, require_pop=True, allow_naked_subject=False):
     """Similar to EST's ``_validate_est_csr``: proof of possession,
     subject identity present, key-strength policy. Reimplemented locally
     rather than extracted into a shared module, matching the existing
@@ -69,6 +82,13 @@ def _validate_csr(csr, require_pop=True):
       SubjectAlternativeName instead (SAN-only identity is standard
       modern TLS practice).
 
+    ``allow_naked_subject``: skip the "must have CN or SAN" check -- only
+    set by ``issue()`` when it has *already* independently derived a
+    replacement subject via the AD Connector for a Kerberos machine
+    principal. Every other check (PoP, key strength) still applies
+    unconditionally regardless of this flag; a naked CSR never gets a free
+    pass on those.
+
     Returns an error string, or None if the CSR is acceptable.
     """
     if require_pop:
@@ -85,9 +105,7 @@ def _validate_csr(csr, require_pop=True):
                 )
             return 'CSR signature invalid (proof of possession failed)'
 
-    cn_attrs = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
-    has_cn = bool(cn_attrs and str(cn_attrs[0].value).strip())
-    if not has_cn and _san_values(csr) is None:
+    if not allow_naked_subject and _is_naked_csr(csr):
         return 'CSR subject must include a non-empty CN or a SubjectAltName'
 
     key_err = validate_enrollment_public_key(csr.public_key())
@@ -186,19 +204,46 @@ def _match_template_oid(ca, csr):
     return _policy_oid_for_template(ca, best)
 
 
-def issue(ca, csr_der, validity_days, source='wstep', require_pop=True):
+def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos_principal=None):
     """UsernamePassword-bound initial enrollment. Returns (cert_pem, error).
 
     ``require_pop=False`` is passed by ``wstep_protocol.py`` when the CSR
     was unwrapped from a PKCS#7/CMC envelope (``ParsedRST.was_pkcs7_wrapped``)
     — see ``_validate_csr`` for why that inner CSR's self-signature can't
     be relied on for real Windows clients.
+
+    ``kerberos_principal``: the authenticated Kerberos principal, e.g.
+    ``'WIN11$@HAGLAND.DOMAIN'`` -- passed *only* by the Kerberos-bound CES
+    route (never the UsernamePassword one, which has no Kerberos identity
+    to give). When set and the CSR is naked (see ``_is_naked_csr``) and the
+    principal is a machine account, attempts to derive a subject via the AD
+    Connector (``services/ad_connector/lookup.py``) instead of rejecting
+    outright -- what real Windows GPO machine autoenrollment needs, since it
+    deliberately submits a subject-less CSR trusting the CA to fill it in
+    from AD, the same way real ADCS does. Falls through to the normal
+    naked-CSR rejection if the connector isn't configured or the lookup
+    fails for any reason (computer not found, LDAP unreachable, ...).
     """
     csr, err = _load_csr(csr_der)
     if err:
         return None, err
 
-    err = _validate_csr(csr, require_pop=require_pop)
+    override_subject = None
+    if kerberos_principal and _is_naked_csr(csr):
+        from services.ad_connector import lookup
+        if lookup.is_machine_principal(kerberos_principal):
+            parsed = lookup.parse_kerberos_principal(kerberos_principal)
+            if parsed:
+                sam_account_name, _realm = parsed
+                dns_hostname = lookup.lookup_computer_dns_hostname(sam_account_name)
+                if dns_hostname:
+                    override_subject = x509.Name(
+                        [x509.NameAttribute(NameOID.COMMON_NAME, dns_hostname)]
+                    )
+
+    err = _validate_csr(
+        csr, require_pop=require_pop, allow_naked_subject=override_subject is not None
+    )
     if err:
         return None, err
 
@@ -207,6 +252,7 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True):
             ca=ca, csr=csr, validity_days=validity_days, source=source,
             require_pop=require_pop,
             ms_certificate_template_oid=_match_template_oid(ca, csr),
+            override_subject=override_subject,
         )
     except Exception as e:
         logger.error('WSTEP issue failed: %s', e)

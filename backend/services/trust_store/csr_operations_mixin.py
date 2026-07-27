@@ -84,6 +84,34 @@ def _key_usage_with_ca_signing(usage, enabled):
     )
 
 
+def _synthesize_san_from_subject(subject):
+    """SAN entries implied by a subject's CN/email attributes -- same
+    derivation ``sign_csr`` already applied when a CSR carries no SAN
+    extension of its own. Factored out so this can be computed once and
+    reused both for NameConstraints validation and for actually building the
+    certificate's SAN extension, so the two can't drift apart (see
+    ``sign_csr``'s ``override_subject`` handling)."""
+    san_names = []
+    for attr in subject:
+        if attr.oid == NameOID.COMMON_NAME:
+            cn_val = attr.value
+            try:
+                ip = ipaddress.ip_address(cn_val)
+                san_names.append(x509.IPAddress(ip))
+            except ValueError:
+                if '@' in cn_val:
+                    san_names.append(x509.RFC822Name(cn_val))
+                else:
+                    san_names.append(x509.DNSName(cn_val))
+            break
+    for attr in subject:
+        if attr.oid == NameOID.EMAIL_ADDRESS:
+            email_val = attr.value
+            if not any(isinstance(n, x509.RFC822Name) and n.value == email_val for n in san_names):
+                san_names.append(x509.RFC822Name(email_val))
+    return san_names
+
+
 class CSROperationsMixin:
     """CSR generation and signing operations mixin"""
 
@@ -166,6 +194,7 @@ class CSROperationsMixin:
         allow_sensitive_ekus: bool = False,
         require_pop: bool = True,
         ms_certificate_template_oid: Optional[str] = None,
+        override_subject: Optional[x509.Name] = None,
     ) -> bytes:
         """Sign a CSR with a CA. ``renewal_of``: existing certificate this
         signing renews — its names are graced by NameConstraints validation.
@@ -178,7 +207,18 @@ class CSROperationsMixin:
         by real Windows clients (see wstep_service._validate_csr, which
         makes the same exception for the same reason).
         ``ms_certificate_template_oid``: see the extension-building block
-        below — only WSTEP passes this."""
+        below — only WSTEP passes this.
+        ``override_subject``: replaces the CSR's own (possibly empty)
+        subject before anything else happens with it — only WSTEP's Kerberos
+        binding passes this, for the "naked" (no CN, no SAN) CSRs real
+        Windows GPO machine autoenrollment submits for machine templates,
+        trusting the CA to derive the subject from AD (see
+        services/ad_connector/lookup.py). Computed before NameConstraints
+        validation below, not after, so the constraint check sees the name
+        that will actually land on the certificate rather than the raw
+        CSR's own (empty) one — applying it later would let a CA's
+        NameConstraints be silently bypassed by whatever subject was
+        derived server-side."""
         from utils.eku_validation import normalize_extra_ekus, to_object_identifiers, merge_eku_lists
 
         # Load CSR
@@ -186,19 +226,10 @@ class CSROperationsMixin:
         if require_pop and not csr.is_signature_valid:
             raise ValueError("CSR has invalid signature")
 
-        # NameConstraints enforcement
-        csr_sans = None
-        try:
-            san_ext = csr.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-            csr_sans = list(san_ext.value)
-        except x509.ExtensionNotFound:
-            pass
-        ConstraintsMixin._validate_name_constraints(
-            ca_cert, csr.subject, csr_sans, renewal_of=renewal_of
-        )
-
-        # If CSR has empty subject, populate CN from first SAN DNS name
-        subject = csr.subject
+        # Effective subject: an override (if any) wins outright; otherwise
+        # fall back to populating CN from the CSR's own first SAN DNS name
+        # if the CSR's subject is empty.
+        subject = override_subject if override_subject is not None else csr.subject
         if not list(subject):
             try:
                 san_ext = csr.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
@@ -208,6 +239,25 @@ class CSROperationsMixin:
                         break
             except x509.ExtensionNotFound:
                 pass
+
+        # Effective SAN for constraint-checking: the CSR's own SAN extension
+        # if it has one, else whatever will be auto-synthesized from the
+        # (possibly overridden) subject below -- NameConstraints must see
+        # the name that will actually land on the certificate, not an empty
+        # list just because the CSR itself omitted SAN.
+        try:
+            san_ext = csr.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+            csr_sans = list(san_ext.value)
+            has_csr_san = True
+        except x509.ExtensionNotFound:
+            csr_sans = None
+            has_csr_san = False
+
+        effective_sans = csr_sans if has_csr_san else _synthesize_san_from_subject(subject)
+
+        ConstraintsMixin._validate_name_constraints(
+            ca_cert, subject, effective_sans if effective_sans else None, renewal_of=renewal_of
+        )
 
         # Build certificate from CSR
         builder = x509.CertificateBuilder()
@@ -291,33 +341,15 @@ class CSROperationsMixin:
                 continue
             builder = builder.add_extension(extension.value, extension.critical)
 
-        # Auto-add SAN from CN if CSR has no SAN extension
-        try:
-            csr.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-        except x509.ExtensionNotFound:
-            san_names = []
-            for attr in subject:
-                if attr.oid == NameOID.COMMON_NAME:
-                    cn_val = attr.value
-                    try:
-                        ip = ipaddress.ip_address(cn_val)
-                        san_names.append(x509.IPAddress(ip))
-                    except ValueError:
-                        if '@' in cn_val:
-                            san_names.append(x509.RFC822Name(cn_val))
-                        else:
-                            san_names.append(x509.DNSName(cn_val))
-                    break
-            for attr in subject:
-                if attr.oid == NameOID.EMAIL_ADDRESS:
-                    email_val = attr.value
-                    if not any(isinstance(n, x509.RFC822Name) and n.value == email_val for n in san_names):
-                        san_names.append(x509.RFC822Name(email_val))
-            if san_names:
-                builder = builder.add_extension(
-                    x509.SubjectAlternativeName(san_names),
-                    critical=False,
-                )
+        # Auto-add SAN from CN if the CSR had no SAN extension -- reuses
+        # effective_sans, already computed above for NameConstraints, so
+        # what got constraint-checked and what actually lands on the
+        # certificate can't drift apart.
+        if not has_csr_san and effective_sans:
+            builder = builder.add_extension(
+                x509.SubjectAlternativeName(effective_sans),
+                critical=False,
+            )
 
         # Add basic extensions if not in CSR
         try:

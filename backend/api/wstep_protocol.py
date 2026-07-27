@@ -187,13 +187,19 @@ def _audit_issuance(action, subject, username):
     safe_commit(logger, "WSTEP enrollment audit commit failed")
 
 
-def _issue_and_respond(ca, parsed, username, action='certificate.issued'):
+def _issue_and_respond(ca, parsed, username, action='certificate.issued', kerberos_principal=None):
     """Shared issuance + RSTR-building + audit logging for every CES
     binding that issues (as opposed to renews) a certificate, once that
     binding's own auth check has already succeeded.
+
+    ``kerberos_principal``: only ever passed by ``issue_kerberos``'s call
+    site below, for the AD-derived naked-CSR subject fallback (see
+    ``wstep_service.issue``) -- ``issue_username_password`` has no Kerberos
+    identity to give and must never pass anything into this.
     """
     cert_pem, error = wstep_service.issue(
-        ca, parsed.csr_der, _validity_days(), require_pop=not parsed.was_pkcs7_wrapped
+        ca, parsed.csr_der, _validity_days(), require_pop=not parsed.was_pkcs7_wrapped,
+        kerberos_principal=kerberos_principal,
     )
     if error:
         return _fault_response(error, status=400, relates_to=parsed.message_id)
@@ -299,7 +305,9 @@ def issue_kerberos():
     except RSTParseError as e:
         return _fault_response(f'Malformed request: {e}', status=400)
 
-    response = _issue_and_respond(ca, parsed, result.client_principal)
+    response = _issue_and_respond(
+        ca, parsed, result.client_principal, kerberos_principal=result.client_principal,
+    )
     if result.response_token_b64 and response.status_code == 200:
         response.headers['WWW-Authenticate'] = f'Negotiate {result.response_token_b64}'
     return response
