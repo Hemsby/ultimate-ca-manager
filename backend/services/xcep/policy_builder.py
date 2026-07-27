@@ -148,6 +148,21 @@ _SUBJECT_NAME_FLAGS = 0x00000001 | 0x00010000
 # derive anything server-side; the machine already knows its own identity.
 _MACHINE_SUBJECT_NAME_FLAGS = 0x10000000 | 0x08000000
 
+# Per-template opt-in (CertificateTemplate.ad_derived_subject) gets its own
+# subjectNameFlags: CT_FLAG_SUBJECT_REQUIRE_DIRECTORY_PATH (0x80000000) |
+# CT_FLAG_SUBJECT_ALT_REQUIRE_UPN (0x02000000) -- real ADCS's built-in
+# "User" template is 0xA6000000, which also sets CT_FLAG_SUBJECT_REQUIRE_EMAIL
+# (0x20000000) and CT_FLAG_SUBJECT_ALT_REQUIRE_EMAIL (0x04000000). Those two
+# are deliberately NOT advertised here: UCM's AD-derived subject only ever
+# produces a directory-path Subject + UPN SAN (see
+# services/wstep/wstep_service.py's lookup_user_ad_identity handling), never
+# an email attribute. Advertising REQUIRE_EMAIL would make Windows decline
+# autoenrollment outright for any AD user with no `mail` attribute set (a
+# real, common case, not an edge case), and would claim an email address the
+# CA never actually emits into the issued certificate. Email support is a
+# separate, later decision -- not a corner this cuts silently.
+_USER_AD_DERIVED_SUBJECT_NAME_FLAGS = 0x80000000 | 0x02000000
+
 # enrollmentFlags: none of the AD-attribute-writeback / S/MIME bits apply.
 _ENROLLMENT_FLAGS = 0
 
@@ -416,7 +431,12 @@ def build_get_policies_response(ca, templates, enrollment_uris=(), message_id=No
         _nil_element(attributes, 'supersededPolicies')
         _nil_element(attributes, 'privateKeyFlags')
         is_machine_template = template.template_type in _MACHINE_TEMPLATE_TYPES
-        subject_name_flags = _MACHINE_SUBJECT_NAME_FLAGS if is_machine_template else _SUBJECT_NAME_FLAGS
+        if is_machine_template:
+            subject_name_flags = _MACHINE_SUBJECT_NAME_FLAGS
+        elif getattr(template, 'ad_derived_subject', False):
+            subject_name_flags = _USER_AD_DERIVED_SUBJECT_NAME_FLAGS
+        else:
+            subject_name_flags = _SUBJECT_NAME_FLAGS
         etree.SubElement(attributes, '{%s}subjectNameFlags' % XCEP_NS).text = str(subject_name_flags)
         etree.SubElement(attributes, '{%s}enrollmentFlags' % XCEP_NS).text = str(_ENROLLMENT_FLAGS)
         if is_machine_template:

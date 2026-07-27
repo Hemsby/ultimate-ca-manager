@@ -195,6 +195,7 @@ class CSROperationsMixin:
         require_pop: bool = True,
         ms_certificate_template_oid: Optional[str] = None,
         override_subject: Optional[x509.Name] = None,
+        override_san: Optional[List[x509.GeneralName]] = None,
     ) -> bytes:
         """Sign a CSR with a CA. ``renewal_of``: existing certificate this
         signing renews — its names are graced by NameConstraints validation.
@@ -211,14 +212,22 @@ class CSROperationsMixin:
         ``override_subject``: replaces the CSR's own (possibly empty)
         subject before anything else happens with it — only WSTEP's Kerberos
         binding passes this, for the "naked" (no CN, no SAN) CSRs real
-        Windows GPO machine autoenrollment submits for machine templates,
-        trusting the CA to derive the subject from AD (see
+        Windows GPO autoenrollment submits for templates configured to build
+        the subject from AD, trusting the CA to derive it server-side (see
         services/ad_connector/lookup.py). Computed before NameConstraints
         validation below, not after, so the constraint check sees the name
         that will actually land on the certificate rather than the raw
         CSR's own (empty) one — applying it later would let a CA's
         NameConstraints be silently bypassed by whatever subject was
-        derived server-side."""
+        derived server-side.
+        ``override_san``: replaces the auto-synthesized SAN outright when
+        given, instead of deriving it from ``override_subject``'s CN via
+        ``_synthesize_san_from_subject``. Needed for AD-derived user
+        subjects: a user's directory-path CN (e.g. "Roy Hagland") isn't a
+        DNS name or email address, so synthesis would build a nonsensical
+        DNSName SAN entry — real ADCS instead puts the user's UPN in SAN as
+        a Microsoft OtherName, which the caller (wstep_service) builds and
+        passes here directly."""
         from utils.eku_validation import normalize_extra_ekus, to_object_identifiers, merge_eku_lists
 
         # Load CSR
@@ -253,7 +262,12 @@ class CSROperationsMixin:
             csr_sans = None
             has_csr_san = False
 
-        effective_sans = csr_sans if has_csr_san else _synthesize_san_from_subject(subject)
+        if override_san is not None:
+            effective_sans = override_san
+        elif has_csr_san:
+            effective_sans = csr_sans
+        else:
+            effective_sans = _synthesize_san_from_subject(subject)
 
         ConstraintsMixin._validate_name_constraints(
             ca_cert, subject, effective_sans if effective_sans else None, renewal_of=renewal_of

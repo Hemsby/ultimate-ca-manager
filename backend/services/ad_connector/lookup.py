@@ -12,13 +12,16 @@ Two things live here:
    template selector anywhere in MS-WSTEP's wire protocol to key off instead
    (see wstep_service.py's ``_match_template_oid`` docstring).
 
-2. The actual AD lookup (``lookup_computer_dns_hostname``) MS-WSTEP's
-   Kerberos issuance path uses to resolve a naked (subject-less) CSR's
-   identity: real Windows unattended GPO autoenrollment intentionally
-   submits a CSR with no CN/SAN for machine templates, trusting the CA to
-   derive ``CN=<computer's AD dnsHostName>`` server-side -- exactly what
-   real ADCS does from the requester's AD computer object. UCM has no other
-   source for that name, hence this connector.
+2. The actual AD lookups (``lookup_computer_dns_hostname``,
+   ``lookup_user_ad_identity``) MS-WSTEP's Kerberos issuance path uses to
+   resolve a naked (subject-less) CSR's identity: real Windows unattended
+   GPO autoenrollment intentionally submits a CSR with no CN/SAN for
+   templates configured to build the subject from Active Directory,
+   trusting the CA to derive it server-side -- ``CN=<computer's AD
+   dnsHostName>`` for a machine account, or the user object's own
+   directory-path DN plus its ``userPrincipalName`` as a SAN OtherName for
+   a person account -- exactly what real ADCS does from the requester's AD
+   object. UCM has no other source for that identity, hence this connector.
 
 Bind/search mechanics mirror ``api/v2/sso/connection_tests.py``'s
 ``_ldap_authenticate_user``/``api/v2/sso/helpers.py``'s ``_build_ldap_tls``
@@ -160,6 +163,62 @@ def lookup_computer_dns_hostname(sam_account_name):
         return str(entry.dNSHostName.value)
     except Exception as e:
         logger.warning("AD Connector: computer lookup failed: %s", e)
+        return None
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
+
+def lookup_user_ad_identity(sam_account_name):
+    """The AD user object's directory path (as ordered RDN components, for
+    building an x509.Name matching real ADCS's directory-path subject) and
+    userPrincipalName, for ``sam_account_name`` (no trailing ``$`` -- a real
+    person account, not a computer -- see ``is_machine_principal``).
+
+    Returns ``{'dn_components': [(attr, value), ...], 'upn': str}`` -- the
+    DN components ordered exactly as AD returns them (leaf to root, e.g.
+    ``[('CN', 'Roy Hagland'), ('CN', 'Users'), ('DC', 'hagland'), ('DC',
+    'domain')]``), confirmed against a real ADCS-issued User certificate's
+    subject in the lab. ``None`` on every failure mode -- connector not
+    configured/disabled, unreachable, bind failure, entry not found, or no
+    ``userPrincipalName`` set. Never raises.
+    """
+    from ldap3.utils.conv import escape_filter_chars
+    from ldap3.utils.dn import parse_dn
+
+    from models import ADConnectorConfig
+
+    config = ADConnectorConfig.get_singleton()
+    if not config or not config.enabled or not config.server or not config.base_dn:
+        return None
+
+    try:
+        conn = _connect(config)
+    except Exception as e:
+        logger.warning("AD Connector: bind failed during user lookup: %s", e)
+        return None
+
+    try:
+        safe_sam = escape_filter_chars(sam_account_name)
+        conn.search(
+            config.base_dn,
+            f'(&(objectCategory=person)(objectClass=user)(sAMAccountName={safe_sam}))',
+            attributes=['userPrincipalName'],
+        )
+        if not conn.entries:
+            return None
+        entry = conn.entries[0]
+        if 'userPrincipalName' not in entry or not entry.userPrincipalName.value:
+            return None
+        upn = str(entry.userPrincipalName.value)
+        dn_components = [(attr, value) for attr, value, _sep in parse_dn(entry.entry_dn)]
+        if not dn_components:
+            return None
+        return {'dn_components': dn_components, 'upn': upn}
+    except Exception as e:
+        logger.warning("AD Connector: user identity lookup failed: %s", e)
         return None
     finally:
         try:

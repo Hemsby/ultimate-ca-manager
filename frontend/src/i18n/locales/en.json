@@ -1014,6 +1014,8 @@
     "templateName": "Template Name",
     "templateType": "Template Type",
     "subjectTemplate": "Subject Template",
+    "adDerivedSubject": "Build subject from Active Directory",
+    "adDerivedSubjectDescription": "For unattended GPO autoenrollment: derive this certificate's subject and SAN from the requester's Active Directory object (via the AD Connector) instead of requiring the client to supply one. Matches how a real ADCS template is configured for autoenrollment.",
     "keySettings": "Key Settings",
     "extensions": "Extensions",
     "noTemplates": "No templates",

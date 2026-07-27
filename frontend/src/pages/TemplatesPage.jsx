@@ -621,7 +621,8 @@ function buildInitialState(template) {
       subject: { C: '', ST: '', L: '', O: '', OU: '', CN: '' },
       key_usage: ['digitalSignature', 'keyEncipherment'],
       extended_key_usage: ['serverAuth'],
-      san_types: ['dns', 'ip']
+      san_types: ['dns', 'ip'],
+      ad_derived_subject: false
     }
   }
   const dn = template.dn_template || {}
@@ -640,7 +641,8 @@ function buildInitialState(template) {
     },
     key_usage: ext.key_usage || [],
     extended_key_usage: ext.extended_key_usage || [],
-    san_types: ext.san_types || []
+    san_types: ext.san_types || [],
+    ad_derived_subject: template.ad_derived_subject || false
   }
 }
 
@@ -683,7 +685,8 @@ function TemplateForm({ template, onSubmit, onCancel }) {
           extended_key_usage: formData.extended_key_usage,
           basic_constraints: { ca: false },
           san_types: formData.san_types
-        }
+        },
+        ad_derived_subject: formData.ad_derived_subject
       })
     } finally {
       setLoading(false)
@@ -766,6 +769,16 @@ function TemplateForm({ template, onSubmit, onCancel }) {
           <Input label="OU" value={formData.subject.OU} onChange={(e) => updateSubject('OU', e.target.value)} placeholder="IT Department" />
           <Input label={t('templates.commonName')} value={formData.subject.CN} onChange={(e) => updateSubject('CN', e.target.value)} placeholder={t('templates.cnPlaceholder')} />
         </div>
+        <label className={`${checkboxCls} mt-3`}>
+          <input
+            type="checkbox"
+            checked={formData.ad_derived_subject}
+            onChange={(e) => set('ad_derived_subject', e.target.checked)}
+            className="accent-accent-primary"
+          />
+          {t('templates.adDerivedSubject')}
+        </label>
+        <p className="text-xs text-text-secondary mt-1">{t('templates.adDerivedSubjectDescription')}</p>
       </div>
 
       {/* Extensions */}

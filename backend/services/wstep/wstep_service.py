@@ -19,10 +19,60 @@ from models import Certificate
 from services.ca_service import CAService
 from utils.datetime_utils import utc_now
 from utils.key_type import validate_enrollment_public_key
+from utils.upn_san import build_upn_other_name
 
 from . import ws_security
 
 logger = logging.getLogger(__name__)
+
+# AD DN RDN attribute names (as ldap3's parse_dn returns them from a real
+# AD distinguishedName) -> the x509.Name attribute OID they map to. Covers
+# the components a real ADCS User certificate's directory-path subject
+# uses (confirmed in the lab: CN=Roy Hagland, CN=Users, DC=hagland,
+# DC=domain) plus the other standard DN attributes AD may plausibly return.
+_DN_ATTR_OIDS = {
+    'CN': NameOID.COMMON_NAME,
+    'OU': NameOID.ORGANIZATIONAL_UNIT_NAME,
+    'O': NameOID.ORGANIZATION_NAME,
+    'DC': NameOID.DOMAIN_COMPONENT,
+    'L': NameOID.LOCALITY_NAME,
+    'S': NameOID.STATE_OR_PROVINCE_NAME,
+    'ST': NameOID.STATE_OR_PROVINCE_NAME,
+    'C': NameOID.COUNTRY_NAME,
+}
+
+
+def _x509_name_from_dn_components(dn_components):
+    """Build an x509.Name from AD DN RDN components (attr, value) pairs.
+
+    ``dn_components`` arrives leaf-to-root (AD's own ``distinguishedName``
+    string order, e.g. ``[('CN', 'Roy Hagland'), ('CN', 'Users'), ('DC',
+    'hagland'), ('DC', 'domain')]``) -- but ``x509.Name`` expects attributes
+    in root-to-leaf (DER SEQUENCE) order and reverses internally for RFC4514
+    display. Confirmed empirically: building ``x509.Name`` directly from
+    AD's leaf-first order produces ``rfc4514_string()`` == "DC=domain,
+    DC=hagland,CN=Users,CN=Roy Hagland" -- backwards from the real
+    ADCS-issued cert's own "CN=Roy Hagland, CN=Users, DC=hagland,
+    DC=domain". The components must be reversed here, once, or every
+    AD-derived user subject silently comes out RDN-reversed.
+
+    None if any component's attribute type isn't recognized -- fail closed
+    rather than silently dropping or mis-mapping a component real ADCS
+    would have included.
+    """
+    attrs = []
+    for attr_name, value in reversed(dn_components):
+        oid = _DN_ATTR_OIDS.get(attr_name.upper())
+        if oid is None:
+            logger.warning(
+                "AD Connector: unrecognized DN attribute %r building subject "
+                "from AD -- refusing to derive a partial subject", attr_name,
+            )
+            return None
+        attrs.append(x509.NameAttribute(oid, value))
+    if not attrs:
+        return None
+    return x509.Name(attrs)
 
 # ``cryptography``'s CertificateSigningRequest.is_signature_valid reports
 # False for a SHA-1-signed CSR even when the signature is mathematically
@@ -204,6 +254,32 @@ def _match_template_oid(ca, csr):
     return _policy_oid_for_template(ca, best)
 
 
+def _user_ad_derivation_enabled(ca):
+    """Whether any template resolvable for ``ca`` has opted into
+    AD-derived user subjects (``CertificateTemplate.ad_derived_subject``).
+
+    Deliberately independent of ``_match_template_oid``'s EKU-based
+    scoring above: a naked CSR (the only kind this ever applies to — see
+    ``issue()``) carries no EKU extension, so it scores negative against
+    any candidate template that declares EKUs at all, meaning EKU-based
+    matching alone would almost always find nothing and this feature would
+    silently never fire. This only asks "did an admin opt any template
+    into AD-derivation for this CA," mirroring how the machine branch below
+    has no template dependency either — MS-WSTEP's wire protocol has no
+    template-selection signal to check instead (see ``_match_template_oid``'s
+    docstring).
+    """
+    try:
+        from models import CertificateTemplate
+        from services.xcep.policy_builder import _resolve_templates_for_ca
+    except Exception:
+        return False
+
+    all_active = CertificateTemplate.query.filter_by(is_active=True).all()
+    candidates = _resolve_templates_for_ca(ca, all_active)
+    return any(getattr(t, 'ad_derived_subject', False) for t in candidates)
+
+
 def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos_principal=None):
     """UsernamePassword-bound initial enrollment. Returns (cert_pem, error).
 
@@ -213,33 +289,61 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
     be relied on for real Windows clients.
 
     ``kerberos_principal``: the authenticated Kerberos principal, e.g.
-    ``'WIN11$@HAGLAND.DOMAIN'`` -- passed *only* by the Kerberos-bound CES
-    route (never the UsernamePassword one, which has no Kerberos identity
-    to give). When set and the CSR is naked (see ``_is_naked_csr``) and the
-    principal is a machine account, attempts to derive a subject via the AD
-    Connector (``services/ad_connector/lookup.py``) instead of rejecting
-    outright -- what real Windows GPO machine autoenrollment needs, since it
-    deliberately submits a subject-less CSR trusting the CA to fill it in
-    from AD, the same way real ADCS does. Falls through to the normal
-    naked-CSR rejection if the connector isn't configured or the lookup
-    fails for any reason (computer not found, LDAP unreachable, ...).
+    ``'WIN11$@HAGLAND.DOMAIN'`` (machine) or ``'roy.hagland@HAGLAND.DOMAIN'``
+    (user) -- passed *only* by the Kerberos-bound CES route (never the
+    UsernamePassword one, which has no Kerberos identity to give). When set
+    and the CSR is naked (see ``_is_naked_csr``), attempts to derive a
+    subject via the AD Connector (``services/ad_connector/lookup.py``)
+    instead of rejecting outright -- what real Windows GPO autoenrollment
+    needs, since it deliberately submits a subject-less CSR for templates
+    configured to build the subject from AD, trusting the CA to fill it in
+    server-side the same way real ADCS does:
+
+    - Machine principal: ``CN=<computer's AD dnsHostName>``, no SAN needed
+      (the certificate's own CN synthesizes a matching SAN downstream).
+      Unconditional on any template -- MS-WSTEP has no template-selection
+      signal to gate it on (see ``_match_template_oid``'s docstring), and
+      this is the already lab-verified path; it must not gain a new
+      failure mode from the toggle below.
+    - User principal: the AD user object's own directory-path DN as the
+      subject, plus its ``userPrincipalName`` as a SAN OtherName -- matches
+      a real ADCS-issued User certificate's shape exactly (confirmed
+      against the lab: ``CN=Roy Hagland, CN=Users, DC=hagland, DC=domain``
+      + ``Other Name:Principal Name=roy.hagland@hagland.domain``). Only
+      attempted when at least one template resolvable for ``ca`` has opted
+      in via ``CertificateTemplate.ad_derived_subject`` (see
+      ``_user_ad_derivation_enabled``) -- unlike the machine path, this is
+      new behavior, so it's admin opt-in per template rather than always-on.
+
+    Falls through to the normal naked-CSR rejection if the connector isn't
+    configured, no template has opted in, or the lookup fails for any
+    reason (account not found, LDAP unreachable, no userPrincipalName
+    set, ...).
     """
     csr, err = _load_csr(csr_der)
     if err:
         return None, err
 
     override_subject = None
+    override_san = None
     if kerberos_principal and _is_naked_csr(csr):
         from services.ad_connector import lookup
-        if lookup.is_machine_principal(kerberos_principal):
-            parsed = lookup.parse_kerberos_principal(kerberos_principal)
-            if parsed:
-                sam_account_name, _realm = parsed
+        parsed = lookup.parse_kerberos_principal(kerberos_principal)
+        if parsed:
+            sam_account_name, _realm = parsed
+            if lookup.is_machine_principal(kerberos_principal):
                 dns_hostname = lookup.lookup_computer_dns_hostname(sam_account_name)
                 if dns_hostname:
                     override_subject = x509.Name(
                         [x509.NameAttribute(NameOID.COMMON_NAME, dns_hostname)]
                     )
+            elif _user_ad_derivation_enabled(ca):
+                identity = lookup.lookup_user_ad_identity(sam_account_name)
+                if identity:
+                    derived_subject = _x509_name_from_dn_components(identity['dn_components'])
+                    if derived_subject is not None:
+                        override_subject = derived_subject
+                        override_san = [build_upn_other_name(identity['upn'])]
 
     err = _validate_csr(
         csr, require_pop=require_pop, allow_naked_subject=override_subject is not None
@@ -253,6 +357,7 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
             require_pop=require_pop,
             ms_certificate_template_oid=_match_template_oid(ca, csr),
             override_subject=override_subject,
+            override_san=override_san,
         )
     except Exception as e:
         logger.error('WSTEP issue failed: %s', e)

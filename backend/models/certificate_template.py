@@ -37,6 +37,13 @@ class CertificateTemplate(db.Model):
     # Flags
     is_system = db.Column(db.Boolean, default=False)  # System templates can't be deleted
     is_active = db.Column(db.Boolean, default=True)
+
+    # Build the subject/SAN from the requester's Active Directory object
+    # (via the AD Connector) instead of the CSR's own, for naked CSRs real
+    # Windows GPO autoenrollment submits -- the per-template opt-in
+    # mirroring real ADCS's own msPKI-Certificate-Name-Flag configurability
+    # (see services/wstep/wstep_service.py's issue()).
+    ad_derived_subject = db.Column(db.Boolean, default=False)
     
     # Metadata
     created_at = db.Column(db.DateTime, default=utc_now)
@@ -59,6 +66,7 @@ class CertificateTemplate(db.Model):
             "extensions_template": json.loads(self.extensions_template) if self.extensions_template else {},
             "is_system": self.is_system,
             "is_active": self.is_active,
+            "ad_derived_subject": bool(self.ad_derived_subject),
             "created_at": utc_isoformat(self.created_at),
             "created_by": self.created_by,
             "updated_at": utc_isoformat(self.updated_at),

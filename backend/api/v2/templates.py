@@ -241,13 +241,14 @@ def create_template():
         extensions_template=json.dumps(extensions),
         is_system=False,  # User-created templates are never system
         is_active=True,
+        ad_derived_subject=bool(data.get('ad_derived_subject', False)),
         created_by=g.current_user.username
     )
-    
+
     try:
         db.session.add(template)
         db.session.commit()
-        
+
         AuditService.log_action(
             action='template_create',
             resource_type='template',
@@ -344,7 +345,10 @@ def update_template(template_id):
     
     if 'is_active' in data:
         template.is_active = bool(data['is_active'])
-    
+
+    if 'ad_derived_subject' in data:
+        template.ad_derived_subject = bool(data['ad_derived_subject'])
+
     template.updated_by = g.current_user.username
     template.updated_at = utc_now()
     
@@ -500,6 +504,7 @@ def duplicate_template(template_id):
         extensions_template=template.extensions_template,
         is_system=False,
         is_active=template.is_active,
+        ad_derived_subject=template.ad_derived_subject,
         created_by=g.current_user.username
     )
 
