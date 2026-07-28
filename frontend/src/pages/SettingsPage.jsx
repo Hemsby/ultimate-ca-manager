@@ -93,6 +93,21 @@ const SSO_PROVIDER_ICONS = {
   saml: Shield,
 }
 
+// Fields each "Save Changes" button owns -- lets handleSave() send only its
+// own card's fields instead of the whole settings object.
+const SECTION_FIELDS = {
+  generalSite: ['system_name', 'base_url', 'protocol_base_url', 'http_protocol_port', 'acme_public_vhost', 'acme_public_port', 'acme_public_tls_cert_id'],
+  generalSession: ['session_timeout', 'max_login_attempts', 'lockout_duration', 'timezone', 'date_format', 'show_time'],
+  security2fa: ['enforce_2fa'],
+  securityHsts: ['hsts_enabled', 'hsts_include_subdomains', 'hsts_max_age', 'ocsp_response_validity_hours'],
+  securityKeyRecovery: ['key_recovery_dual_control'],
+  securityPassword: ['min_password_length', 'password_require_uppercase', 'password_require_numbers', 'password_require_special'],
+  securitySession: ['session_max_lifetime', 'api_rate_limit'],
+  backupAuto: ['auto_backup_enabled', 'backup_frequency', 'backup_password'],
+  backupRetention: ['backup_retention_days'],
+  audit: ['audit_enabled', 'audit_retention_days'],
+}
+
 export default function SettingsPage() {
   const { t } = useTranslation()
   const { showSuccess, showError, showConfirm, showPrompt, showWarning } = useNotification()
@@ -1040,7 +1055,11 @@ export default function SettingsPage() {
           smtp_oauth_redirect_uri: settings.smtp_oauth_redirect_uri,
         })
       } else {
-        await settingsService.updateBulk(settings)
+        const fields = SECTION_FIELDS[section]
+        const payload = fields
+          ? Object.fromEntries(fields.map((key) => [key, settings[key]]))
+          : settings
+        await settingsService.updateBulk(payload)
       }
       showSuccess(t('messages.success.update.settings'))
       if (section === 'email') setOauthDirty(false)
