@@ -118,12 +118,10 @@ class APIClient {
       const response = await fetch(url, config)
       
       // Handle different response types
-      // Error bodies may be `application/problem+json` (RFC 7807) rather than
-      // plain `application/json` -- both must be parsed as JSON.
       const contentType = response.headers.get('content-type')
       let data
-
-      if (contentType && /application\/(problem\+)?json/.test(contentType)) {
+      
+      if (contentType && contentType.includes('application/json')) {
         data = await response.json()
       } else if (options.responseType === 'blob') {
         data = await response.blob()
