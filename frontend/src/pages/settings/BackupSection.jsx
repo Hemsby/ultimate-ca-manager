@@ -69,7 +69,7 @@ export default function BackupSection({
 
           {isAdmin && (
             <div className="flex gap-2">
-              <Button type="button" onClick={() => handleSave('backupAuto')} disabled={saving}>
+              <Button type="button" onClick={() => handleSave('backup')} disabled={saving}>
                 <FloppyDisk size={16} />
                 {t('settings.saveSettings')}
               </Button>
@@ -96,7 +96,7 @@ export default function BackupSection({
           />
           {isAdmin && (
             <div className="flex gap-2">
-              <Button type="button" onClick={() => handleSave('backupRetention')} disabled={saving}>
+              <Button type="button" onClick={() => handleSave('backup')} disabled={saving}>
                 <FloppyDisk size={16} />
                 {t('settings.saveSettings')}
               </Button>

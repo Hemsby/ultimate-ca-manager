@@ -78,20 +78,12 @@ export default function SecuritySection({ settings, updateSetting, handleSave, s
         )}
       </DetailSection>
       <DetailSection title={t('common.twoFactorAuth')} icon={ShieldCheck} iconClass="icon-bg-emerald">
-        <div className="space-y-4">
-          <ToggleSwitch
-            checked={settings.enforce_2fa || false}
-            onChange={(val) => updateSetting('enforce_2fa', val)}
-            label={t('settings.enforce2fa')}
-            description={t('settings.enforce2faDesc')}
-          />
-          {hasPermission('admin:system') && (
-            <Button type="button" onClick={() => handleSave('security2fa')} disabled={saving}>
-              <FloppyDisk size={16} />
-              {t('common.saveChanges')}
-            </Button>
-          )}
-        </div>
+        <ToggleSwitch
+          checked={settings.enforce_2fa || false}
+          onChange={(val) => updateSetting('enforce_2fa', val)}
+          label={t('settings.enforce2fa')}
+          description={t('settings.enforce2faDesc')}
+        />
       </DetailSection>
       <DetailSection title={t('settings.hstsTitle')} icon={Globe} iconClass="icon-bg-sky">
         <div className="space-y-4">
@@ -145,7 +137,7 @@ export default function SecuritySection({ settings, updateSetting, handleSave, s
             helperText={t('settings.ocspResponseValidityDesc')}
           />
           {hasPermission('admin:system') && (
-            <Button type="button" onClick={() => handleSave('securityHsts')} disabled={saving}>
+            <Button type="button" onClick={() => handleSave('security')} disabled={saving}>
               <FloppyDisk size={16} />
               {t('common.saveChanges')}
             </Button>
@@ -168,7 +160,7 @@ export default function SecuritySection({ settings, updateSetting, handleSave, s
             </div>
           )}
           {hasPermission('admin:system') && !settings.key_recovery_dual_control_locked && (
-            <Button type="button" onClick={() => handleSave('securityKeyRecovery')} disabled={saving}>
+            <Button type="button" onClick={() => handleSave('security')} disabled={saving}>
               <FloppyDisk size={16} />
               {t('common.saveChanges')}
             </Button>
@@ -205,12 +197,6 @@ export default function SecuritySection({ settings, updateSetting, handleSave, s
               size="sm"
             />
           </div>
-          {hasPermission('admin:system') && (
-            <Button type="button" onClick={() => handleSave('securityPassword')} disabled={saving}>
-              <FloppyDisk size={16} />
-              {t('common.saveChanges')}
-            </Button>
-          )}
         </div>
       </DetailSection>
       <DetailSection title={t('settings.anomalyDetection')} icon={Warning} iconClass="icon-bg-orange"
@@ -289,7 +275,7 @@ export default function SecuritySection({ settings, updateSetting, handleSave, s
         </DetailGrid>
         {hasPermission('admin:system') && (
           <div className="pt-4">
-            <Button type="button" onClick={() => handleSave('securitySession')} disabled={saving}>
+            <Button type="button" onClick={() => handleSave('security')} disabled={saving}>
               <FloppyDisk size={16} />
               {t('common.saveChanges')}
             </Button>
