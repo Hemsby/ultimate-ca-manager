@@ -209,6 +209,11 @@ export default function TemplatesPage() {
                 {t('templates.adDerivedBadge')}
               </Badge>
             )}
+            {row.autoenroll_enabled && (
+              <Badge variant="cyan" size="sm" title={t('templates.autoenrollBadgeTooltip')}>
+                {t('templates.autoenrollBadge')}
+              </Badge>
+            )}
           </div>
         )
       },
@@ -227,6 +232,11 @@ export default function TemplatesPage() {
               {row.ad_derived_subject && (
                 <Badge variant="violet" size="sm" title={t('templates.adDerivedBadgeTooltip')}>
                   {t('templates.adDerivedBadge')}
+                </Badge>
+              )}
+              {row.autoenroll_enabled && (
+                <Badge variant="cyan" size="sm" title={t('templates.autoenrollBadgeTooltip')}>
+                  {t('templates.autoenrollBadge')}
                 </Badge>
               )}
               <Badge variant={type === 'ca' ? 'amber' : 'primary'} size="sm" dot>
@@ -351,6 +361,11 @@ export default function TemplatesPage() {
                 {t('templates.adDerivedBadge')}
               </Badge>
             )}
+            {selectedTemplate.autoenroll_enabled && (
+              <Badge variant="cyan" size="sm" title={t('templates.autoenrollBadgeTooltip')}>
+                {t('templates.autoenrollBadge')}
+              </Badge>
+            )}
           </div>
         }
       />
@@ -410,6 +425,12 @@ export default function TemplatesPage() {
           <CompactField autoIcon="organization" label={t('templates.organization')} value={selectedTemplate.dn_template?.O || '—'} />
           <CompactField autoIcon="commonName" label={t('templates.commonName')} value={selectedTemplate.dn_template?.CN || '—'} />
           <CompactField autoIcon="default" label={t('templates.adDerivedSubject')} value={selectedTemplate.ad_derived_subject ? t('common.enabled') : t('common.disabled')} />
+        </CompactGrid>
+      </CompactSection>
+
+      <CompactSection title={t('templates.enrollment')} icon={ShieldCheck}>
+        <CompactGrid columns={2}>
+          <CompactField autoIcon="default" label={t('templates.autoenrollEnabled')} value={selectedTemplate.autoenroll_enabled ? t('common.enabled') : t('common.disabled')} />
         </CompactGrid>
       </CompactSection>
 
@@ -642,7 +663,8 @@ function buildInitialState(template) {
       key_usage: ['digitalSignature', 'keyEncipherment'],
       extended_key_usage: ['serverAuth'],
       san_types: ['dns', 'ip'],
-      ad_derived_subject: false
+      ad_derived_subject: false,
+      autoenroll_enabled: false
     }
   }
   const dn = template.dn_template || {}
@@ -662,7 +684,8 @@ function buildInitialState(template) {
     key_usage: ext.key_usage || [],
     extended_key_usage: ext.extended_key_usage || [],
     san_types: ext.san_types || [],
-    ad_derived_subject: template.ad_derived_subject || false
+    ad_derived_subject: template.ad_derived_subject || false,
+    autoenroll_enabled: template.autoenroll_enabled || false
   }
 }
 
@@ -706,7 +729,8 @@ function TemplateForm({ template, onSubmit, onCancel }) {
           basic_constraints: { ca: false },
           san_types: formData.san_types
         },
-        ad_derived_subject: formData.ad_derived_subject
+        ad_derived_subject: formData.ad_derived_subject,
+        autoenroll_enabled: formData.autoenroll_enabled
       })
     } finally {
       setLoading(false)
@@ -799,6 +823,21 @@ function TemplateForm({ template, onSubmit, onCancel }) {
           {t('templates.adDerivedSubject')}
         </label>
         <p className="text-xs text-text-secondary mt-1">{t('templates.adDerivedSubjectDescription')}</p>
+      </div>
+
+      {/* Enrollment */}
+      <div className="border-t border-border pt-4">
+        <h4 className={sectionTitle}>{t('templates.enrollment')}</h4>
+        <label className={checkboxCls}>
+          <input
+            type="checkbox"
+            checked={formData.autoenroll_enabled}
+            onChange={(e) => set('autoenroll_enabled', e.target.checked)}
+            className="accent-accent-primary"
+          />
+          {t('templates.autoenrollEnabled')}
+        </label>
+        <p className="text-xs text-text-secondary mt-1">{t('templates.autoenrollEnabledDescription')}</p>
       </div>
 
       {/* Extensions */}

@@ -44,7 +44,18 @@ class CertificateTemplate(db.Model):
     # mirroring real ADCS's own msPKI-Certificate-Name-Flag configurability
     # (see services/wstep/wstep_service.py's issue()).
     ad_derived_subject = db.Column(db.Boolean, default=False)
-    
+
+    # Whether MS-XCEP's GetPolicies advertises autoEnroll=true for this
+    # template -- real ADCS's Enroll and Autoenroll are two separate ACL
+    # permission bits (Enroll lets a principal manually request a cert;
+    # Autoenroll is required on top of that before unattended background
+    # autoenrollment will pick the template up at all). Without this,
+    # every active template got offered for autoenrollment to every
+    # Kerberos-authenticated principal at logon, not just the ones meant
+    # for it. Defaults false, matching how real templates default to
+    # Enroll-broadly/Autoenroll-narrowly.
+    autoenroll_enabled = db.Column(db.Boolean, default=False)
+
     # Metadata
     created_at = db.Column(db.DateTime, default=utc_now)
     created_by = db.Column(db.String(80))
@@ -67,6 +78,7 @@ class CertificateTemplate(db.Model):
             "is_system": self.is_system,
             "is_active": self.is_active,
             "ad_derived_subject": bool(self.ad_derived_subject),
+            "autoenroll_enabled": bool(self.autoenroll_enabled),
             "created_at": utc_isoformat(self.created_at),
             "created_by": self.created_by,
             "updated_at": utc_isoformat(self.updated_at),

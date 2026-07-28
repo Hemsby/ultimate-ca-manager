@@ -392,9 +392,19 @@ def build_get_policies_response(ca, templates, enrollment_uris=(), message_id=No
             int(validity_seconds * 0.2)
         )
 
+        # enroll vs autoEnroll mirrors real ADCS's two separate ACL
+        # permission bits: Enroll lets a principal manually request a
+        # certificate; Autoenroll is required on top of that before
+        # unattended background autoenrollment will pick the template up
+        # at all. UCM previously sent autoEnroll=true unconditionally,
+        # meaning every active template got offered to every
+        # Kerberos-authenticated principal at logon, not just the ones an
+        # admin actually meant for unattended enrollment.
         permission = etree.SubElement(attributes, '{%s}permission' % XCEP_NS)
         etree.SubElement(permission, '{%s}enroll' % XCEP_NS).text = 'true'
-        etree.SubElement(permission, '{%s}autoEnroll' % XCEP_NS).text = 'true'
+        etree.SubElement(permission, '{%s}autoEnroll' % XCEP_NS).text = (
+            'true' if getattr(template, 'autoenroll_enabled', False) else 'false'
+        )
 
         # privateKeyAttributes' sequence: minimalKeyLength, keySpec,
         # keyUsageProperty, permissions, algorithmOIDReference,

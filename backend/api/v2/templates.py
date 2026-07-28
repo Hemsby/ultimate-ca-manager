@@ -242,6 +242,7 @@ def create_template():
         is_system=False,  # User-created templates are never system
         is_active=True,
         ad_derived_subject=bool(data.get('ad_derived_subject', False)),
+        autoenroll_enabled=bool(data.get('autoenroll_enabled', False)),
         created_by=g.current_user.username
     )
 
@@ -348,6 +349,9 @@ def update_template(template_id):
 
     if 'ad_derived_subject' in data:
         template.ad_derived_subject = bool(data['ad_derived_subject'])
+
+    if 'autoenroll_enabled' in data:
+        template.autoenroll_enabled = bool(data['autoenroll_enabled'])
 
     template.updated_by = g.current_user.username
     template.updated_at = utc_now()
@@ -505,6 +509,7 @@ def duplicate_template(template_id):
         is_system=False,
         is_active=template.is_active,
         ad_derived_subject=template.ad_derived_subject,
+        autoenroll_enabled=template.autoenroll_enabled,
         created_by=g.current_user.username
     )
 

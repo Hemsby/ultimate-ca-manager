@@ -267,6 +267,15 @@ def test_get_policies_returns_pinned_template(client, xcep_config):
     assert general_flags.get('{http://www.w3.org/2001/XMLSchema-instance}nil') is None
     assert int(general_flags.text) == 0x00000040
 
+    # enroll and autoEnroll are two separate permission bits, mirroring
+    # real ADCS's ACL model -- a template not opted into autoenroll_enabled
+    # must still allow manual enrollment (enroll=true) but must NOT be
+    # offered for unattended autoenrollment (autoEnroll=false), matching
+    # this fixture's template which never set autoenroll_enabled.
+    permission = policies[0].find(f'.//{{{XCEP_NS}}}permission')
+    assert permission.find(f'{{{XCEP_NS}}}enroll').text == 'true'
+    assert permission.find(f'{{{XCEP_NS}}}autoEnroll').text == 'false'
+
     # CAURI is always advertised now, regardless of whether WSTEP is
     # currently enabled -- CAURICollection requires at least one entry
     # (minOccurs="1"), so an empty uris/CAURICollection would itself be
@@ -331,6 +340,67 @@ def test_get_policies_falls_back_to_active_templates_when_unpinned(client, app, 
             tmpl = db.session.get(CertificateTemplate, template_id)
             if tmpl:
                 db.session.delete(tmpl)
+            db.session.commit()
+            if previous_value is None:
+                row = SystemConfig.query.filter_by(key='xcep_ca_refid').first()
+                if row:
+                    db.session.delete(row)
+                db.session.commit()
+            else:
+                _set_config('xcep_ca_refid', previous_value)
+
+
+def test_get_policies_autoenroll_reflects_per_template_flag(client, app, create_ca):
+    """autoEnroll must be per-template (autoenroll_enabled), independent of
+    enroll -- a template with it on gets autoEnroll=true; one without still
+    gets enroll=true (can be requested manually) but autoEnroll=false (not
+    offered for unattended autoenrollment). Mirrors real ADCS's separate
+    Enroll/Autoenroll ACL permission bits."""
+    ca_data = create_ca(cn='XCEP Autoenroll CA')
+    with app.app_context():
+        ca = db.session.get(CA, ca_data['id'])
+        previous_refid = SystemConfig.query.filter_by(key='xcep_ca_refid').first()
+        previous_value = previous_refid.value if previous_refid else None
+        _set_config('xcep_ca_refid', ca.refid)
+
+        auto_template = CertificateTemplate(
+            name='XCEP Autoenroll Template',
+            template_type='client_auth',
+            extensions_template=json.dumps({'extended_key_usage': ['clientAuth']}),
+            is_active=True,
+            autoenroll_enabled=True,
+        )
+        manual_template = CertificateTemplate(
+            name='XCEP Manual-Only Template',
+            template_type='client_auth',
+            extensions_template=json.dumps({'extended_key_usage': ['clientAuth']}),
+            is_active=True,
+            autoenroll_enabled=False,
+        )
+        db.session.add_all([auto_template, manual_template])
+        db.session.commit()
+        auto_id, manual_id = auto_template.id, manual_template.id
+
+    try:
+        r = client.post(XCEP_URL, data=b'<GetPolicies/>', headers=_basic_auth())
+        assert r.status_code == 200
+        root = etree.fromstring(r.data)
+        policies = root.findall(f'.//{{{XCEP_NS}}}policy')
+        by_name = {p.find(f'.//{{{XCEP_NS}}}commonName').text: p for p in policies}
+
+        auto_permission = by_name['XCEP Autoenroll Template'].find(f'.//{{{XCEP_NS}}}permission')
+        assert auto_permission.find(f'{{{XCEP_NS}}}enroll').text == 'true'
+        assert auto_permission.find(f'{{{XCEP_NS}}}autoEnroll').text == 'true'
+
+        manual_permission = by_name['XCEP Manual-Only Template'].find(f'.//{{{XCEP_NS}}}permission')
+        assert manual_permission.find(f'{{{XCEP_NS}}}enroll').text == 'true'
+        assert manual_permission.find(f'{{{XCEP_NS}}}autoEnroll').text == 'false'
+    finally:
+        with app.app_context():
+            for tid in (auto_id, manual_id):
+                tmpl = db.session.get(CertificateTemplate, tid)
+                if tmpl:
+                    db.session.delete(tmpl)
             db.session.commit()
             if previous_value is None:
                 row = SystemConfig.query.filter_by(key='xcep_ca_refid').first()
