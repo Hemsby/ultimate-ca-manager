@@ -1,18 +1,38 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { WindowsLogo, Globe, Certificate, ArrowsClockwise, FloppyDisk } from '@phosphor-icons/react'
+import { useNavigate } from 'react-router-dom'
+import { WindowsLogo, Globe, Certificate, ArrowsClockwise, FloppyDisk, CheckCircle, WarningCircle, ListChecks } from '@phosphor-icons/react'
 import { Button, Input, Select, DetailHeader, DetailSection, DetailContent } from '../../components'
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch'
-import { xcepWstepService, casService } from '../../services'
+import { xcepWstepService, casService, adConnectorService, kerberosService, templatesService } from '../../services'
 import { useNotification } from '../../contexts'
 import CopyableUrl from './CopyableUrl'
 
 const EMPTY_XCEP = { enabled: false, ca_id: null, username: '', password_set: false }
 const EMPTY_WSTEP = { enabled: false, ca_id: null, username: '', password_set: false, validity_days: 365 }
 
+function StatusRow({ ok, label, actionLabel, onAction }) {
+  return (
+    <div className="flex items-center justify-between gap-2 py-1.5">
+      <div className="flex items-center gap-2">
+        {ok ? (
+          <CheckCircle size={16} weight="fill" className="text-emerald-500 shrink-0" />
+        ) : (
+          <WarningCircle size={16} weight="fill" className="text-amber-500 shrink-0" />
+        )}
+        <span className="text-sm text-text-primary">{label}</span>
+      </div>
+      {!ok && onAction && (
+        <Button type="button" size="sm" variant="ghost" onClick={onAction}>{actionLabel}</Button>
+      )}
+    </div>
+  )
+}
+
 export default function XcepWstepSection() {
   const { t } = useTranslation()
   const { showSuccess, showError } = useNotification()
+  const navigate = useNavigate()
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
 
   const [cas, setCas] = useState([])
@@ -26,17 +46,32 @@ export default function XcepWstepSection() {
   const [wstepPassword, setWstepPassword] = useState('')
   const [wstepSaving, setWstepSaving] = useState(false)
 
+  // Setup checklist state -- read-only status pulled from the other
+  // settings surfaces (AD Connector, Kerberos, Templates) that a full GPO
+  // autoenrollment setup touches, so an admin can see what's still missing
+  // from one place instead of discovering it template by template.
+  const [adConnectorConfigured, setAdConnectorConfigured] = useState(false)
+  const [kerberosConfigured, setKerberosConfigured] = useState(false)
+  const [autoenrollTemplateCount, setAutoenrollTemplateCount] = useState(0)
+
   const loadAll = useCallback(async () => {
     setLoading(true)
     try {
-      const [casRes, xcepRes, wstepRes] = await Promise.all([
+      const [casRes, xcepRes, wstepRes, adRes, krbRes, tplRes] = await Promise.all([
         casService.getAll(),
         xcepWstepService.getXcep(),
         xcepWstepService.getWstep(),
+        adConnectorService.get().catch(() => ({ data: null })),
+        kerberosService.get().catch(() => ({ data: null })),
+        templatesService.getAll().catch(() => ({ data: [] })),
       ])
       setCas(casRes.data || [])
       setXcep(xcepRes.data || EMPTY_XCEP)
       setWstep(wstepRes.data || EMPTY_WSTEP)
+      setAdConnectorConfigured(Boolean(adRes.data?.enabled && adRes.data?.server))
+      setKerberosConfigured(Boolean(krbRes.data?.configured))
+      const templates = tplRes.data || []
+      setAutoenrollTemplateCount(templates.filter(tpl => tpl.autoenroll_enabled).length)
     } catch (error) {
       showError(error.message || t('messages.errors.loadFailed.generic'))
     } finally {
@@ -95,6 +130,37 @@ export default function XcepWstepSection() {
         title={t('xcepWstep.title')}
         subtitle={t('xcepWstep.subtitle')}
       />
+
+      <DetailSection title={t('xcepWstep.checklistTitle')} icon={ListChecks} iconClass="icon-bg-emerald">
+        <div className="space-y-3">
+          <div>
+            <p className="text-xs font-medium text-text-secondary mb-1">{t('xcepWstep.checklistManual')}</p>
+            <StatusRow ok={cas.length > 0} label={t('xcepWstep.checklistCa')} />
+            <StatusRow ok={xcep.enabled} label={t('xcepWstep.checklistXcep')} />
+            <StatusRow ok={wstep.enabled} label={t('xcepWstep.checklistWstep')} />
+          </div>
+          <div className="pt-2 border-t border-border">
+            <p className="text-xs font-medium text-text-secondary mb-1">{t('xcepWstep.checklistGpo')}</p>
+            <StatusRow
+              ok={adConnectorConfigured}
+              label={t('xcepWstep.checklistAdConnector')}
+              actionLabel={t('common.configure')}
+              onAction={() => navigate('/settings?tab=adConnector')}
+            />
+            <StatusRow
+              ok={kerberosConfigured}
+              label={t('xcepWstep.checklistKerberos')}
+            />
+            <StatusRow
+              ok={autoenrollTemplateCount > 0}
+              label={t('xcepWstep.checklistTemplates', { count: autoenrollTemplateCount })}
+              actionLabel={t('common.configure')}
+              onAction={() => navigate('/templates')}
+            />
+          </div>
+          <p className="text-xs text-text-tertiary pt-1">{t('xcepWstep.checklistKerberosNote')}</p>
+        </div>
+      </DetailSection>
 
       <DetailSection title={t('xcepWstep.xcepTitle')} icon={Globe} iconClass="icon-bg-cyan">
         <div className="space-y-4">
