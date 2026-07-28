@@ -173,17 +173,26 @@ def lookup_computer_dns_hostname(sam_account_name):
 
 def lookup_user_ad_identity(sam_account_name):
     """The AD user object's directory path (as ordered RDN components, for
-    building an x509.Name matching real ADCS's directory-path subject) and
-    userPrincipalName, for ``sam_account_name`` (no trailing ``$`` -- a real
-    person account, not a computer -- see ``is_machine_principal``).
+    building an x509.Name matching real ADCS's directory-path subject),
+    userPrincipalName, and mail (if set), for ``sam_account_name`` (no
+    trailing ``$`` -- a real person account, not a computer -- see
+    ``is_machine_principal``).
 
-    Returns ``{'dn_components': [(attr, value), ...], 'upn': str}`` -- the
-    DN components ordered exactly as AD returns them (leaf to root, e.g.
-    ``[('CN', 'Roy Hagland'), ('CN', 'Users'), ('DC', 'hagland'), ('DC',
-    'domain')]``), confirmed against a real ADCS-issued User certificate's
-    subject in the lab. ``None`` on every failure mode -- connector not
-    configured/disabled, unreachable, bind failure, entry not found, or no
-    ``userPrincipalName`` set. Never raises.
+    Returns ``{'dn_components': [(attr, value), ...], 'upn': str, 'mail':
+    str | None}`` -- the DN components ordered exactly as AD returns them
+    (leaf to root, e.g. ``[('CN', 'Roy Hagland'), ('CN', 'Users'), ('DC',
+    'hagland'), ('DC', 'domain')]``), confirmed against a real ADCS-issued
+    User certificate's subject in the lab. ``None`` on every failure mode
+    -- connector not configured/disabled, unreachable, bind failure, entry
+    not found, or no ``userPrincipalName`` set. Never raises.
+
+    ``mail`` is deliberately optional (``None`` when unset), not a failure
+    mode: real ADCS's own CT_FLAG_SUBJECT_REQUIRE_EMAIL hard-declines
+    autoenrollment outright for any user with no ``mail`` attribute, which
+    would make a single template unusable for a mixed user base. Callers
+    include the email in the issued cert's subject/SAN when present and
+    simply omit it otherwise, rather than advertising it as a policy-level
+    requirement (see wstep_service.py's issue()).
     """
     from ldap3.utils.conv import escape_filter_chars
     from ldap3.utils.dn import parse_dn
@@ -205,7 +214,7 @@ def lookup_user_ad_identity(sam_account_name):
         conn.search(
             config.base_dn,
             f'(&(objectCategory=person)(objectClass=user)(sAMAccountName={safe_sam}))',
-            attributes=['userPrincipalName'],
+            attributes=['userPrincipalName', 'mail'],
         )
         if not conn.entries:
             return None
@@ -213,10 +222,11 @@ def lookup_user_ad_identity(sam_account_name):
         if 'userPrincipalName' not in entry or not entry.userPrincipalName.value:
             return None
         upn = str(entry.userPrincipalName.value)
+        mail = str(entry.mail.value) if 'mail' in entry and entry.mail.value else None
         dn_components = [(attr, value) for attr, value, _sep in parse_dn(entry.entry_dn)]
         if not dn_components:
             return None
-        return {'dn_components': dn_components, 'upn': upn}
+        return {'dn_components': dn_components, 'upn': upn, 'mail': mail}
     except Exception as e:
         logger.warning("AD Connector: user identity lookup failed: %s", e)
         return None

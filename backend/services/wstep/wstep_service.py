@@ -19,6 +19,7 @@ from models import Certificate
 from services.ca_service import CAService
 from utils.datetime_utils import utc_now
 from utils.key_type import validate_enrollment_public_key
+from utils.san_parse import is_valid_san_email
 from utils.upn_san import build_upn_other_name
 
 from . import ws_security
@@ -42,7 +43,7 @@ _DN_ATTR_OIDS = {
 }
 
 
-def _x509_name_from_dn_components(dn_components):
+def _x509_name_from_dn_components(dn_components, email=None):
     """Build an x509.Name from AD DN RDN components (attr, value) pairs.
 
     ``dn_components`` arrives leaf-to-root (AD's own ``distinguishedName``
@@ -56,9 +57,15 @@ def _x509_name_from_dn_components(dn_components):
     DC=domain". The components must be reversed here, once, or every
     AD-derived user subject silently comes out RDN-reversed.
 
-    None if any component's attribute type isn't recognized -- fail closed
-    rather than silently dropping or mis-mapping a component real ADCS
-    would have included.
+    ``email``, when given, is appended last (i.e. most-specific/leaf-most
+    in RFC4514 display: "E=roy.hagland@hagland.domain,CN=Roy
+    Hagland,..."), the conventional placement for an emailAddress RDN.
+    Optional -- see ``lookup_user_ad_identity``'s docstring for why a
+    missing AD ``mail`` attribute must never block subject derivation.
+
+    None if any DN component's attribute type isn't recognized -- fail
+    closed rather than silently dropping or mis-mapping a component real
+    ADCS would have included.
     """
     attrs = []
     for attr_name, value in reversed(dn_components):
@@ -72,6 +79,8 @@ def _x509_name_from_dn_components(dn_components):
         attrs.append(x509.NameAttribute(oid, value))
     if not attrs:
         return None
+    if email:
+        attrs.append(x509.NameAttribute(NameOID.EMAIL_ADDRESS, email))
     return x509.Name(attrs)
 
 # ``cryptography``'s CertificateSigningRequest.is_signature_valid reports
@@ -314,6 +323,14 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
       in via ``CertificateTemplate.ad_derived_subject`` (see
       ``_user_ad_derivation_enabled``) -- unlike the machine path, this is
       new behavior, so it's admin opt-in per template rather than always-on.
+      If the AD user object also has a ``mail`` attribute, it's added as a
+      leaf-most ``E=`` subject RDN and an SAN RFC822Name -- opportunistic,
+      never required: real ADCS's own CT_FLAG_SUBJECT_REQUIRE_EMAIL hard-
+      declines autoenrollment for any user without one, which would make a
+      single template unusable for a mixed user base, so UCM never
+      advertises that requirement (see policy_builder.py's
+      ``_USER_AD_DERIVED_SUBJECT_NAME_FLAGS``) and simply includes the
+      email when present, omits it otherwise.
 
     Falls through to the normal naked-CSR rejection if the connector isn't
     configured, no template has opted in, or the lookup fails for any
@@ -340,10 +357,24 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
             elif _user_ad_derivation_enabled(ca):
                 identity = lookup.lookup_user_ad_identity(sam_account_name)
                 if identity:
-                    derived_subject = _x509_name_from_dn_components(identity['dn_components'])
+                    # AD's mail attribute is optional -- validated (not just
+                    # truthy) before use, since it's untrusted directory
+                    # data reaching straight into a certificate subject/SAN.
+                    # A malformed value degrades to "no email", never a
+                    # crash or a bogus RDN.
+                    email = identity.get('mail')
+                    if email and not is_valid_san_email(email):
+                        logger.warning(
+                            "AD Connector: ignoring malformed mail attribute %r for %r",
+                            email, sam_account_name,
+                        )
+                        email = None
+                    derived_subject = _x509_name_from_dn_components(identity['dn_components'], email=email)
                     if derived_subject is not None:
                         override_subject = derived_subject
                         override_san = [build_upn_other_name(identity['upn'])]
+                        if email:
+                            override_san.append(x509.RFC822Name(email))
 
     err = _validate_csr(
         csr, require_pop=require_pop, allow_naked_subject=override_subject is not None

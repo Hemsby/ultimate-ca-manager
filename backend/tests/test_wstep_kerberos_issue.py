@@ -334,6 +334,58 @@ class TestNakedCsrSubjectDerivation:
             assert db_cert.subject_cn == 'Roy Hagland'
             assert json.loads(db_cert.san_upn) == [self._GOLDEN_USER_UPN]
 
+    def test_naked_csr_from_user_with_mail_attribute_includes_email(
+        self, client, app, wstep_kerberos_config, monkeypatch
+    ):
+        """A user AD object with a mail attribute gets it included as a
+        leaf-most subject RDN and an SAN RFC822Name -- opportunistic, never
+        a hard requirement (unlike real ADCS's CT_FLAG_SUBJECT_REQUIRE_EMAIL,
+        which would decline enrollment outright for any user without one)."""
+        _configure_ad_connector(app)
+        _configure_ad_derived_user_template(app)
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: negotiate_auth.NegotiateResult(
+                status='authenticated', client_principal='roy.hagland@HAGLAND.DOMAIN',
+            ),
+        )
+        monkeypatch.setattr(
+            ad_lookup, 'lookup_user_ad_identity',
+            lambda sam_account_name: {
+                'dn_components': self._GOLDEN_USER_DN_COMPONENTS,
+                'upn': self._GOLDEN_USER_UPN,
+                'mail': self._GOLDEN_USER_UPN,
+            },
+        )
+
+        csr, key = _make_naked_csr()
+        r = client.post(
+            ISSUE_URL, data=_build_rst(csr),
+            headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+        )
+        assert r.status_code == 200
+
+        cert = _issued_cert_from_rstr(r.data)
+        subject_attrs = list(cert.subject)
+        assert subject_attrs[-1].oid == NameOID.EMAIL_ADDRESS
+        assert subject_attrs[-1].value == self._GOLDEN_USER_UPN
+        # CN extraction ([-1] of COMMON_NAME-typed attrs specifically) must
+        # stay unaffected by the trailing email RDN, which is a different
+        # attribute type entirely.
+        assert cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[-1].value == 'Roy Hagland'
+
+        san_ext = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
+        assert extract_upns_from_san_list(list(san_ext.value)) == [self._GOLDEN_USER_UPN]
+        assert list(san_ext.value.get_values_for_type(x509.RFC822Name)) == [self._GOLDEN_USER_UPN]
+
+        with app.app_context():
+            db_cert = Certificate.query.filter_by(serial_number=str(cert.serial_number)).first()
+            assert db_cert is not None
+            assert db_cert.subject_cn == 'Roy Hagland'
+            assert json.loads(db_cert.san_email) == [self._GOLDEN_USER_UPN]
+
     def test_naked_csr_from_user_principal_with_failed_ad_lookup_still_rejected(
         self, client, app, wstep_kerberos_config, monkeypatch
     ):
