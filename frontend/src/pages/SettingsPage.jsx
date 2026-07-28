@@ -47,6 +47,7 @@ import WebhookForm from './settings/WebhookForm'
 import MscaConnectionForm from './settings/MscaConnectionForm'
 import MscaCaControlModal from '../components/MscaCaControlModal'
 import AdConnectorSection from './settings/AdConnectorSection'
+import XcepWstepSection from './settings/XcepWstepSection'
 import AdConnectorForm from './settings/AdConnectorForm'
 import GeneralSection from './settings/GeneralSection'
 import EmailSection from './settings/EmailSection'
@@ -83,6 +84,7 @@ const BASE_SETTINGS_CATEGORIES = [
   { id: 'autoRenewal', labelKey: 'settings.tabs.autoRenewal', icon: ClockClockwise, color: 'icon-bg-emerald' },
   { id: 'microsoftCA', labelKey: 'settings.tabs.microsoftCA', icon: WindowsLogo, color: 'icon-bg-indigo' },
   { id: 'adConnector', labelKey: 'settings.tabs.adConnector', icon: IdentificationBadge, color: 'icon-bg-blue' },
+  { id: 'xcepWstep', labelKey: 'settings.tabs.xcepWstep', icon: WindowsLogo, color: 'icon-bg-indigo' },
   { id: 'about', labelKey: 'settings.tabs.about', icon: Info, color: 'icon-bg-sky' },
 ]
 
@@ -1606,6 +1608,8 @@ export default function SettingsPage() {
             hasPermission={hasPermission}
           />
         )
+      case 'xcepWstep':
+        return <XcepWstepSection />
       case 'about':
         return <AboutSection />
 
@@ -1684,7 +1688,7 @@ export default function SettingsPage() {
           { labelKey: 'settings.groups.security', tabs: ['security', 'sso', 'ct'], color: 'icon-bg-amber' },
           { labelKey: 'settings.groups.notifications', tabs: ['email', 'webhooks'], color: 'icon-bg-teal' },
           { labelKey: 'settings.groups.automation', tabs: ['autoRenewal'], color: 'icon-bg-emerald' },
-          { labelKey: 'settings.groups.integrations', tabs: ['microsoftCA', 'adConnector'], color: 'icon-bg-indigo' },
+          { labelKey: 'settings.groups.integrations', tabs: ['microsoftCA', 'adConnector', 'xcepWstep'], color: 'icon-bg-indigo' },
           { labelKey: 'settings.groups.interface', tabs: ['appearance', 'audit'], color: 'icon-bg-violet' },
           { labelKey: 'settings.groups.about', tabs: ['about'], color: 'icon-bg-sky' },
         ]}

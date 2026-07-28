@@ -2296,6 +2296,7 @@
       "about": "About",
       "microsoftCA": "Microsoft CA",
       "adConnector": "Active Directory",
+      "xcepWstep": "Windows Autoenrollment",
       "ct": "CT",
       "autoRenewal": "Auto-Renewal",
       "scheduler": "Scheduler"
@@ -4298,6 +4299,22 @@
       "upnRequired": "UPN is required when Enroll on Behalf Of is enabled",
       "hint": "Requires an enrollment agent certificate configured on the CA. The template must allow enrollment on behalf of other users."
     }
+  },
+  "xcepWstep": {
+    "title": "Windows Autoenrollment",
+    "subtitle": "MS-XCEP policy discovery and MS-WSTEP certificate issuance for native Windows enrollment (MMC, certreq, GPO autoenrollment)",
+    "xcepTitle": "Policy Discovery (XCEP)",
+    "xcepDescription": "Lets Windows clients discover which certificate templates are available before enrolling. Required before WSTEP issuance will work.",
+    "wstepTitle": "Certificate Issuance (WSTEP)",
+    "wstepDescription": "Handles the actual certificate request and renewal once a client has discovered policy via XCEP.",
+    "ca": "Certificate Authority",
+    "selectCa": "Select a CA...",
+    "validityDays": "Validity (days)",
+    "urlsTitle": "Enrollment Policy URLs",
+    "urlUsernamePassword": "Username/Password (manual enrollment)",
+    "urlUsernamePasswordDesc": "Prompts for credentials. For interactive \"Request New Certificate\" enrollment, doesn't require Active Directory.",
+    "urlKerberos": "Kerberos (unattended GPO autoenrollment)",
+    "urlKerberosDesc": "No credential prompt. Requires a domain-joined client and GPO configuration; see Settings > Active Directory for AD-derived subject support."
   },
   "adConnector": {
     "title": "Active Directory Connector",
