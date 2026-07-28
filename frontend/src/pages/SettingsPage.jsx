@@ -13,7 +13,7 @@ import {
   Plus, PencilSimple, TestTube, Lightning, Globe, Shield, CheckCircle, XCircle, MagnifyingGlass,
   Bell, Copy, Power, ArrowClockwise, LockKey, Warning, User, GithubLogo,
   Plugs, UsersThree, UserPlus, TreeStructure, CaretDown, Play,
-  WindowsLogo, ClockClockwise
+  WindowsLogo, ClockClockwise, IdentificationBadge
 } from '@phosphor-icons/react'
 import {
   ResponsiveLayout,
@@ -27,7 +27,7 @@ import { SmartImportModal } from '../components/SmartImport'
 import CertificatePickerModal from '../components/CertificatePickerModal'
 import CertificateInput from '../components/CertificateInput'
 import LanguageSelector from '../components/ui/LanguageSelector'
-import { settingsService, systemService, casService, ssoService, mtlsService, mscaService } from '../services'
+import { settingsService, systemService, casService, ssoService, mtlsService, mscaService, adConnectorService } from '../services'
 import { useNotification, useMobile } from '../contexts'
 import { useServiceReconnect } from '../hooks'
 import { usePermission } from '../hooks'
@@ -46,6 +46,8 @@ import SsoProviderForm from './settings/SsoProviderForm'
 import WebhookForm from './settings/WebhookForm'
 import MscaConnectionForm from './settings/MscaConnectionForm'
 import MscaCaControlModal from '../components/MscaCaControlModal'
+import AdConnectorSection from './settings/AdConnectorSection'
+import AdConnectorForm from './settings/AdConnectorForm'
 import GeneralSection from './settings/GeneralSection'
 import EmailSection from './settings/EmailSection'
 import SecuritySection from './settings/SecuritySection'
@@ -80,6 +82,7 @@ const BASE_SETTINGS_CATEGORIES = [
   { id: 'ct', labelKey: 'settings.tabs.ct', icon: Eye, color: 'icon-bg-cyan' },
   { id: 'autoRenewal', labelKey: 'settings.tabs.autoRenewal', icon: ClockClockwise, color: 'icon-bg-emerald' },
   { id: 'microsoftCA', labelKey: 'settings.tabs.microsoftCA', icon: WindowsLogo, color: 'icon-bg-indigo' },
+  { id: 'adConnector', labelKey: 'settings.tabs.adConnector', icon: IdentificationBadge, color: 'icon-bg-blue' },
   { id: 'about', labelKey: 'settings.tabs.about', icon: Info, color: 'icon-bg-sky' },
 ]
 
@@ -175,6 +178,12 @@ export default function SettingsPage() {
   const [mscaConfirmDelete, setMscaConfirmDelete] = useState(null)
   const [mscaCaControl, setMscaCaControl] = useState(null)
 
+  // Active Directory Connector state
+  const [adConnectorConfig, setAdConnectorConfig] = useState(null)
+  const [adConnectorLoading, setAdConnectorLoading] = useState(false)
+  const [adConnectorTesting, setAdConnectorTesting] = useState(false)
+  const [showAdConnectorModal, setShowAdConnectorModal] = useState(false)
+
   // Encryption states
   const [encryptionStatus, setEncryptionStatus] = useState(null)
   const [showEnableEncryptionModal, setShowEnableEncryptionModal] = useState(false)
@@ -237,6 +246,7 @@ export default function SettingsPage() {
     loadSsoProviders()
     loadWebhooks()
     loadMscaConnections()
+    loadAdConnectorConfig()
     loadEncryptionStatus()
     loadAnomalies()
     loadExpiryAlerts()
@@ -622,6 +632,59 @@ export default function SettingsPage() {
       showError(error.message || t('msca.inventorySyncFailed'))
     } finally {
       setMscaTesting(false)
+    }
+  }
+
+  // Active Directory Connector handlers
+  const loadAdConnectorConfig = async () => {
+    setAdConnectorLoading(true)
+    try {
+      const response = await adConnectorService.get()
+      setAdConnectorConfig(response.data || null)
+    } catch (error) {
+    } finally {
+      setAdConnectorLoading(false)
+    }
+  }
+
+  const handleAdConnectorEdit = () => {
+    setShowAdConnectorModal(true)
+  }
+
+  const handleAdConnectorSave = async (formData) => {
+    try {
+      await adConnectorService.save(formData)
+      showSuccess(t('messages.success.update.settings'))
+      setShowAdConnectorModal(false)
+      loadAdConnectorConfig()
+    } catch (error) {
+      showError(error.message || t('messages.errors.updateFailed.settings'))
+    }
+  }
+
+  const handleAdConnectorToggle = async () => {
+    if (!adConnectorConfig) return
+    try {
+      await adConnectorService.save({ enabled: !adConnectorConfig.enabled })
+      loadAdConnectorConfig()
+    } catch (error) {
+      showError(error.message || t('messages.errors.updateFailed.settings'))
+    }
+  }
+
+  const handleAdConnectorTest = async () => {
+    setAdConnectorTesting(true)
+    try {
+      const response = await adConnectorService.testSaved()
+      showSuccess(response.data?.message || t('adConnector.testSuccess'))
+    } catch (error) {
+      showError(error.message || t('adConnector.testFailed'))
+    } finally {
+      setAdConnectorTesting(false)
+      // test-saved records last_test_at/last_test_result server-side
+      // regardless of outcome -- refresh so the section's status badge
+      // doesn't keep showing whatever the previous test left behind.
+      loadAdConnectorConfig()
     }
   }
 
@@ -1512,6 +1575,18 @@ export default function SettingsPage() {
             hasPermission={hasPermission}
           />
         )
+      case 'adConnector':
+        return (
+          <AdConnectorSection
+            adConnectorConfig={adConnectorConfig}
+            adConnectorLoading={adConnectorLoading}
+            adConnectorTesting={adConnectorTesting}
+            handleAdConnectorEdit={handleAdConnectorEdit}
+            handleAdConnectorToggle={handleAdConnectorToggle}
+            handleAdConnectorTest={handleAdConnectorTest}
+            hasPermission={hasPermission}
+          />
+        )
       case 'about':
         return <AboutSection />
 
@@ -1590,7 +1665,7 @@ export default function SettingsPage() {
           { labelKey: 'settings.groups.security', tabs: ['security', 'sso', 'ct'], color: 'icon-bg-amber' },
           { labelKey: 'settings.groups.notifications', tabs: ['email', 'webhooks'], color: 'icon-bg-teal' },
           { labelKey: 'settings.groups.automation', tabs: ['autoRenewal'], color: 'icon-bg-emerald' },
-          { labelKey: 'settings.groups.integrations', tabs: ['microsoftCA'], color: 'icon-bg-indigo' },
+          { labelKey: 'settings.groups.integrations', tabs: ['microsoftCA', 'adConnector'], color: 'icon-bg-indigo' },
           { labelKey: 'settings.groups.interface', tabs: ['appearance', 'audit'], color: 'icon-bg-violet' },
           { labelKey: 'settings.groups.about', tabs: ['about'], color: 'icon-bg-sky' },
         ]}
@@ -1758,7 +1833,21 @@ export default function SettingsPage() {
         open={!!mscaCaControl}
         onClose={() => setMscaCaControl(null)}
       />
-      
+
+      {/* Active Directory Connector Modal */}
+      <Modal
+        open={showAdConnectorModal}
+        onClose={() => setShowAdConnectorModal(false)}
+        title={t('adConnector.title')}
+        size="lg"
+      >
+        <AdConnectorForm
+          config={adConnectorConfig}
+          onSave={handleAdConnectorSave}
+          onCancel={() => setShowAdConnectorModal(false)}
+        />
+      </Modal>
+
       {/* Enable Encryption Modal */}
       <Modal
         open={showEnableEncryptionModal}

@@ -2,10 +2,12 @@ import { useTranslation } from 'react-i18next'
 import { IdentificationBadge, TestTube, Power, PencilSimple, ArrowsClockwise } from '@phosphor-icons/react'
 import { Button, Badge, HelpCard, DetailHeader, DetailContent } from '../../components'
 import { formatDate } from '../../lib/utils'
+import CopyableUrl from './CopyableUrl'
 
 export default function AdConnectorSection({ adConnectorConfig, adConnectorLoading, adConnectorTesting, handleAdConnectorEdit, handleAdConnectorToggle, handleAdConnectorTest, hasPermission }) {
   const { t } = useTranslation()
   const configured = Boolean(adConnectorConfig?.server)
+  const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
 
   return (
     <DetailContent>
@@ -17,6 +19,22 @@ export default function AdConnectorSection({ adConnectorConfig, adConnectorLoadi
 
       <HelpCard variant="info" title={t('adConnector.helpTitle')} className="mb-4">
         {t('adConnector.helpDescription')}
+      </HelpCard>
+
+      <HelpCard variant="tip" title={t('adConnector.gpoUrlsTitle')} className="mb-4">
+        <p className="mb-3">{t('adConnector.gpoUrlsDescription')}</p>
+        <div className="space-y-3">
+          <CopyableUrl
+            label={t('adConnector.gpoKerberosUrl')}
+            value={`${baseUrl}/ADPolicyProvider_CEP_Kerberos/service.svc`}
+            description={t('adConnector.gpoKerberosUrlDesc')}
+          />
+          <CopyableUrl
+            label={t('adConnector.gpoUsernamePasswordUrl')}
+            value={`${baseUrl}/ADPolicyProvider_CEP_UsernamePassword/service.svc`}
+            description={t('adConnector.gpoUsernamePasswordUrlDesc')}
+          />
+        </div>
       </HelpCard>
 
       {adConnectorLoading ? (

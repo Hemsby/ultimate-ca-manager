@@ -204,6 +204,11 @@ export default function TemplatesPage() {
               {type === 'ca' ? <ShieldCheck size={14} weight="duotone" /> : <FileText size={14} weight="duotone" />}
             </div>
             <span className="font-medium truncate">{val || t('common.unnamed')}</span>
+            {row.ad_derived_subject && (
+              <Badge variant="violet" size="sm" title={t('templates.adDerivedBadgeTooltip')}>
+                {t('templates.adDerivedBadge')}
+              </Badge>
+            )}
           </div>
         )
       },
@@ -218,9 +223,16 @@ export default function TemplatesPage() {
               </div>
               <span className="font-medium truncate">{val || t('common.unnamed')}</span>
             </div>
-            <Badge variant={type === 'ca' ? 'amber' : 'primary'} size="sm" dot>
-              {type === 'ca' ? t('common.ca') : t('templates.cert')}
-            </Badge>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {row.ad_derived_subject && (
+                <Badge variant="violet" size="sm" title={t('templates.adDerivedBadgeTooltip')}>
+                  {t('templates.adDerivedBadge')}
+                </Badge>
+              )}
+              <Badge variant={type === 'ca' ? 'amber' : 'primary'} size="sm" dot>
+                {type === 'ca' ? t('common.ca') : t('templates.cert')}
+              </Badge>
+            </div>
           </div>
         )
       }
@@ -330,9 +342,16 @@ export default function TemplatesPage() {
         title={selectedTemplate.name}
         subtitle={t('templates.certificatesIssued', { count: selectedTemplate.usage_count || 0 })}
         badge={
-          <Badge variant={selectedTemplate.type === 'ca' ? 'warning' : 'primary'} size="sm">
-            {selectedTemplate.type === 'ca' ? t('common.ca') : t('common.certificate')}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge variant={selectedTemplate.type === 'ca' ? 'warning' : 'primary'} size="sm">
+              {selectedTemplate.type === 'ca' ? t('common.ca') : t('common.certificate')}
+            </Badge>
+            {selectedTemplate.ad_derived_subject && (
+              <Badge variant="violet" size="sm" title={t('templates.adDerivedBadgeTooltip')}>
+                {t('templates.adDerivedBadge')}
+              </Badge>
+            )}
+          </div>
         }
       />
 
@@ -390,6 +409,7 @@ export default function TemplatesPage() {
           <CompactField autoIcon="locality" label={t('common.locality')} value={selectedTemplate.dn_template?.L || '—'} />
           <CompactField autoIcon="organization" label={t('templates.organization')} value={selectedTemplate.dn_template?.O || '—'} />
           <CompactField autoIcon="commonName" label={t('templates.commonName')} value={selectedTemplate.dn_template?.CN || '—'} />
+          <CompactField autoIcon="default" label={t('templates.adDerivedSubject')} value={selectedTemplate.ad_derived_subject ? t('common.enabled') : t('common.disabled')} />
         </CompactGrid>
       </CompactSection>
 
