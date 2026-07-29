@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { WindowsLogo, Globe, Certificate, ArrowsClockwise, FloppyDisk, CheckCircle, WarningCircle, ListChecks } from '@phosphor-icons/react'
-import { Button, Input, Select, DetailHeader, DetailSection, DetailContent } from '../../components'
+import { WindowsLogo, Globe, Certificate, ArrowsClockwise, FloppyDisk, CheckCircle, WarningCircle, ListChecks, Key } from '@phosphor-icons/react'
+import { Button, Input, Select, DetailHeader, DetailSection, DetailContent, HelpCard } from '../../components'
+import { FileUpload } from '../../components/FileUpload'
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch'
 import { xcepWstepService, casService, adConnectorService, kerberosService, templatesService } from '../../services'
 import { useNotification } from '../../contexts'
@@ -46,6 +47,11 @@ export default function XcepWstepSection() {
   const [wstepPassword, setWstepPassword] = useState('')
   const [wstepSaving, setWstepSaving] = useState(false)
 
+  const [kerberos, setKerberos] = useState({ enabled: false, spn: '', keytab_set: false, library_available: true })
+  const [kerberosSpnInput, setKerberosSpnInput] = useState('')
+  const [kerberosKeytabFile, setKerberosKeytabFile] = useState(null)
+  const [kerberosSaving, setKerberosSaving] = useState(false)
+
   // Setup checklist state -- read-only status pulled from the other
   // settings surfaces (AD Connector, Kerberos, Templates) that a full GPO
   // autoenrollment setup touches, so an admin can see what's still missing
@@ -70,6 +76,10 @@ export default function XcepWstepSection() {
       setWstep(wstepRes.data || EMPTY_WSTEP)
       setAdConnectorConfigured(Boolean(adRes.data?.enabled && adRes.data?.server))
       setKerberosConfigured(Boolean(krbRes.data?.configured))
+      if (krbRes.data) {
+        setKerberos(krbRes.data)
+        setKerberosSpnInput(krbRes.data.spn || '')
+      }
       const templates = tplRes.data || []
       setAutoenrollTemplateCount(templates.filter(tpl => tpl.autoenroll_enabled).length)
     } catch (error) {
@@ -112,6 +122,23 @@ export default function XcepWstepSection() {
       showError(error.message || t('messages.errors.updateFailed.settings'))
     } finally {
       setWstepSaving(false)
+    }
+  }
+
+  const handleKerberosSave = async () => {
+    setKerberosSaving(true)
+    try {
+      await kerberosService.update({ enabled: kerberos.enabled, spn: kerberosSpnInput })
+      if (kerberosKeytabFile) {
+        await kerberosService.uploadKeytab(kerberosKeytabFile)
+        setKerberosKeytabFile(null)
+      }
+      showSuccess(t('messages.success.update.settings'))
+      loadAll()
+    } catch (error) {
+      showError(error.message || t('messages.errors.updateFailed.settings'))
+    } finally {
+      setKerberosSaving(false)
     }
   }
 
@@ -158,7 +185,6 @@ export default function XcepWstepSection() {
               onAction={() => navigate('/templates')}
             />
           </div>
-          <p className="text-xs text-text-tertiary pt-1">{t('xcepWstep.checklistKerberosNote')}</p>
         </div>
       </DetailSection>
 
@@ -238,6 +264,44 @@ export default function XcepWstepSection() {
           <div className="flex justify-end pt-4 border-t border-border">
             <Button type="button" onClick={handleWstepSave} disabled={wstepSaving}>
               {wstepSaving ? <ArrowsClockwise size={14} className="animate-spin" /> : <FloppyDisk size={14} />}
+              {t('common.save')}
+            </Button>
+          </div>
+        </div>
+      </DetailSection>
+
+      <DetailSection title={t('xcepWstep.kerberosTitle')} icon={Key} iconClass="icon-bg-amber">
+        <div className="space-y-4">
+          <p className="text-xs text-text-secondary">{t('xcepWstep.kerberosDescription')}</p>
+
+          {!kerberos.library_available && (
+            <HelpCard variant="warning" title={t('xcepWstep.kerberosLibraryWarningTitle')}>
+              {t('xcepWstep.kerberosLibraryWarningDesc')}
+            </HelpCard>
+          )}
+
+          <ToggleSwitch
+            label={t('common.enabled')}
+            checked={kerberos.enabled}
+            onChange={(val) => setKerberos(prev => ({ ...prev, enabled: val }))}
+          />
+          <Input
+            label={t('xcepWstep.spn')}
+            value={kerberosSpnInput}
+            onChange={(e) => setKerberosSpnInput(e.target.value)}
+            placeholder={t('xcepWstep.spnPlaceholder')}
+          />
+          <FileUpload
+            label={`${t('xcepWstep.keytab')} ${kerberos.keytab_set ? `(${t('xcepWstep.keytabSet')})` : `(${t('xcepWstep.keytabNotSet')})`}`}
+            accept=".keytab,.kt"
+            compact
+            maxSize={256 * 1024}
+            helperText={kerberosKeytabFile ? t('xcepWstep.keytabSelected', { name: kerberosKeytabFile.name }) : t('xcepWstep.keytabHelp')}
+            onFileSelect={(file) => setKerberosKeytabFile(file)}
+          />
+          <div className="flex justify-end pt-4 border-t border-border">
+            <Button type="button" onClick={handleKerberosSave} disabled={kerberosSaving}>
+              {kerberosSaving ? <ArrowsClockwise size={14} className="animate-spin" /> : <FloppyDisk size={14} />}
               {t('common.save')}
             </Button>
           </div>
