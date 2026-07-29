@@ -4,19 +4,40 @@ import { FloppyDisk, Globe, ArrowsClockwise, Lightning, FileText, PencilSimple, 
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch'
 import { Select, Button, HelpCard, CompactSection, CompactGrid, CompactField, Input, Modal } from '../../components'
 import { useState, useMemo } from 'react'
+import ReactMarkdown from 'react-markdown'
 import ProfilesEditor from './ProfilesEditor'
 
-/** Render markdown-like preview: paragraphs, bold, italic, auto-links */
-function renderTosPreview(body) {
+/** Render a markdown ToS preview.
+ *
+ * This used to be a hand-rolled regex sanitizer feeding dangerouslySetInnerHTML.
+ * It escaped < > & but not double quotes, and never validated link schemes, so
+ * admin-supplied ToS text could break out of an attribute or inject
+ * `[x](javascript:...)` — stored XSS against any operator viewing the page.
+ * ReactMarkdown (already used elsewhere in the app) escapes text nodes and
+ * builds real React elements, so no raw HTML is ever interpolated; urlTransform
+ * additionally pins hrefs to http/https/mailto.
+ */
+export function TosPreview({ body }) {
   if (!body?.trim()) return null
-  let html = body
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/^- (.+)$/gm, '• $1')
-    .replace(/(https?:\/\/[^\s<>()]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')
-  return html.split('\n\n').map(p => p.trim()).filter(Boolean).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('')
+  return (
+    <ReactMarkdown
+      urlTransform={(url) => {
+        try {
+          const parsed = new URL(url, window.location.origin)
+          return ['http:', 'https:', 'mailto:'].includes(parsed.protocol) ? url : ''
+        } catch {
+          return ''
+        }
+      }}
+      components={{
+        a: ({ node, ...props }) => (
+          <a {...props} target="_blank" rel="noopener noreferrer" />
+        ),
+      }}
+    >
+      {body}
+    </ReactMarkdown>
+  )
 }
 
 export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConfig, saving, revokeSuperseded, onRevokeSupersededChange, onToggleRevokeOnRenewal, canWrite }) {
@@ -30,10 +51,10 @@ export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConf
   const acmePublicBase = publicBaseUrl(acmeSettings.acme_public_base_url, '/acme')
 
   // Preview of saved ToS (from props)
-  const savedPreview = useMemo(() => renderTosPreview(tos?.body), [tos?.body])
+  const savedPreview = useMemo(() => Boolean(tos?.body?.trim()), [tos?.body])
 
   // Preview inside edit modal
-  const editPreview = useMemo(() => renderTosPreview(editBody), [editBody])
+  const editPreview = useMemo(() => Boolean(editBody?.trim()), [editBody])
 
   const handleOpenEdit = () => {
     setEditTitle(tos?.title || '')
@@ -144,7 +165,7 @@ export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConf
           {tosExists && savedPreview ? (
             <div className="rounded-lg border border-border bg-bg-tertiary p-3 max-h-52 overflow-y-auto">
               {tos.title && <p className="text-sm font-semibold text-text-primary mb-2">{tos.title}</p>}
-              <div className="text-xs text-text-secondary [&>p]:mb-2 last:[&>p]:mb-0" dangerouslySetInnerHTML={{ __html: savedPreview }} />
+              <div className="text-xs text-text-secondary [&>p]:mb-2 last:[&>p]:mb-0"><TosPreview body={tos?.body} /></div>
             </div>
           ) : (
             <p className="text-xs text-text-tertiary">{t('acme.termsOfServiceHelper')}</p>
@@ -210,7 +231,7 @@ export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConf
           {editPreview && (
             <div className="rounded-lg border border-border bg-bg-tertiary p-3">
               <p className="text-xs text-text-tertiary mb-2">{t('acme.termsOfServicePreview')}</p>
-              <div className="text-xs text-text-secondary [&>p]:mb-2 last:[&>p]:mb-0" dangerouslySetInnerHTML={{ __html: editPreview }} />
+              <div className="text-xs text-text-secondary [&>p]:mb-2 last:[&>p]:mb-0"><TosPreview body={editBody} /></div>
             </div>
           )}
           <div className="flex justify-end gap-2 pt-4 border-t border-border">
