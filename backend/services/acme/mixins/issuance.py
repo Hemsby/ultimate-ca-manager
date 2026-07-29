@@ -92,7 +92,21 @@ class IssuanceMixin:
         order_ips_norm = {ip for ip in order_ips}
         if csr_ips_norm != order_ips_norm:
             return False, f"CSR IPs {sorted(csr_ips_norm)} don't match order IPs {sorted(order_ips_norm)}"
-        
+
+        # Reject any SAN entry that is not one of the validated identifiers.
+        # The per-type extractors above only look at DNSName/IPAddress, so an
+        # rfc822Name, otherName/UPN, URI or dirName would otherwise sail past
+        # validation and be copied verbatim into the signed certificate by
+        # sign_csr — letting a client that only proved control of a DNS name
+        # obtain a cert asserting an email address or a Windows UPN it never
+        # proved. ACME only ever proves DNS/IP control, so anything else is
+        # unauthorized by construction.
+        san_ok, san_err = self._validate_csr_san_types(
+            csr, order_domains_norm, order_ips_norm
+        )
+        if not san_ok:
+            return False, san_err
+
         # CAA record check (RFC 6844 + RFC 8555 §8.1) - only for DNS identifiers
         if order_domains:
             caa_enforce = False
@@ -245,6 +259,57 @@ class IssuanceMixin:
         except Exception as e:
             logger.warning(f"Auto-supersede check failed: {e}")
     
+    def _validate_csr_san_types(
+        self, csr, allowed_domains: set, allowed_ips: set
+    ) -> Tuple[bool, Optional[str]]:
+        """Reject SAN entries the ACME order never authorized.
+
+        ``allowed_domains`` / ``allowed_ips`` are the already-validated,
+        normalized order identifiers. Every general name in the CSR's SAN must
+        be a DNSName or IPAddress drawn from those sets; any other general-name
+        type (rfc822Name, otherName/UPN, URI, dirName, registeredID, ...) is
+        rejected outright because no ACME challenge can prove control of it.
+
+        Returns (True, None) when the SAN is acceptable, else (False, reason).
+        """
+        from cryptography import x509
+
+        try:
+            san_ext = csr.extensions.get_extension_for_oid(
+                x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+            )
+        except x509.ExtensionNotFound:
+            return True, None
+        except Exception as exc:
+            return False, f"Unable to parse CSR SubjectAlternativeName: {exc}"
+
+        for name in san_ext.value:
+            if isinstance(name, x509.DNSName):
+                if name.value.lower().rstrip('.') not in allowed_domains:
+                    return False, (
+                        f"CSR SAN dNSName {name.value!r} is not an authorized "
+                        "order identifier"
+                    )
+            elif isinstance(name, x509.IPAddress):
+                if str(name.value) not in allowed_ips:
+                    return False, (
+                        f"CSR SAN iPAddress {name.value} is not an authorized "
+                        "order identifier"
+                    )
+            else:
+                # otherName (incl. UPN), rfc822Name, URI, dirName, ...
+                type_name = type(name).__name__
+                detail = ''
+                if isinstance(name, x509.OtherName):
+                    detail = f" (type-id {name.type_id.dotted_string})"
+                return False, (
+                    f"CSR SAN contains unauthorized general name type "
+                    f"{type_name}{detail}; ACME may only certify the DNS and IP "
+                    "identifiers validated by the order"
+                )
+
+        return True, None
+
     def _extract_ips_from_csr(self, csr) -> List[str]:
         """Extract IP addresses from CSR Subject Alternative Names (RFC 8738)
         
