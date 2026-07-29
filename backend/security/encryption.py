@@ -70,6 +70,24 @@ class KeyEncryption:
                 logger.info("🔑 Encryption key loaded from KEY_ENCRYPTION_KEY env var")
         
         if not key:
+            # No key configured. encrypt() below then returns its input
+            # unchanged, so CA.prv / Certificate.prv — including CA *signing*
+            # keys — are stored as plaintext in the database. That used to
+            # happen silently; make it loud, and let deployments refuse to run
+            # rather than write crown-jewel keys in the clear.
+            if os.getenv('UCM_REQUIRE_KEY_ENCRYPTION', '').lower() == 'true':
+                raise RuntimeError(
+                    'Private-key encryption is required (UCM_REQUIRE_KEY_ENCRYPTION=true) '
+                    f'but no key is configured. Provide {MASTER_KEY_PATH} or set '
+                    'KEY_ENCRYPTION_KEY.'
+                )
+            logger.error(
+                "🔓 Private-key encryption is DISABLED — no %s and no "
+                "KEY_ENCRYPTION_KEY. CA and certificate private keys will be "
+                "stored UNENCRYPTED at rest. Configure a key, and set "
+                "UCM_REQUIRE_KEY_ENCRYPTION=true to refuse startup without one.",
+                MASTER_KEY_PATH,
+            )
             self._enabled = False
             self._key_source = None
             return

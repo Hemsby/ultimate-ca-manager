@@ -6,8 +6,11 @@ Uses Fernet symmetric encryption with key from environment
 import os
 import base64
 import hashlib
+import logging
 from cryptography.fernet import Fernet
 from functools import lru_cache
+
+logger = logging.getLogger(__name__)
 
 
 def _get_encryption_key() -> bytes:
@@ -16,11 +19,36 @@ def _get_encryption_key() -> bytes:
     Key is derived from UCM_DB_ENCRYPTION_KEY or a default based on machine ID.
     """
     key = os.environ.get('UCM_DB_ENCRYPTION_KEY')
-    
+
     if key:
         # Use provided key (should be base64-encoded 32 bytes)
         return key.encode()
-    
+
+    # No explicit key. The fallback below derives one from the machine id with
+    # a salt that is a constant in this source file — so anyone holding a copy
+    # of the database AND /etc/machine-id (world-readable, and routinely
+    # captured in backups and VM images) can reconstruct the key and decrypt
+    # every integration secret: DNS-provider credentials, LDAP/ADCS/WinRM
+    # passwords, SMTP and OAuth secrets, SSO client secrets, webhook secrets,
+    # ACME EAB keys and HSM credentials.
+    #
+    # The derivation is kept for backward compatibility — changing it would
+    # make existing encrypted rows undecryptable — but it is now loud, and
+    # deployments can refuse to run without a real key.
+    if os.environ.get('UCM_REQUIRE_DB_ENCRYPTION_KEY', '').lower() == 'true':
+        raise RuntimeError(
+            'UCM_DB_ENCRYPTION_KEY is not set and UCM_REQUIRE_DB_ENCRYPTION_KEY=true. '
+            'Set UCM_DB_ENCRYPTION_KEY to a base64-encoded 32-byte Fernet key.'
+        )
+
+    logger.warning(
+        'UCM_DB_ENCRYPTION_KEY is not set — falling back to a key derived from '
+        'the machine id with a static, in-source salt. Anyone with a copy of '
+        'the database and /etc/machine-id can decrypt all stored integration '
+        'secrets. Set UCM_DB_ENCRYPTION_KEY (and UCM_REQUIRE_DB_ENCRYPTION_KEY=true '
+        'to enforce it).'
+    )
+
     # Generate deterministic key from machine-specific data
     # This ensures the same key is used across restarts
     machine_id_paths = [
