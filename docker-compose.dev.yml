@@ -2,9 +2,18 @@
 # UCM - Docker Compose Development Configuration
 # ============================================================================
 # Development setup with hot-reload, debugging, and verbose logging
-# 
+#
 # Usage:
 #   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# ############################################################################
+# # NEVER EXPOSE THIS CONFIGURATION TO AN UNTRUSTED NETWORK.               ##
+# # FLASK_DEBUG=true enables the Werkzeug interactive debugger, which is    ##
+# # remote code execution for anyone who can reach it, and the debugpy      ##
+# # port below is an unauthenticated Python debugger. Both are bound to     ##
+# # 127.0.0.1 so they stay on the developer's machine — do not change that  ##
+# # to 0.0.0.0, and never use this file in production.                      ##
+# ############################################################################
 # ============================================================================
 
 
@@ -55,7 +64,9 @@ services:
     ports:
       - "${UCM_HTTPS_PORT:-8443}:8443"
       - "${UCM_HTTP_PORT:-8080}:8080"
-      - "5678:5678"  # Python debugger (debugpy)
+      # Loopback-bound: an unauthenticated Python debugger must never be
+      # reachable off-host.
+      - "127.0.0.1:5678:5678"  # Python debugger (debugpy)
     
     # Relaxed resource limits for development
     deploy:

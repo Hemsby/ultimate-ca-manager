@@ -37,7 +37,11 @@ def init_database():
                 email='admin@ucm.local',
                 password_hash=hashed_password.decode('utf-8'),
                 role='admin',
-                is_active=True
+                is_active=True,
+                # Match app.py / database_health.py: the seeded password is
+                # public knowledge, so it must be rotated at first login rather
+                # than silently remaining valid.
+                force_password_change=True
             )
             db.session.add(admin)
             db.session.commit()

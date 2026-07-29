@@ -138,7 +138,7 @@ def test_connection():
         "port": 443,
         "api_key": "xxx",
         "api_secret": "xxx",
-        "verify_ssl": false
+        "verify_ssl": true
     }
     
     Returns: {
@@ -168,7 +168,7 @@ def test_connection():
     port = data.get('port', 443)
     api_key = _clean(data.get('api_key'))
     api_secret = _clean(data.get('api_secret'))
-    verify_ssl = data.get('verify_ssl', False)
+    verify_ssl = data.get('verify_ssl', True)
     
     logger.info(f"OpnSense test connection: host={host}, port={port}, verify_ssl={verify_ssl}")
     
@@ -259,7 +259,7 @@ def import_items():
         "port": 443,
         "api_key": "xxx",
         "api_secret": "xxx",
-        "verify_ssl": false,
+        "verify_ssl": true,
         "items": ["uuid1", "uuid2", ...]
     }
     
@@ -280,7 +280,7 @@ def import_items():
     port = data.get('port', 443)
     api_key = _clean(data.get('api_key'))
     api_secret = _clean(data.get('api_secret'))
-    verify_ssl = data.get('verify_ssl', False)
+    verify_ssl = data.get('verify_ssl', True)
     items = data.get('items', [])
     
     logger.info(f"OpnSense import: host={host}, port={port}, items_count={len(items)}")
