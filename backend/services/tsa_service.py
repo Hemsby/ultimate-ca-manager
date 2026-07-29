@@ -59,6 +59,27 @@ class TSAService:
         self.policy_oid = policy_oid
 
     @staticmethod
+    def _require_dedicated_tsa_cert() -> bool:
+        """Whether signing timestamps with a CA certificate is refused.
+
+        RFC 3161 §2.3 wants a dedicated end-entity signer with a critical,
+        exclusive timeStamping EKU. UCM historically signs with the configured
+        CA's own certificate, which makes /tsa an anonymous signing oracle over
+        attacker-structured content using the CA private key. Refusing that
+        outright would break every pre-2.200 deployment, so it stays the
+        default and operators opt in to the strict behaviour with
+        ``tsa_require_dedicated_cert = true``.
+        """
+        try:
+            from models import SystemConfig
+            cfg = SystemConfig.query.filter_by(
+                key='tsa_require_dedicated_cert'
+            ).first()
+            return bool(cfg and str(cfg.value).lower() == 'true')
+        except Exception:
+            return False
+
+    @staticmethod
     def validate_certificate(tsa_cert: x509.Certificate) -> None:
         """Validate the TSA signer. A dedicated end-entity TSA certificate
         (RFC 3161 §2.3: critical, exclusive timeStamping EKU) is the
@@ -81,10 +102,20 @@ class TSAService:
             )
         except x509.ExtensionNotFound:
             if is_ca:
+                if TSAService._require_dedicated_tsa_cert():
+                    raise TSAConfigurationError(
+                        'TSA is configured to sign with a CA certificate, but '
+                        'tsa_require_dedicated_cert is enabled. Issue a dedicated '
+                        'end-entity TSA certificate with a critical, exclusive '
+                        'timeStamping EKU (RFC 3161 §2.3).'
+                    )
                 logger.warning(
                     'TSA is signing with a CA certificate (no timeStamping EKU). '
-                    'Consider issuing a dedicated TSA certificate with a critical, '
-                    'exclusive timeStamping EKU (RFC 3161 §2.3).'
+                    'The /tsa endpoint is unauthenticated, so this makes the CA '
+                    'private key an anonymous signing oracle over caller-supplied '
+                    'content. Issue a dedicated TSA certificate with a critical, '
+                    'exclusive timeStamping EKU (RFC 3161 §2.3) and set '
+                    'tsa_require_dedicated_cert=true to enforce it.'
                 )
                 return
             raise TSAConfigurationError(

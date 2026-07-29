@@ -108,7 +108,24 @@ class AuthManager:
             permissions = json.loads(api_key.permissions)
         except Exception:
             permissions = []
-        
+
+        # Re-bind the key's scopes to the owner's CURRENT effective permissions.
+        # The stored list is a snapshot from mint time, so without this a key
+        # minted while its owner was an admin/operator keeps those scopes after
+        # the owner is demoted (e.g. to viewer) — privilege that outlives the
+        # role change. A key may narrow what its owner can do, never widen it.
+        from auth.permissions import get_effective_permissions
+        owner_permissions = get_effective_permissions(linked_user)
+        if '*' not in owner_permissions:
+            if '*' in permissions:
+                # A wildcard key is worth exactly its owner's current scopes.
+                permissions = list(owner_permissions)
+            else:
+                permissions = [
+                    perm for perm in permissions
+                    if has_permission(perm, owner_permissions)
+                ]
+
         return {
             'user_id': api_key.user_id,
             'user': api_key.user,

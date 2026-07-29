@@ -413,8 +413,13 @@ def login_2fa():
     if not data or not data.get('code'):
         return error_response('Verification code required', 400)
 
-    # Input validation - TOTP codes are 6-10 digits
-    code = str(data['code']).strip().upper()[:10]  # Max 10 chars
+    # Input validation. This accepts both a TOTP code (6-8 digits) and a
+    # recovery code, which is generated as four 4-hex-char groups joined by
+    # dashes (XXXX-XXXX-XXXX-XXXX = 19 chars). The previous [:10] truncation
+    # silently cut every recovery code down to 'XXXX-XXXX-', so it could never
+    # match a stored code and account recovery was impossible. The cap stays,
+    # just above the longest legitimate input rather than below it.
+    code = str(data['code']).strip().upper()[:32]
     if not code or len(code) < 6:
         return error_response('Invalid verification code format', 400)
 
