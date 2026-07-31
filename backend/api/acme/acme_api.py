@@ -161,6 +161,34 @@ def _is_caa_failure(error: Any) -> bool:
     return bool(re.search(r'\bcaa\b', text, re.IGNORECASE))
 
 
+# A DNS label: letters, digits, hyphen (never leading/trailing), plus underscore
+# for the deployments that use it. Deliberately excludes ':', '@', '/', '?', '#',
+# '%', '[', ']', '\' and whitespace.
+_DNS_LABEL_RE = re.compile(r'^(?!-)[A-Za-z0-9_-]{1,63}(?<!-)$')
+
+
+def _is_valid_dns_identifier(value: Any) -> bool:
+    """Whether `value` is a syntactically valid RFC 8555 §7.1.4 DNS identifier.
+
+    The 'dns' branch used to validate nothing, so a value carrying a port or
+    userinfo ("169.254.169.254:80", "evil@169.254.169.254") was accepted. Such
+    a value is unresolvable as a hostname — which made the challenge validator's
+    private-address guard pass it — but the HTTP client then re-parses it as a
+    URL authority, strips the port/userinfo and reaches the address behind it.
+    """
+    if not isinstance(value, str) or not value or len(value) > 253:
+        return False
+    if value.startswith('*.'):
+        # Wildcard order: the prefix is stripped later, during authorization
+        # normalization, so it must be tolerated here.
+        value = value[2:]
+    if value.endswith('.'):
+        value = value[:-1]          # tolerate a single trailing root dot
+    if not value:
+        return False
+    return all(_DNS_LABEL_RE.match(label) for label in value.split('.'))
+
+
 def validate_acme_identifier(identifier: Dict[str, Any]) -> Tuple[bool, Optional[str], Optional[str]]:
     """Validate a single ACME identifier (RFC 8555 DNS + RFC 8738 IP).
 
@@ -184,6 +212,11 @@ def validate_acme_identifier(identifier: Dict[str, Any]) -> Tuple[bool, Optional
     # Support both DNS (RFC 8555) and IP (RFC 8738) identifiers
     if identifier['type'] not in ('dns', 'ip'):
         return False, 'unsupportedIdentifier', f'Identifier type {identifier["type"]} not supported'
+
+    # Validate DNS name syntax for DNS identifiers (RFC 8555 §7.1.4)
+    if identifier['type'] == 'dns':
+        if not _is_valid_dns_identifier(identifier['value']):
+            return False, 'malformed', 'Malformed DNS identifier value'
 
     # Validate IP address format for IP identifiers (RFC 8738)
     if identifier['type'] == 'ip':

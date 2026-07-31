@@ -50,6 +50,28 @@ class ChallengeMixin:
         url = f"http://{url_host}/.well-known/acme-challenge/{challenge.token}"
         
         try:
+            allow_private = self._acme_allow_private_ips()
+
+            # Cloud metadata is NEVER a legitimate challenge target, so this
+            # check is unconditional — the same narrow deny-list the rest of
+            # UCM applies to admin-supplied URLs. Without it, the default
+            # configuration (private IPs allowed, for on-prem issuance) still
+            # fetched challenges from 169.254.169.254 and friends.
+            # allow_loopback follows the private-IP setting: a client colocated
+            # on 127.0.0.1 is a legitimate on-prem case, an IMDS endpoint never is.
+            from utils.ssrf_protection import validate_url_not_cloud_metadata
+            try:
+                validate_url_not_cloud_metadata(url, allow_loopback=allow_private)
+            except ValueError as md_err:
+                self._invalidate_challenge(
+                    challenge,
+                    'rejectedIdentifier',
+                    'Identifier targets a forbidden address',
+                )
+                db.session.commit()
+                logger.warning(f"HTTP-01 SSRF blocked for {identifier_value}: {md_err}")
+                return False
+
             # SSRF protection: reject identifiers that are (or resolve to)
             # private/loopback/link-local addresses unless explicitly allowed
             # (local ACME is meant for internal infra).
@@ -57,10 +79,11 @@ class ChallengeMixin:
             # handles a literal IP directly, and skipping them here let an
             # external client aim a challenge fetch at 127.0.0.1 or the cloud
             # metadata service even with private IPs disallowed.
-            if not self._acme_allow_private_ips():
+            pinned_ip = None
+            if not allow_private:
                 from utils.ssrf_protection import validate_host_not_private
                 try:
-                    validate_host_not_private(identifier_value)
+                    pinned_ip = validate_host_not_private(identifier_value)
                 except ValueError as ssrf_err:
                     self._invalidate_challenge(
                         challenge,
@@ -70,8 +93,22 @@ class ChallengeMixin:
                     db.session.commit()
                     logger.warning(f"HTTP-01 SSRF blocked for {identifier_value}: {ssrf_err}")
                     return False
-            
-            response = requests.get(url, timeout=10, allow_redirects=False)
+
+            if pinned_ip is not None and identifier_type != "ip":
+                # Close the DNS-rebinding window: the guard resolved the name,
+                # and requests would resolve it again — a short-TTL record can
+                # answer public for the check and private for the fetch. Pin the
+                # connection to the address that was actually validated.
+                # Known limitation: only the hardened (allow_private_ips=false)
+                # configuration is pinned. Under the default, private addresses
+                # are a legitimate answer anyway, so pinning would buy only the
+                # metadata check above at the cost of collapsing every on-prem
+                # validation onto a single address (no dual-stack failover).
+                from utils.ssrf_protection import pin_host
+                with pin_host(identifier_value, pinned_ip):
+                    response = requests.get(url, timeout=10, allow_redirects=False)
+            else:
+                response = requests.get(url, timeout=10, allow_redirects=False)
             response.raise_for_status()
             
             if response.text.strip() == key_authz:
@@ -230,13 +267,37 @@ class ChallengeMixin:
         expected_hash = hashlib.sha256(key_authz.encode()).digest()
         
         try:
+            allow_private = self._acme_allow_private_ips()
+
+            # Unconditional cloud-metadata check, as in the HTTP-01 path above.
+            # TLS-ALPN-01 has no URL of its own, so the authority is synthesized
+            # for the shared helper (format_ip_for_url brackets an IPv6 literal
+            # and returns a DNS name untouched).
+            from utils.acme_ip import format_ip_for_url
+            from utils.ssrf_protection import validate_url_not_cloud_metadata
+            try:
+                validate_url_not_cloud_metadata(
+                    f"https://{format_ip_for_url(identifier_value)}/",
+                    allow_loopback=allow_private,
+                )
+            except ValueError as md_err:
+                self._invalidate_challenge(
+                    challenge,
+                    'rejectedIdentifier',
+                    'Identifier targets a forbidden address',
+                )
+                db.session.commit()
+                logger.warning(f"TLS-ALPN-01 SSRF blocked for {identifier_value}: {md_err}")
+                return False
+
             # SSRF protection: see the HTTP-01 path above — IP identifiers are
             # checked as well, so an "ip" order cannot be used to reach
             # loopback/link-local/metadata addresses.
-            if not self._acme_allow_private_ips():
+            pinned_ip = None
+            if not allow_private:
                 from utils.ssrf_protection import validate_host_not_private
                 try:
-                    validate_host_not_private(identifier_value)
+                    pinned_ip = validate_host_not_private(identifier_value)
                 except ValueError as ssrf_err:
                     self._invalidate_challenge(
                         challenge,
@@ -246,7 +307,7 @@ class ChallengeMixin:
                     db.session.commit()
                     logger.warning(f"TLS-ALPN-01 SSRF blocked for {identifier_value}: {ssrf_err}")
                     return False
-            
+
             # RFC 8738: For IP identifiers, use reverse PTR mapping as SNI
             if identifier_type == "ip":
                 from utils.acme_ip import ip_to_reverse_ptr
@@ -262,8 +323,12 @@ class ChallengeMixin:
             ctx.verify_mode = ssl.CERT_NONE
             ctx.set_alpn_protocols(['acme-tls/1'])
             
-            # Connect to domain/IP
-            with socket.create_connection((identifier_value, 443), timeout=10) as sock:
+            # Connect to domain/IP. pin_host() is a urllib3 hook and does not
+            # cover a raw socket, so connect straight to the address the guard
+            # validated (same DNS-rebinding window as HTTP-01). The SNI name is
+            # already decoupled below, and check_hostname is off.
+            connect_host = pinned_ip if pinned_ip is not None else identifier_value
+            with socket.create_connection((connect_host, 443), timeout=10) as sock:
                 with ctx.wrap_socket(sock, server_hostname=sni_hostname) as ssock:
                     # Verify ALPN was negotiated
                     negotiated = ssock.selected_alpn_protocol()

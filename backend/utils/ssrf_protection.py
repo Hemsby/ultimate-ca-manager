@@ -23,32 +23,50 @@ def validate_url_not_private(url: str) -> None:
     validate_host_not_private(host)
 
 
-def validate_host_not_private(host: str) -> None:
+def validate_host_not_private(host: str) -> str:
     """Validate that a hostname doesn't resolve to a private/reserved IP.
-    
-    Raises ValueError if the host resolves to private, loopback,
-    reserved, or link-local addresses.
+
+    Raises ValueError if the host is — or resolves to — a private, loopback,
+    reserved or link-local address, or if it cannot be resolved at all.
+
+    Returns the single validated IP address, so a caller can pin its
+    connection to exactly what was checked (see pin_host) instead of letting
+    the HTTP client resolve the name a second time.
     """
-    # First check if host is already an IP
+    # First check if host is already an IP. A trailing root dot
+    # ("169.254.169.254.") names the same address on any resolver that accepts
+    # it, so it must not turn the literal into an opaque "hostname".
     try:
-        ip = ipaddress.ip_address(host)
+        ip = ipaddress.ip_address(host.rstrip('.') or host)
         if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
             raise ValueError(f"Host {host} is a private/reserved IP address")
-        return
+        return str(ip)
     except ValueError as e:
         if "private" in str(e) or "reserved" in str(e):
             raise
         # Not an IP, resolve it
-    
+
+    # Fail CLOSED when the host can be neither parsed nor resolved. Treating
+    # that as "not a SSRF risk" was a fail-open: a value like
+    # "169.254.169.254:80" or "evil@169.254.169.254" is unresolvable as a
+    # HOSTNAME, but requests re-parses it as a URL authority, splits off the
+    # port/userinfo and happily connects to the private address behind it.
     try:
         addrs = socket.getaddrinfo(host, None)
-        for _, _, _, _, sockaddr in addrs:
-            ip = ipaddress.ip_address(sockaddr[0])
-            if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
-                raise ValueError(f"Host {host} resolves to private/reserved IP {ip}")
-    except socket.gaierror:
-        # Cannot resolve — not a SSRF risk (can't reach internal services)
-        pass
+    except socket.gaierror as e:
+        raise ValueError(f"Cannot resolve host {host}: {e}")
+
+    chosen = None
+    for _, _, _, _, sockaddr in addrs:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
+            raise ValueError(f"Host {host} resolves to private/reserved IP {ip}")
+        if chosen is None:
+            chosen = str(ip)
+
+    if chosen is None:
+        raise ValueError(f"Host {host} produced no usable IP addresses")
+    return chosen
 
 
 # Cloud metadata endpoints and loopback — NEVER legitimate targets for
@@ -118,9 +136,10 @@ def validate_url_not_cloud_metadata(url: str, allow_loopback: bool = False) -> N
     if host_l in _CLOUD_METADATA_HOSTS:
         raise ValueError(f"Host {host} is a cloud metadata endpoint")
 
-    # Check literal IP
+    # Check literal IP (host_l has any trailing root dot stripped — "127.0.0.1."
+    # reaches the same address wherever the resolver accepts it)
     try:
-        ip = ipaddress.ip_address(host)
+        ip = ipaddress.ip_address(host_l)
         reason = _forbidden_ip_reason(ip, allow_loopback)
         if reason:
             raise ValueError(f"Host {host} is a {reason}")
@@ -160,8 +179,11 @@ def validate_url_not_cloud_metadata(url: str, allow_loopback: bool = False) -> N
 #
 # Caller responsibility: only use safe_request_post() / safe_request_get() /
 # safe_request_head() for outbound HTTP whose URL is provided by an authenticated UCM admin
-# (webhooks, SSO discovery, etc.). Do NOT use it for ACME/CDP/OCSP — those
-# are protocol-driven and have their own validation.
+# (webhooks, SSO discovery, etc.). Protocol-driven fetches (ACME challenge
+# validation, CDP/OCSP) run their own identifier validation instead — but that
+# validation resolves the name and then lets the HTTP client resolve it again,
+# so it is only rebinding-safe where the caller pins the connection itself with
+# pin_host() (ACME HTTP-01 / TLS-ALPN-01 do, when private IPs are disallowed).
 
 _pinned_resolution = threading.local()
 
@@ -197,7 +219,7 @@ def _ensure_urllib3_patched():
 
 
 @contextmanager
-def _pin_host(host: str, ip: str):
+def pin_host(host: str, ip: str):
     """Within this block, all urllib3 connections to `host` go to `ip`."""
     _ensure_urllib3_patched()
     pinned = getattr(_pinned_resolution, 'host_to_ip', None)
@@ -272,7 +294,7 @@ def safe_request_post(url, allow_loopback: bool = False, **kwargs):
     import requests
     kwargs.setdefault('timeout', 30)  # never hang forever on a stuck/slow upstream
     host, ip = _resolve_and_validate(url, allow_loopback)
-    with _pin_host(host, ip):
+    with pin_host(host, ip):
         return requests.post(url, **kwargs)
 
 
@@ -281,7 +303,7 @@ def safe_request_get(url, allow_loopback: bool = False, **kwargs):
     import requests
     kwargs.setdefault('timeout', 30)  # never hang forever on a stuck/slow upstream
     host, ip = _resolve_and_validate(url, allow_loopback)
-    with _pin_host(host, ip):
+    with pin_host(host, ip):
         return requests.get(url, **kwargs)
 
 
@@ -290,5 +312,5 @@ def safe_request_head(url, allow_loopback: bool = False, **kwargs):
     import requests
     kwargs.setdefault('timeout', 30)
     host, ip = _resolve_and_validate(url, allow_loopback)
-    with _pin_host(host, ip):
+    with pin_host(host, ip):
         return requests.head(url, **kwargs)
