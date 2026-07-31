@@ -4373,6 +4373,8 @@
     "selectCA": "Sélectionnez une CA pour la signature d'horodatage",
     "policyOid": "OID de politique",
     "policyOidHelp": "OID identifiant la politique TSA sous laquelle les horodatages sont émis",
+    "requireDedicatedCert": "Exiger un certificat TSA dédié",
+    "requireDedicatedCertDesc": "Refuser de signer les horodatages avec le certificat de la CA elle-même. Nécessite un certificat de signature dédié (entité finale) avec une EKU timeStamping critique (RFC 3161).",
     "endpoint": "Point d'accès TSA",
     "endpointDesc": "Utilisez cette URL dans la configuration de votre client TSA",
     "timestampRequest": "Requête d'horodatage",

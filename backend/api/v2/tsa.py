@@ -67,6 +67,12 @@ def get_tsa_config():
         'ca_id': ca_id,
         'ca_name': ca_name,
         'policy_oid': get_config('tsa_policy_oid', '1.2.3.4.1'),
+        # Off by default: pre-2.200 deployments sign with the CA certificate
+        # itself and must keep working. TSAService reads this key at signing
+        # time; before it was surfaced here the toggle was settable only by
+        # editing the database row directly.
+        'require_dedicated_cert':
+            get_config('tsa_require_dedicated_cert', 'false') == 'true',
     })
 
 
@@ -84,6 +90,11 @@ def update_tsa_config():
 
     if 'enabled' in data:
         set_config('tsa_enabled', 'true' if data['enabled'] else 'false')
+    if 'require_dedicated_cert' in data:
+        set_config(
+            'tsa_require_dedicated_cert',
+            'true' if data['require_dedicated_cert'] else 'false',
+        )
     if 'ca_refid' in data:
         set_config('tsa_ca_refid', data['ca_refid'] or '')
     if 'ca_id' in data:

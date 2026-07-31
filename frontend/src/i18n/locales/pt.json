@@ -4370,6 +4370,8 @@
     "selectCA": "Selecione uma CA para assinatura de carimbos de data/hora",
     "policyOid": "OID de política",
     "policyOidHelp": "OID que identifica a política TSA sob a qual os carimbos de data/hora são emitidos",
+    "requireDedicatedCert": "Exigir um certificado TSA dedicado",
+    "requireDedicatedCertDesc": "Recusar a assinatura de carimbos de data/hora com o próprio certificado da CA. Requer um certificado de assinatura dedicado (entidade final) com uma EKU timeStamping crítica (RFC 3161).",
     "endpoint": "Endpoint TSA",
     "endpointDesc": "Use esta URL na configuração do seu cliente TSA",
     "timestampRequest": "Solicitação de carimbo de data/hora",

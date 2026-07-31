@@ -4370,6 +4370,8 @@
     "selectCA": "Seleziona una CA per la firma delle marche temporali",
     "policyOid": "OID della politica",
     "policyOidHelp": "OID che identifica la politica TSA sotto la quale vengono emesse le marche temporali",
+    "requireDedicatedCert": "Richiedi un certificato TSA dedicato",
+    "requireDedicatedCertDesc": "Rifiuta di firmare le marche temporali con il certificato della CA stessa. Richiede un certificato di firma dedicato (entità finale) con una EKU timeStamping critica (RFC 3161).",
     "endpoint": "Endpoint TSA",
     "endpointDesc": "Usa questo URL nella configurazione del tuo client TSA",
     "timestampRequest": "Richiesta marca temporale",

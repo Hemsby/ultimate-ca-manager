@@ -4373,6 +4373,8 @@
     "selectCA": "Select a CA for timestamp signing",
     "policyOid": "Policy OID",
     "policyOidHelp": "OID identifying the TSA policy under which timestamps are issued",
+    "requireDedicatedCert": "Require a dedicated TSA certificate",
+    "requireDedicatedCertDesc": "Refuse to sign timestamps with the CA certificate itself. Requires a dedicated end-entity signing certificate with a critical timeStamping EKU (RFC 3161).",
     "endpoint": "TSA Endpoint",
     "endpointDesc": "Use this URL in your TSA client configuration",
     "timestampRequest": "Timestamp Request",

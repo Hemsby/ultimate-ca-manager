@@ -4370,6 +4370,8 @@
     "selectCA": "选择用于时间戳签名的CA",
     "policyOid": "策略OID",
     "policyOidHelp": "标识时间戳发行所依据的TSA策略的OID",
+    "requireDedicatedCert": "要求使用专用TSA证书",
+    "requireDedicatedCertDesc": "拒绝使用CA证书本身签署时间戳。需要具有关键timeStamping EKU的专用终端实体签名证书（RFC 3161）。",
     "endpoint": "TSA端点",
     "endpointDesc": "在TSA客户端配置中使用此URL",
     "timestampRequest": "时间戳请求",

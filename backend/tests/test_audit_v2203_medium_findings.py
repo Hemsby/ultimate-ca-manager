@@ -8,7 +8,6 @@
       with a CA certificate; operators now have a switch to refuse that.
   #13 The authenticated, state-changing mTLS enroll routes were CSRF-exempt.
   #15 Caller-supplied SSH certificate extensions were applied verbatim.
-  low EST treated a missing SSL_CLIENT_VERIFY as success.
   low The OCSP nonce length was unbounded (RFC 8954 §2.1 allows 1..32 octets).
 
 Follow-ups to the #246 fixes (audited after merge):
@@ -18,6 +17,9 @@ Follow-ups to the #246 fixes (audited after merge):
   #9  the re-binding zeroed out category-wildcard keys ('read:*') after an
       owner demotion, because named roles hold only concrete scopes; they now
       expand to the owner's current scopes in that category.
+  #10 the tsa_require_dedicated_cert switch was settable only by editing the
+      SystemConfig row directly; it is now exposed in GET/PATCH
+      /api/v2/tsa/config (default unchanged: off).
   #15 an explicitly emptied default_extensions policy ([]) was stored as
       NULL and re-inflated to the full standard set — allow-everything.
 """
@@ -170,7 +172,7 @@ class TestMtlsExplicitCaRequiresCaScope:
 
     def test_configured_mtls_ca_still_selectable_explicitly(
             self, app, auth_client, mtls_cas):
-        """Passing the configured CA's own id stays allowed — the UI sends it."""
+        """Passing the configured CA's own id stays allowed (API clients pin it)."""
         c = self._group_granted_client(app, auth_client)
         r = c.post(
             '/api/v2/mtls/certificates',
@@ -432,6 +434,76 @@ class TestTsaDedicatedCertificateSwitch:
         with app.app_context():
             with pytest.raises(TSAConfigurationError, match='dedicated'):
                 TSAService.validate_certificate(self._ca_cert())
+
+
+# ---------------------------------------------------------------------------
+# #10 follow-up — the dedicated-cert switch is settable through the API
+# ---------------------------------------------------------------------------
+
+class TestTsaDedicatedCertToggleIsExposed:
+    """tsa_require_dedicated_cert must be operable without editing the DB.
+
+    The #246 review accepted the switch itself but flagged that it appeared
+    in neither GET nor PATCH /api/v2/tsa/config (nor the UI), so as shipped
+    it was settable only by inserting the SystemConfig row by hand — the
+    service even instructs operators to "set tsa_require_dedicated_cert=true"
+    with no supported way to do it.
+    """
+
+    @pytest.fixture()
+    def clean_toggle_row(self, app):
+        """Drop the toggle row afterwards: the DB is session-scoped, and the
+        TestTsaDedicatedCertificateSwitch default-behaviour test (and any real
+        signing test) must keep seeing the compatible default."""
+        yield
+        from models import SystemConfig, db
+
+        with app.app_context():
+            SystemConfig.query.filter_by(
+                key='tsa_require_dedicated_cert'
+            ).delete(synchronize_session=False)
+            db.session.commit()
+
+    def test_get_exposes_the_toggle_with_its_default(self, auth_client):
+        r = auth_client.get('/api/v2/tsa/config')
+        assert r.status_code == 200, r.data
+        body = json.loads(r.data)
+        data = body.get('data') or body
+        assert data.get('require_dedicated_cert') is False, (
+            'GET /api/v2/tsa/config must expose require_dedicated_cert '
+            f'(default off), got: {data!r}'
+        )
+
+    def test_patch_reaches_the_enforcement_read(
+            self, app, auth_client, clean_toggle_row):
+        from services.tsa_service import TSAService
+
+        r = auth_client.patch(
+            '/api/v2/tsa/config',
+            data=json.dumps({'require_dedicated_cert': True}),
+            content_type='application/json',
+        )
+        assert r.status_code == 200, r.data
+
+        # The exact read TSAService performs at signing time must now flip —
+        # this ties the API field to the enforcement, not just to an echo.
+        with app.app_context():
+            assert TSAService._require_dedicated_tsa_cert() is True
+
+        r = auth_client.get('/api/v2/tsa/config')
+        assert r.status_code == 200, r.data
+        body = json.loads(r.data)
+        assert (body.get('data') or body)['require_dedicated_cert'] is True
+
+        # Switching it back off restores the pre-2.200-compatible default.
+        r = auth_client.patch(
+            '/api/v2/tsa/config',
+            data=json.dumps({'require_dedicated_cert': False}),
+            content_type='application/json',
+        )
+        assert r.status_code == 200, r.data
+        with app.app_context():
+            assert TSAService._require_dedicated_tsa_cert() is False
 
 
 # ---------------------------------------------------------------------------
