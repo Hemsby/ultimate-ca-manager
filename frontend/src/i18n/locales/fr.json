@@ -1876,7 +1876,8 @@
       "importSelected": "Importer {{count}} sélectionnés",
       "importSuccess": "{{count}} éléments importés avec succès ({{skipped}} ignorés)",
       "noItemsSelected": "Veuillez sélectionner au moins un élément à importer",
-      "ignoreCert": "Ignorer le certificat SSL (auto-signé)"
+      "ignoreCert": "Ignorer le certificat SSL (auto-signé)",
+      "sslWarning": "⚠ La vérification SSL est désactivée. Les connexions sont vulnérables aux attaques man-in-the-middle."
     },
     "export": {
       "allCertsTitle": "Exporter tous les certificats",

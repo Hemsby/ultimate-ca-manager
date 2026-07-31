@@ -2,6 +2,7 @@ import base64
 import datetime
 import json
 
+import requests
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -215,6 +216,66 @@ def test_opnsense_import_defaults_to_verify_ssl_true(app, auth_client, monkeypat
     )
     assert r.status_code == 200, r.data
     assert captured['verify_ssl'] is True
+
+
+class _SSLFailingSession:
+    """Session whose every request fails TLS verification, the way requests
+    surfaces it: SSLError — which is a ConnectionError SUBCLASS, so without
+    a dedicated handler it wears the generic host/port message."""
+
+    def get(self, url, auth=None, timeout=None):
+        raise requests.exceptions.SSLError(
+            "certificate verify failed: self-signed certificate")
+
+
+def test_opnsense_test_tls_failure_names_the_certificate(app, auth_client, monkeypatch):
+    """verify-by-default (#248/#255) makes a stock self-signed OPNsense GUI
+    fail TLS verification on the DEFAULT interactive request; the operator
+    must be told it is the certificate, not 'Check host and port.'"""
+    from api.v2 import import_opnsense
+
+    monkeypatch.setattr(import_opnsense, "create_session",
+                        lambda verify_ssl=True: _SSLFailingSession())
+
+    r = auth_client.post(
+        '/api/v2/import/opnsense/test',
+        data=json.dumps({
+            "host": "192.168.1.254",
+            "port": 443,
+            "api_key": "key",
+            "api_secret": "secret",
+        }),
+        content_type='application/json',
+    )
+    assert r.status_code == 400, r.data
+    body = r.get_data(as_text=True)
+    assert 'certificate' in body
+    assert 'host and port' not in body
+
+
+def test_opnsense_import_tls_failure_names_the_certificate(app, auth_client, monkeypatch):
+    """Same for the import endpoint, whose generic handler said only
+    'Import failed' (500)."""
+    from api.v2 import import_opnsense
+
+    monkeypatch.setattr(import_opnsense, "create_session",
+                        lambda verify_ssl=True: _SSLFailingSession())
+
+    r = auth_client.post(
+        '/api/v2/import/opnsense/import',
+        data=json.dumps({
+            "host": "192.168.1.254",
+            "port": 443,
+            "api_key": "key",
+            "api_secret": "secret",
+            "items": [],
+        }),
+        content_type='application/json',
+    )
+    assert r.status_code == 400, r.data
+    body = r.get_data(as_text=True)
+    assert 'certificate' in body
+    assert 'Import failed' not in body
 
 
 def test_opnsense_explicit_verify_ssl_false_is_honored(app, auth_client, monkeypatch):

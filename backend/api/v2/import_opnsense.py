@@ -242,11 +242,23 @@ def test_connection():
     except requests.exceptions.Timeout:
         logger.error(f"OpnSense connection timeout: {host}:{port}")
         return error_response("Connection timeout. Check host and port.", 408)
-    
+
+    # SSLError MUST precede ConnectionError (it is a subclass): the generic
+    # handler's "Check host and port." misdiagnoses a certificate failure —
+    # the exact case verify-by-default makes common on a stock self-signed
+    # OPNsense GUI. Wording matches api/v2/sso/connection_tests.py, naming
+    # this form's actual checkbox.
+    except requests.exceptions.SSLError as e:
+        logger.error(f"OpnSense TLS certificate verification failed: {host}:{port}: {e}")
+        return error_response(
+            "SSL certificate verification failed. Enable 'Ignore SSL "
+            "certificate (self-signed)' or install a certificate trusted "
+            "by UCM on the OPNsense GUI.", 400)
+
     except requests.exceptions.ConnectionError:
         logger.error(f"OpnSense connection failed: {host}:{port}")
         return error_response("Connection failed. Check host and port.", 503)
-    
+
     except Exception as e:
         logger.exception(f"OpnSense test error: {str(e)}")
         return error_response("Internal error during connection test", 500)
@@ -487,6 +499,16 @@ def import_items():
             "errors": stats['errors']
         })
     
+    except requests.exceptions.SSLError as e:
+        # The fetch fails before anything joins the session; the rollback is
+        # defensive, keeping this path symmetric with the generic handler.
+        db.session.rollback()
+        logger.error(f"OpnSense TLS certificate verification failed: {host}:{port}: {e}")
+        return error_response(
+            "SSL certificate verification failed. Enable 'Ignore SSL "
+            "certificate (self-signed)' or install a certificate trusted "
+            "by UCM on the OPNsense GUI.", 400)
+
     except Exception as e:
         db.session.rollback()
         logger.exception(f"OpnSense import failed: {str(e)}")

@@ -1818,7 +1818,8 @@
       "importSelected": "Import {{count}} selected",
       "importSuccess": "Successfully imported {{count}} items ({{skipped}} skipped)",
       "noItemsSelected": "Please select at least one item to import",
-      "ignoreCert": "Ignore SSL certificate (self-signed)"
+      "ignoreCert": "Ignore SSL certificate (self-signed)",
+      "sslWarning": "⚠ SSL verification is disabled. Connections are vulnerable to man-in-the-middle attacks."
     },
     "export": {
       "allCertsTitle": "Export All Certificates",

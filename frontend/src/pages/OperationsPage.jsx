@@ -659,7 +659,7 @@ export default function OperationsPage() {
             <span className="text-sm text-text-secondary">{t('importExport.opnsense.ignoreCert')}</span>
           </label>
           {!opnsenseVerifySsl && (
-            <p className="text-xs text-amber-500">{t('sso.sslWarning')}</p>
+            <p className="text-xs text-amber-500">{t('importExport.opnsense.sslWarning')}</p>
           )}
 
           {testResult && (

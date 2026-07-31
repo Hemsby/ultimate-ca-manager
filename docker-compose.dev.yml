@@ -6,6 +6,11 @@
 # Usage:
 #   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
+# REQUIRES Docker Compose >= 2.24: the `ports: !override` below is a hard
+# parse error on older releases ("!override" is reported as an unknown YAML
+# tag). Upgrade Compose rather than removing the tag — without it the base
+# file's all-interfaces port publishes silently survive the merge.
+#
 # ############################################################################
 # # NEVER EXPOSE THIS CONFIGURATION TO AN UNTRUSTED NETWORK.                ##
 # # FLASK_DEBUG=true enables the Werkzeug debug middleware: its traceback   ##

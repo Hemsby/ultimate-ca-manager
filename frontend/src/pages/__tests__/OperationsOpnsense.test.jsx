@@ -50,7 +50,7 @@ describe('OperationsPage — OPNsense TLS verification default', () => {
     renderOperations()
     expect(getIgnoreCertCheckbox().checked).toBe(false)
     // Secure state shows no downgrade warning.
-    expect(screen.queryByText('sso.sslWarning')).toBeNull()
+    expect(screen.queryByText('importExport.opnsense.sslWarning')).toBeNull()
   })
 
   it('sends verify_ssl: true on test connection by default', async () => {
@@ -76,7 +76,7 @@ describe('OperationsPage — OPNsense TLS verification default', () => {
       JSON.stringify({ host: 'h', verify_ssl: false }))
     renderOperations()
     expect(getIgnoreCertCheckbox().checked).toBe(true)
-    expect(screen.getByText('sso.sslWarning')).toBeTruthy()
+    expect(screen.getByText('importExport.opnsense.sslWarning')).toBeTruthy()
   })
 
   it('sends verify_ssl: false when the user opts out via the checkbox', async () => {
