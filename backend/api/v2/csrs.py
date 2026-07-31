@@ -28,6 +28,10 @@ from utils.db_transaction import safe_commit
 bp = Blueprint('csrs_v2', __name__)
 logger = logging.getLogger(__name__)
 
+# Backend cert_type values that produce a CA record with signing authority.
+# Signing one of these is a CA-management action and requires 'write:cas'.
+_CA_CERT_TYPES = frozenset({'intermediate_ca'})
+
 @bp.route('/api/v2/csrs', methods=['GET'])
 @require_auth(['read:csrs'])
 def list_csrs():
@@ -646,7 +650,20 @@ def sign_csr(csr_id):
         'intermediate_ca': 'intermediate_ca'
     }
     backend_cert_type = cert_type_map.get(cert_type, 'server_cert')
-    
+
+    # Signing a CSR as an intermediate CA creates a real CA record with signing
+    # authority — that is a CA-management action, not a certificate-issuance
+    # one, and must require the same permission as POST /api/v2/cas. Without
+    # this a principal holding only write:csrs / write:certificates could mint
+    # an intermediate able to issue for arbitrary names.
+    if backend_cert_type in _CA_CERT_TYPES:
+        from auth.unified import has_permission
+        if not has_permission('write:cas', getattr(g, 'permissions', []) or []):
+            return error_response(
+                'Signing a CSR as an intermediate CA requires the write:cas permission',
+                403,
+            )
+
     if not ca_id:
         return error_response('CA ID required', 400)
     
