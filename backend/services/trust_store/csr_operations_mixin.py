@@ -117,6 +117,18 @@ def _default_ekus_for_cert_type(cert_type):
     return []
 
 
+def _prior_ekus(renewal_of):
+    """EKUs the certificate being renewed already carries ([] if none)."""
+    if renewal_of is None:
+        return []
+    try:
+        return list(renewal_of.extensions.get_extension_for_oid(
+            ExtensionOID.EXTENDED_KEY_USAGE
+        ).value)
+    except x509.ExtensionNotFound:
+        return []
+
+
 def _filter_csr_ekus(eku_oids, cert_type, allow_sensitive_ekus, renewal_of=None):
     """Cap CSR-supplied EKUs for a leaf to what *cert_type* permits.
 
@@ -527,7 +539,12 @@ class CSROperationsMixin:
                     ),
                     critical=True,
                 )
-            elif cert_type == 'server_cert':
+            elif cert_type in ('server_cert', 'device_cert'):
+                # device_cert is the EST profile: before it existed, EST signed
+                # under server_cert and its no-KeyUsage CSRs (the plain
+                # `openssl req -new` shape) got this TLS pair. The profile
+                # split must not silently drop the extension — a leaf with no
+                # KeyUsage is unrestricted (RFC 5280 §4.2.1.3).
                 builder = builder.add_extension(
                     x509.KeyUsage(
                         digital_signature=True, key_encipherment=True,
@@ -553,6 +570,25 @@ class CSROperationsMixin:
 
         if not csr_has_eku:
             base_eku = _default_ekus_for_cert_type(cert_type)
+            # Renewal at par applies to a CSR that requests nothing as well:
+            # the type's default profile is not necessarily what the
+            # certificate being renewed carries (an EST device_cert enrolment
+            # gets serverAuth+clientAuth; scheduled auto-renewal re-signs the
+            # stored no-EKU CSR under the default server_cert). Without this,
+            # renewal silently narrows the leaf — the exact failure
+            # renewal_of exists to prevent. The hard block-list still wins:
+            # OCSPSigning, timeStamping, anyEKU and Smartcard Logon are never
+            # resurrected from a prior certificate. Deliberately NOT routed
+            # through _filter_csr_ekus: an all-blocked prior set on an
+            # unprofiled type would hit its empty-kept fallback and raise,
+            # turning a renewal into a hard failure.
+            prior_kept = [
+                oid for oid in _prior_ekus(renewal_of)
+                if oid not in _LEAF_FORBIDDEN_EKU_OIDS
+                and oid not in (_ANY_EKU_OID, _SMARTCARD_LOGON_OID)
+            ]
+            if prior_kept:
+                base_eku = merge_eku_lists(base_eku, prior_kept)
             merged = merge_eku_lists(base_eku, extra_oids)
             if merged:
                 builder = builder.add_extension(

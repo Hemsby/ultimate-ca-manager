@@ -39,6 +39,9 @@ CODE_SIGNING = ExtendedKeyUsageOID.CODE_SIGNING
 OCSP_SIGNING = ExtendedKeyUsageOID.OCSP_SIGNING
 ANY_EKU = x509.ObjectIdentifier('2.5.29.37.0')
 SMARTCARD_LOGON = x509.ObjectIdentifier('1.3.6.1.4.1.311.20.2.2')
+# An EKU outside the device profile and outside the hard block-list, so
+# only the per-type ceiling can drop it.
+MS_DOC_SIGNING = x509.ObjectIdentifier('1.3.6.1.4.1.311.10.3.12')
 
 _BACKEND = Path(__file__).resolve().parents[1]
 
@@ -90,7 +93,7 @@ def _prior_cert(leaf_key, ekus):
             .sign(leaf_key, hashes.SHA256()))
 
 
-def _sign_and_get_ekus(ca, csr, **kwargs):
+def _sign_cert(ca, csr, **kwargs):
     ca_cert, ca_key = ca
     pem = TrustStoreService.sign_csr(
         csr_pem=csr.public_bytes(serialization.Encoding.PEM),
@@ -99,7 +102,11 @@ def _sign_and_get_ekus(ca, csr, **kwargs):
         validity_days=30,
         **kwargs,
     )
-    cert = x509.load_pem_x509_certificate(pem)
+    return x509.load_pem_x509_certificate(pem)
+
+
+def _sign_and_get_ekus(ca, csr, **kwargs):
+    cert = _sign_cert(ca, csr, **kwargs)
     try:
         ext = cert.extensions.get_extension_for_oid(
             ExtensionOID.EXTENDED_KEY_USAGE
@@ -164,6 +171,48 @@ def test_renewal_does_not_resurrect_any_eku_or_smartcard(ca, leaf_key):
     assert SMARTCARD_LOGON not in ekus
 
 
+def test_renewal_of_no_eku_csr_keeps_prior_client_auth(ca, leaf_key):
+    """Renewal at par must not depend on the CSR carrying an EKU extension.
+
+    This is the EST no-EKU shape end to end: enrolment signs the plain
+    `openssl req -new` CSR under device_cert (serverAuth+clientAuth), the
+    Certificate row stores that same CSR, and scheduled auto-renewal re-signs
+    it under the default server_cert with only renewal_of set — clientAuth
+    must survive, or every renewal silently breaks mTLS client auth.
+    """
+    prior = _prior_cert(leaf_key, [SERVER_AUTH, CLIENT_AUTH])
+    ekus = _sign_and_get_ekus(
+        ca, _csr(leaf_key, None), cert_type='server_cert', renewal_of=prior,
+    )
+    assert CLIENT_AUTH in ekus
+    assert SERVER_AUTH in ekus
+
+
+def test_renewal_of_no_eku_csr_keeps_prior_ipsec_ike(ca, leaf_key):
+    """Same shape, beyond the TLS pair: an EKU the server_cert profile does
+    not even contain still survives a no-EKU-CSR renewal."""
+    prior = _prior_cert(leaf_key, [SERVER_AUTH, IPSEC_IKE])
+    ekus = _sign_and_get_ekus(
+        ca, _csr(leaf_key, None), cert_type='server_cert', renewal_of=prior,
+    )
+    assert IPSEC_IKE in ekus
+
+
+def test_renewal_of_no_eku_csr_does_not_resurrect_blocklist(ca, leaf_key):
+    """The no-EKU renewal branch applies the same hard block-list as
+    _filter_csr_ekus: prior OCSPSigning/anyEKU/Smartcard Logon stay dead."""
+    prior = _prior_cert(
+        leaf_key, [OCSP_SIGNING, ANY_EKU, SMARTCARD_LOGON, SERVER_AUTH]
+    )
+    ekus = _sign_and_get_ekus(
+        ca, _csr(leaf_key, None), cert_type='server_cert', renewal_of=prior,
+    )
+    assert OCSP_SIGNING not in ekus
+    assert ANY_EKU not in ekus
+    assert SMARTCARD_LOGON not in ekus
+    assert SERVER_AUTH in ekus
+
+
 # --- the EST device profile -------------------------------------------------
 
 def test_device_profile_keeps_ipsec_ike_on_first_enrollment(ca, leaf_key):
@@ -191,6 +240,85 @@ def test_device_profile_no_eku_csr_gets_tls_pair(ca, leaf_key):
     (unrestricted) certificate."""
     ekus = _sign_and_get_ekus(ca, _csr(leaf_key, None), cert_type='device_cert')
     assert ekus == {SERVER_AUTH, CLIENT_AUTH}
+
+
+def test_device_profile_caps_eku_outside_the_profile(ca, leaf_key):
+    """The device ceiling is an upper bound, not just the block-list.
+
+    Without this, deleting the 'device_cert' entry from
+    _CERT_TYPE_ALLOWED_EKUS makes EST uncapped — an unknown cert_type gets
+    no per-type ceiling, only the hard block-list — and every other test in
+    this module still passes: they only ever request EKUs that are either
+    inside the profile or on the block-list.
+    """
+    ekus = _sign_and_get_ekus(
+        ca, _csr(leaf_key, [SERVER_AUTH, MS_DOC_SIGNING]),
+        cert_type='device_cert',
+    )
+    assert MS_DOC_SIGNING not in ekus
+    assert ekus == {SERVER_AUTH}
+
+
+def test_device_cert_has_an_explicit_ceiling():
+    """The ceiling must exist to be enforced: an unknown cert_type is
+    uncapped except for the block-list, so silently dropping the map entry
+    would silently uncap EST."""
+    from services.trust_store.csr_operations_mixin import _CERT_TYPE_ALLOWED_EKUS
+    assert 'device_cert' in _CERT_TYPE_ALLOWED_EKUS
+
+
+def _scep_allowed_eku_names():
+    """The EKU names in scep_service's method-local _ALLOWED_EKU_OIDS set
+    literal, extracted from source (it is not importable)."""
+    src = (_BACKEND / 'services' / 'scep' / 'scep_service.py').read_text(
+        encoding='utf-8'
+    )
+    for node in ast.walk(ast.parse(src)):
+        if (isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Set)
+                and any(isinstance(t, ast.Name) and t.id == '_ALLOWED_EKU_OIDS'
+                        for t in node.targets)):
+            names = []
+            for elt in node.value.elts:
+                assert isinstance(elt, ast.Attribute), (
+                    f'unexpected element in _ALLOWED_EKU_OIDS: {ast.dump(elt)}'
+                )
+                names.append(elt.attr)
+            return names
+    raise AssertionError(
+        'scep_service.py no longer builds _ALLOWED_EKU_OIDS from a set '
+        'literal — update this extractor alongside it'
+    )
+
+
+def test_device_ceiling_matches_scep_allow_list():
+    """device_cert's comment claims "the same reviewed allow-list SCEP
+    applies" — pin that to SCEP's actual source, not a hand-copied OID list,
+    so the two ceilings cannot silently diverge. (SCEP does not route through
+    TrustStoreService.sign_csr: it builds its certificate itself and applies
+    _ALLOWED_EKU_OIDS in its own copy loop.)"""
+    from services.trust_store.csr_operations_mixin import _CERT_TYPE_ALLOWED_EKUS
+    scep = {
+        getattr(ExtendedKeyUsageOID, name)
+        for name in _scep_allowed_eku_names()
+    }
+    assert _CERT_TYPE_ALLOWED_EKUS['device_cert'] == scep
+
+
+def test_device_profile_no_ku_csr_gets_tls_key_usage(ca, leaf_key):
+    """A no-KeyUsage device CSR (the plain `openssl req -new` shape) must
+    still get the critical digitalSignature+keyEncipherment pair EST always
+    emitted under server_cert: the device_cert profile split must not leave
+    EST leaves without a KeyUsage extension (unrestricted, RFC 5280
+    §4.2.1.3, and a CA/B BR violation for any device cert doing TLS)."""
+    cert = _sign_cert(ca, _csr(leaf_key, None), cert_type='device_cert')
+    ext = cert.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE)
+    assert ext.critical
+    ku = ext.value
+    assert ku.digital_signature
+    assert ku.key_encipherment
+    assert not ku.key_cert_sign
+    assert not ku.crl_sign
 
 
 # --- wiring: the profile is only real if the EST endpoints actually pass it -

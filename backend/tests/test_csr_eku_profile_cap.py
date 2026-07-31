@@ -249,3 +249,35 @@ def test_no_eku_csr_gets_the_code_signing_profile(ca, leaf_key):
         ca, _csr(leaf_key, None), cert_type='code_signing',
     )
     assert ekus == {CODE_SIGNING}
+
+
+def test_every_ceiling_type_has_a_default_within_the_ceiling():
+    """Two invariants the signing paths rely on, pinned per type.
+
+    default ⊆ ceiling: a type's silent default grants its core purpose; its
+    ceiling is what a CSR may explicitly request on top (server_cert defaults
+    to serverAuth but permits clientAuth; email_cert defaults to
+    emailProtection but permits clientAuth for S/MIME + TLS-client devices).
+    The ceiling being wider than the default is deliberate — the default must
+    never exceed the ceiling, or a no-EKU CSR would receive more than any
+    explicit CSR may request.
+
+    default non-empty: the total-drop fallback issues the default profile,
+    and refuses outright only for types with no ceiling entry. A ceiling type
+    with an empty default would turn an all-refused CSR into a hard failure
+    instead of the profile.
+    """
+    from services.trust_store.csr_operations_mixin import (
+        _CERT_TYPE_ALLOWED_EKUS,
+        _default_ekus_for_cert_type,
+    )
+    for cert_type, allowed in _CERT_TYPE_ALLOWED_EKUS.items():
+        default = _default_ekus_for_cert_type(cert_type)
+        assert default, (
+            f'{cert_type!r} has an EKU ceiling but no default profile: an '
+            'all-refused CSR would raise instead of falling back'
+        )
+        assert set(default) <= set(allowed), (
+            f'{cert_type!r} default {sorted(o.dotted_string for o in default)} '
+            'exceeds its own ceiling'
+        )
