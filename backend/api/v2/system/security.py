@@ -211,8 +211,26 @@ def disable_encryption():
     """
     try:
         from security.encryption import (
-            KeyEncryption, key_encryption, decrypt_all_keys as do_decrypt
+            KeyEncryption, key_encryption, key_encryption_required,
+            decrypt_all_keys as do_decrypt
         )
+
+        # Refuse BEFORE any destructive step. Under the require flag,
+        # decrypting the database and removing the key file would end in
+        # reload() raising after the damage is done — leaving keys in
+        # plaintext AND a service that refuses its next startup.
+        if key_encryption_required():
+            logger.warning(
+                "Disable-encryption refused: UCM_REQUIRE_KEY_ENCRYPTION is set"
+            )
+            return error_response(
+                "Private-key encryption is enforced on this deployment "
+                "(UCM_REQUIRE_KEY_ENCRYPTION is set). Disabling it would "
+                "store private keys in plaintext and the service would "
+                "refuse its next startup. Unset UCM_REQUIRE_KEY_ENCRYPTION "
+                "and restart UCM first if you really intend to disable "
+                "encryption.", 409
+            )
 
         if not key_encryption.is_enabled:
             return error_response("Encryption is not enabled", 400)

@@ -13,6 +13,16 @@ from functools import lru_cache
 logger = logging.getLogger(__name__)
 
 
+def _require_db_encryption_key() -> bool:
+    """True when the deployment opted in to refusing the machine-id fallback.
+
+    Accepts the same truthy spellings as the rest of the codebase
+    (see security.rate_limiter._get_env_bool): '1', 'true', 'yes', 'on'.
+    """
+    val = os.environ.get('UCM_REQUIRE_DB_ENCRYPTION_KEY', '').strip().lower()
+    return val in ('1', 'true', 'yes', 'on')
+
+
 def _get_encryption_key() -> bytes:
     """
     Get or generate encryption key from environment.
@@ -35,10 +45,11 @@ def _get_encryption_key() -> bytes:
     # The derivation is kept for backward compatibility — changing it would
     # make existing encrypted rows undecryptable — but it is now loud, and
     # deployments can refuse to run without a real key.
-    if os.environ.get('UCM_REQUIRE_DB_ENCRYPTION_KEY', '').lower() == 'true':
+    if _require_db_encryption_key():
         raise RuntimeError(
-            'UCM_DB_ENCRYPTION_KEY is not set and UCM_REQUIRE_DB_ENCRYPTION_KEY=true. '
-            'Set UCM_DB_ENCRYPTION_KEY to a base64-encoded 32-byte Fernet key.'
+            'UCM_DB_ENCRYPTION_KEY is not set and UCM_REQUIRE_DB_ENCRYPTION_KEY '
+            'is enabled. Set UCM_DB_ENCRYPTION_KEY to a base64-encoded 32-byte '
+            'Fernet key.'
         )
 
     logger.warning(
@@ -111,12 +122,20 @@ def decrypt_value(encrypted: str) -> str:
     """
     Decrypt a value from database.
     Returns original string or None if decryption fails.
+
+    Raises if the cipher itself cannot be constructed (missing key with
+    UCM_REQUIRE_DB_ENCRYPTION_KEY enabled, or a malformed key): that is a
+    configuration refusal, not a data problem, and it must never be
+    indistinguishable from "no value" — swallowing it here made every
+    integration secret silently read back as None (#245 follow-up).
     """
     if not encrypted:
         return encrypted
-    
+
+    # Deliberately OUTSIDE the try: a cipher-construction failure is loud.
+    cipher = get_cipher()
+
     try:
-        cipher = get_cipher()
         decrypted = cipher.decrypt(encrypted.encode())
         return decrypted.decode()
     except Exception:
@@ -148,3 +167,28 @@ def decrypt_if_needed(value: str) -> str:
     if not value or not is_encrypted(value):
         return value
     return decrypt_value(value)
+
+
+def _refuse_startup_if_key_required_but_missing() -> None:
+    """Import-time guard for UCM_REQUIRE_DB_ENCRYPTION_KEY (#245 follow-up).
+
+    The check inside _get_encryption_key() only fires on the first
+    encrypt/decrypt call, and every use of this module is lazy — so a
+    deployment that set the require flag without a key still booted
+    normally and only found out when integrations started reading their
+    secrets back as None. This module IS imported during application
+    startup (models.hsm via models/__init__, before create_app finishes),
+    so raising here refuses startup the same way security.encryption's
+    import-time singleton does for UCM_REQUIRE_KEY_ENCRYPTION.
+    """
+    if _require_db_encryption_key() and not os.environ.get('UCM_DB_ENCRYPTION_KEY'):
+        raise RuntimeError(
+            'UCM_DB_ENCRYPTION_KEY is not set and UCM_REQUIRE_DB_ENCRYPTION_KEY '
+            'is enabled — refusing to start. Set UCM_DB_ENCRYPTION_KEY to a '
+            'base64-encoded 32-byte Fernet key, or unset '
+            'UCM_REQUIRE_DB_ENCRYPTION_KEY to fall back to the machine-id '
+            'derived key.'
+        )
+
+
+_refuse_startup_if_key_required_but_missing()
