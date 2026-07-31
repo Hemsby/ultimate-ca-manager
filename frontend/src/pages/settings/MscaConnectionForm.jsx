@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { TestTube } from '@phosphor-icons/react'
+import { TestTube, FloppyDisk } from '@phosphor-icons/react'
 import { Button, Input, Select, Textarea } from '../../components'
 import CertificateInput from '../../components/CertificateInput'
 import { mscaService } from '../../services'
@@ -371,6 +371,7 @@ export default function MscaConnectionForm({ connection, onSave, onCancel }) {
             {t('common.cancel')}
           </Button>
           <Button type="submit">
+            <FloppyDisk size={16} />
             {connection ? t('common.save') : t('common.create')}
           </Button>
         </div>
