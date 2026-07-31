@@ -175,6 +175,15 @@ class CACreationMixin:
             issuer = parent_cert.subject
             parent_not_after = to_naive_utc(parent_cert.not_valid_after_utc)
 
+            # Clamp the requested pathLenConstraint to what the parent permits
+            # (RFC 5280 §4.2.1.9) before the certificate is built AND before
+            # the CA row is stored, so the two can never disagree. A pathLen-0
+            # parent refuses outright — the same rule (and error string) the
+            # sign-CSR sub-CA path enforces; without this, POST /api/v2/cas
+            # minted a child asserting any pathLen under any parent.
+            from services.trust_store.csr_operations_mixin import capped_path_length
+            path_length = capped_path_length(path_length, parent_cert)
+
             # Load parent CA signing key
             if not parent_ca.has_private_key:
                 raise ValueError("Parent CA has no private key")
