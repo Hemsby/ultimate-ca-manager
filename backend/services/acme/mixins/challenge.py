@@ -50,10 +50,14 @@ class ChallengeMixin:
         url = f"http://{url_host}/.well-known/acme-challenge/{challenge.token}"
         
         try:
-            # SSRF protection: reject domains resolving to private/loopback IPs
-            # unless explicitly allowed (local ACME is meant for internal infra).
-            # RFC 8738: For IP identifiers, skip DNS resolution check
-            if identifier_type == "dns" and not self._acme_allow_private_ips():
+            # SSRF protection: reject identifiers that are (or resolve to)
+            # private/loopback/link-local addresses unless explicitly allowed
+            # (local ACME is meant for internal infra).
+            # RFC 8738 IP identifiers are checked too: validate_host_not_private
+            # handles a literal IP directly, and skipping them here let an
+            # external client aim a challenge fetch at 127.0.0.1 or the cloud
+            # metadata service even with private IPs disallowed.
+            if not self._acme_allow_private_ips():
                 from utils.ssrf_protection import validate_host_not_private
                 try:
                     validate_host_not_private(identifier_value)
@@ -61,7 +65,7 @@ class ChallengeMixin:
                     self._invalidate_challenge(
                         challenge,
                         'rejectedIdentifier',
-                        'Domain resolves to a non-public address',
+                        'Identifier resolves to a non-public address',
                     )
                     db.session.commit()
                     logger.warning(f"HTTP-01 SSRF blocked for {identifier_value}: {ssrf_err}")
@@ -226,10 +230,10 @@ class ChallengeMixin:
         expected_hash = hashlib.sha256(key_authz.encode()).digest()
         
         try:
-            # SSRF protection: reject domains resolving to private/loopback IPs
-            # unless explicitly allowed (local ACME is meant for internal infra).
-            # RFC 8738: For IP identifiers, skip DNS resolution check
-            if identifier_type == "dns" and not self._acme_allow_private_ips():
+            # SSRF protection: see the HTTP-01 path above — IP identifiers are
+            # checked as well, so an "ip" order cannot be used to reach
+            # loopback/link-local/metadata addresses.
+            if not self._acme_allow_private_ips():
                 from utils.ssrf_protection import validate_host_not_private
                 try:
                     validate_host_not_private(identifier_value)
@@ -237,7 +241,7 @@ class ChallengeMixin:
                     self._invalidate_challenge(
                         challenge,
                         'rejectedIdentifier',
-                        'Domain resolves to a non-public address',
+                        'Identifier resolves to a non-public address',
                     )
                     db.session.commit()
                     logger.warning(f"TLS-ALPN-01 SSRF blocked for {identifier_value}: {ssrf_err}")
