@@ -86,9 +86,16 @@ def validate_host_not_private(host: str) -> list:
 # (which would let attackers probe UCM's own internal endpoints).
 _CLOUD_METADATA_IPS = {
     '169.254.169.254',          # AWS, Azure, DigitalOcean, GCP (also link-local)
+    '169.254.170.2',            # AWS ECS/EKS task credentials (see note below)
     '100.100.100.200',          # Alibaba Cloud
     'fd00:ec2::254',            # AWS IPv6
 }
+# 169.254.170.2 is NOT the instance metadata service, which is why it was missed:
+# it is the ECS task-credentials endpoint, reached by appending the container's
+# AWS_CONTAINER_CREDENTIALS_RELATIVE_URI. It hands out live task-role IAM
+# credentials exactly as IMDS does, so the impact is identical even though the
+# address is not. Blocked unconditionally with the rest -- a link-local address
+# is never a legitimate ACME/webhook/SSO target, whatever allow_private_ips says.
 _CLOUD_METADATA_HOSTS = {
     'metadata.google.internal',
     'metadata',                 # GCP short name

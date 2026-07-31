@@ -427,6 +427,8 @@ def test_http01_allows_policy_word_hostname_in_hardened_config(
 @pytest.mark.parametrize('url', [
     'http://169.254.169.254/latest/meta-data/',
     'http://169.254.169.254./latest/meta-data/',
+    'http://169.254.170.2/v2/credentials/',
+    'http://[::ffff:169.254.170.2]/v2/credentials/',
     'http://100.100.100.200/',
     'http://[fd00:ec2::254]/',
     'http://[::ffff:169.254.169.254]/',
@@ -438,6 +440,26 @@ def test_genuine_metadata_endpoints_are_still_refused(url):
     """Control: separating parse from policy must not loosen the deny-list."""
     with pytest.raises(ValueError):
         ssrf_protection.validate_url_not_cloud_metadata(url, allow_loopback=True)
+
+
+def test_every_credential_endpoint_is_refused_even_with_private_ips_allowed():
+    """The deny-list is checked as a SET, so adding an entry cannot be forgotten here.
+
+    169.254.170.2 was missing for exactly the reason a hand-maintained list
+    goes stale: it is not the *instance* metadata service, it is the ECS
+    task-credentials endpoint, so it did not look like the thing being listed
+    -- while handing out the same live IAM credentials. Deriving the cases
+    from _CLOUD_METADATA_IPS means the next address someone adds is covered
+    without remembering to add it twice.
+    """
+    for addr in ssrf_protection._CLOUD_METADATA_IPS:
+        host = '[%s]' % addr if ':' in addr else addr
+        with pytest.raises(ValueError, match='(?i)metadata'):
+            # allow_loopback=True is the permissive setting: a metadata
+            # target must be refused regardless of the private-IP policy.
+            ssrf_protection.validate_url_not_cloud_metadata(
+                'http://%s/' % host, allow_loopback=True
+            )
 
 
 # --------------------------------------------------------------------------
