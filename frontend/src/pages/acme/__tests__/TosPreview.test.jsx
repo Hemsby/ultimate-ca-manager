@@ -41,17 +41,27 @@ describe('TosPreview', () => {
   })
 
   it('strips a javascript: link target', () => {
-    render(<TosPreview body={`[click](${jsUrl})`} />)
-    const link = screen.queryByRole('link', { name: 'click' })
-    // Either the anchor is dropped entirely or its href is neutralised —
-    // what must never happen is a live javascript: URL.
-    expect(link?.getAttribute('href') ?? '').not.toContain('script:')
+    const { container } = render(<TosPreview body={`[click](${jsUrl})`} />)
+    // The neutralised link renders as plain text — no anchor at all.
+    expect(container.querySelector('a')).toBeNull()
+    expect(container.textContent).toContain('click')
   })
 
   it('strips a data: link target', () => {
-    render(<TosPreview body={'[x](data:text/html;base64,PHNjcmlwdD4=)'} />)
-    const link = screen.queryByRole('link', { name: 'x' })
-    expect(link?.getAttribute('href') ?? '').not.toContain('data:')
+    const { container } = render(
+      <TosPreview body={'[x](data:text/html;base64,PHNjcmlwdD4=)'} />
+    )
+    expect(container.querySelector('a')).toBeNull()
+    expect(container.textContent).toContain('x')
+  })
+
+  it('enforces the allowlist beyond the library default', () => {
+    // react-markdown's built-in defaultUrlTransform permits irc:; our
+    // urlTransform does not. This is the test that fails if the custom
+    // allowlist is removed, proving the prop is actually load-bearing.
+    const { container } = render(<TosPreview body={'[chat](irc://host/chan)'} />)
+    expect(container.querySelector('a')).toBeNull()
+    expect(container.textContent).toContain('chat')
   })
 
   it('does not execute or inject raw HTML', () => {
@@ -65,15 +75,21 @@ describe('TosPreview', () => {
 
   it('does not let a quote break out of an attribute', () => {
     // The old sanitizer did not escape `"`, so this closed the generated href
-    // and injected a new attribute. Assert on the DOM, not on the serialized
-    // string: an escaped quote inside a text node is harmless and expected.
-    const { container } = render(
-      <TosPreview body={'[x](https://a" onmouseover="alert(1))'} />
-    )
-    expect(container.querySelector('[onmouseover]')).toBeNull()
-    for (const el of container.querySelectorAll('*')) {
-      for (const attr of el.attributes) {
-        expect(attr.name.toLowerCase().startsWith('on')).toBe(false)
+    // and injected a new attribute. The angle-bracket destination form makes
+    // CommonMark actually parse the quoted payload as a link destination, so
+    // the quote genuinely reaches attribute-generation code — the bare form
+    // is rejected by the parser before any attribute is built.
+    const bodies = [
+      '[x](https://a" onmouseover="alert(1))',
+      '[x](<https://a" onmouseover="alert(1)>)',
+    ]
+    for (const body of bodies) {
+      const { container } = render(<TosPreview body={body} />)
+      expect(container.querySelector('[onmouseover]')).toBeNull()
+      for (const el of container.querySelectorAll('*')) {
+        for (const attr of el.attributes) {
+          expect(attr.name.toLowerCase().startsWith('on')).toBe(false)
+        }
       }
     }
   })

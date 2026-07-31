@@ -39,9 +39,21 @@ export function TosPreview({ body }) {
           }
         }}
         components={{
-          a: ({ node, ...props }) => (
-            <a {...props} target="_blank" rel="noopener noreferrer" />
-          ),
+          // A link whose URL was rejected by urlTransform arrives with an
+          // empty href; render it as plain text instead of an <a href="">
+          // self-link that would open a copy of the console in a new tab.
+          a: ({ node, href, children, ...props }) =>
+            href ? (
+              <a {...props} href={href} target="_blank" rel="noopener noreferrer">
+                {children}
+              </a>
+            ) : (
+              <span>{children}</span>
+            ),
+          // The old renderer could not emit images and the field does not
+          // advertise them; a remote image would beacon to its host from
+          // every operator's browser. Show the alt text instead.
+          img: ({ alt }) => (alt ? <span>{alt}</span> : null),
         }}
       >
         {body}
