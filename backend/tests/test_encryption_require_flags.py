@@ -103,6 +103,22 @@ class TestRequireDbEncryptionKeyStartup:
         mod = _fresh_import_utils_encryption()
         assert mod.decrypt_value(mod.encrypt_value('s3cret')) == 's3cret'
 
+    @pytest.mark.parametrize('bad_key', [
+        'a3f1' * 16,                          # openssl rand -hex 32 (64 hex chars)
+        Fernet.generate_key().decode()[:20],  # truncated / mangled key
+    ], ids=['hex-key', 'truncated-key'])
+    def test_flag_set_with_unusable_key_refuses_import(self, clean_env, bad_key):
+        """Presence is not usability: a key that is set but does not parse
+        must be as fatal at startup as a missing one, mirroring the sibling
+        UCM_REQUIRE_KEY_ENCRYPTION. Otherwise a hex key — exactly what
+        `openssl rand -hex 32` produces — boots fine, and the model-layer
+        encrypted-property setters swallow the first-use ValueError into
+        PLAINTEXT secret writes (models/sso.py, models/email_notification.py)."""
+        clean_env.setenv(DB_FLAG, 'true')
+        clean_env.setenv('UCM_DB_ENCRYPTION_KEY', bad_key)
+        with pytest.raises(RuntimeError, match='refusing to start'):
+            _fresh_import_utils_encryption()
+
     def test_flag_unset_boots_without_key(self, clean_env):
         """COMPATIBILITY: deployments that set neither flag must import
         (start up) exactly as before, with no key configured at all."""

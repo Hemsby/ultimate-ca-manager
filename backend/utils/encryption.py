@@ -180,8 +180,15 @@ def _refuse_startup_if_key_required_but_missing() -> None:
     startup (models.hsm via models/__init__, before create_app finishes),
     so raising here refuses startup the same way security.encryption's
     import-time singleton does for UCM_REQUIRE_KEY_ENCRYPTION.
+
+    A key that is PRESENT but does not parse is refused too: presence is
+    not usability, and the sibling flag already treats an invalid key as
+    fatal (security/encryption.py).
     """
-    if _require_db_encryption_key() and not os.environ.get('UCM_DB_ENCRYPTION_KEY'):
+    if not _require_db_encryption_key():
+        return
+
+    if not os.environ.get('UCM_DB_ENCRYPTION_KEY'):
         raise RuntimeError(
             'UCM_DB_ENCRYPTION_KEY is not set and UCM_REQUIRE_DB_ENCRYPTION_KEY '
             'is enabled — refusing to start. Set UCM_DB_ENCRYPTION_KEY to a '
@@ -189,6 +196,26 @@ def _refuse_startup_if_key_required_but_missing() -> None:
             'UCM_REQUIRE_DB_ENCRYPTION_KEY to fall back to the machine-id '
             'derived key.'
         )
+
+    # Presence is not usability. A set-but-unparseable key (e.g. the output
+    # of `openssl rand -hex 32` — hex, not the base64 Fernet expects) would
+    # otherwise boot fine and only fail at first cipher use — and the
+    # encrypted-property setters swallow that ValueError (models/sso.py,
+    # models/email_notification.py), silently storing NEW secrets in
+    # PLAINTEXT under the very flag whose purpose is to forbid that.
+    # Calling get_cipher() rather than Fernet() directly also warms the
+    # lru_cache on the success path; lru_cache does not memoize exceptions,
+    # so the cache_clear() is belt-and-braces only.
+    try:
+        get_cipher()
+    except Exception as e:
+        get_cipher.cache_clear()
+        raise RuntimeError(
+            'UCM_DB_ENCRYPTION_KEY is set but is not a usable Fernet key '
+            f'({e}) and UCM_REQUIRE_DB_ENCRYPTION_KEY is enabled — refusing '
+            'to start. Generate one with: python -c "from cryptography.fernet '
+            'import Fernet; print(Fernet.generate_key().decode())"'
+        ) from e
 
 
 _refuse_startup_if_key_required_but_missing()
