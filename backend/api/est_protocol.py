@@ -410,8 +410,15 @@ def _trusted_client_cert():
         or request.headers.get('X-SSL-Client-Verify')
         or ''
     ).upper()
-    if verify and verify != 'SUCCESS':
-        logger.warning("EST: SSL_CLIENT_VERIFY=%s — refusing client cert", verify)
+    # Fail closed: a missing SSL_CLIENT_VERIFY is not evidence of a verified
+    # peer. Treating absent-as-OK meant a trusted proxy that forwarded the
+    # certificate but not the verify result would have its client certs
+    # accepted unvalidated.
+    if verify != 'SUCCESS':
+        logger.warning(
+            "EST: SSL_CLIENT_VERIFY=%r — refusing client cert",
+            verify or '<missing>',
+        )
         return None
 
     return (
