@@ -271,8 +271,9 @@ class IssuanceMixin:
         except Exception as e:
             logger.warning(f"Auto-supersede check failed: {e}")
     
+    @staticmethod
     def _validate_csr_san_types(
-        self, csr, allowed_domains: set, allowed_ips: set
+        csr, allowed_domains: set, allowed_ips: set
     ) -> Tuple[bool, Optional[str]]:
         """Reject SAN entries the ACME order never authorized.
 
@@ -322,8 +323,9 @@ class IssuanceMixin:
 
         return True, None
 
+    @staticmethod
     def _validate_csr_subject(
-        self, csr, allowed_domains: set, allowed_ips: set
+        csr, allowed_domains: set, allowed_ips: set
     ) -> Tuple[bool, Optional[str]]:
         """Reject subject Distinguished-Name identities the order never proved.
 

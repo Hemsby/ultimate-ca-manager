@@ -68,9 +68,7 @@ def _email(value):
 
 def _validate(csr, domains=frozenset({'web.example.com'}), ips=frozenset()):
     """Call the subject validator the way finalize_order does."""
-    return AcmeService._validate_csr_subject(
-        AcmeService, csr, set(domains), set(ips)
-    )
+    return AcmeService._validate_csr_subject(csr, set(domains), set(ips))
 
 
 # --- the authorized cases still work ---------------------------------------
