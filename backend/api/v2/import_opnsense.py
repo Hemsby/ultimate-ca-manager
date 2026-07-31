@@ -169,8 +169,13 @@ def test_connection():
     api_key = _clean(data.get('api_key'))
     api_secret = _clean(data.get('api_secret'))
     verify_ssl = data.get('verify_ssl', True)
-    
+
     logger.info(f"OpnSense test connection: host={host}, port={port}, verify_ssl={verify_ssl}")
+    if not verify_ssl:
+        logger.warning(
+            "OPNsense test connection with TLS verification DISABLED by "
+            "request — API credentials travel over a MITM-able channel"
+        )
     
     if not all([host, api_key, api_secret]):
         logger.warning(f"OpnSense test failed: missing required fields")
@@ -282,8 +287,14 @@ def import_items():
     api_secret = _clean(data.get('api_secret'))
     verify_ssl = data.get('verify_ssl', True)
     items = data.get('items', [])
-    
+
     logger.info(f"OpnSense import: host={host}, port={port}, items_count={len(items)}")
+    if not verify_ssl:
+        logger.warning(
+            "OPNsense import with TLS verification DISABLED by request — "
+            "API credentials and fetched private keys travel over a "
+            "MITM-able channel"
+        )
     
     if not all([host, api_key, api_secret]):
         logger.warning("OpnSense import failed: missing required fields")

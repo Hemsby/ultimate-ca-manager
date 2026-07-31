@@ -203,12 +203,16 @@ def reset_db():
         from models import User
         from werkzeug.security import generate_password_hash
 
+        # NOTE: the User column is `active`, not `is_active` — the wrong kwarg
+        # made this constructor raise TypeError, which the bare `except` below
+        # turned into "Database reset failed" AFTER drop_all() had already
+        # run: a wiped database with no admin user at all.
         admin = User(
             username='admin',
             email='admin@localhost',
             password_hash=generate_password_hash('changeme123'),
             role='admin',
-            is_active=True,
+            active=True,
             force_password_change=True
         )
         db.session.add(admin)

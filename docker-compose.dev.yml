@@ -7,12 +7,17 @@
 #   docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
 #
 # ############################################################################
-# # NEVER EXPOSE THIS CONFIGURATION TO AN UNTRUSTED NETWORK.               ##
-# # FLASK_DEBUG=true enables the Werkzeug interactive debugger, which is    ##
-# # remote code execution for anyone who can reach it, and the debugpy      ##
-# # port below is an unauthenticated Python debugger. Both are bound to     ##
-# # 127.0.0.1 so they stay on the developer's machine — do not change that  ##
-# # to 0.0.0.0, and never use this file in production.                      ##
+# # NEVER EXPOSE THIS CONFIGURATION TO AN UNTRUSTED NETWORK.                ##
+# # FLASK_DEBUG=true enables the Werkzeug debug middleware: its traceback   ##
+# # pages disclose source code and variable contents to ANY client with no  ##
+# # authentication, and its PIN-gated console is remote code execution.     ##
+# # The debugpy port is an unauthenticated Python debugger. ALL published   ##
+# # ports (8443, 8080, 5678, mailhog) are therefore bound to 127.0.0.1 by   ##
+# # default so they stay on the developer's machine. If Docker runs inside  ##
+# # a VM and you need the app from outside it, set UCM_DEV_BIND to the      ##
+# # VM-internal interface — that re-exposes the Werkzeug debugger to        ##
+# # whatever can reach it, so only do so on a trusted, isolated network.    ##
+# # Never use this file in production.                                      ##
 # ############################################################################
 # ============================================================================
 
@@ -60,12 +65,20 @@ services:
     # Override command to use Flask dev server with auto-reload
     command: python3 -m flask run --host=0.0.0.0 --port=8443 --cert=data/https_cert.pem --key=data/https_key.pem --reload
     
-    # Expose additional ports for debugging
-    ports:
-      - "${UCM_HTTPS_PORT:-8443}:8443"
-      - "${UCM_HTTP_PORT:-8080}:8080"
-      # Loopback-bound: an unauthenticated Python debugger must never be
-      # reachable off-host.
+    # Expose the dev server and debugger, loopback-only by default.
+    # `!override` REPLACES the base file's port list instead of merging with
+    # it: Compose merges `ports` entries by (host_ip, published, protocol),
+    # so a bare `127.0.0.1:` prefix here would silently APPEND to the base
+    # file's 0.0.0.0 publishes and leave the Werkzeug debugger reachable
+    # from the network. Requires Docker Compose >= 2.24.
+    # Docker-in-a-VM escape hatch: set UCM_DEV_BIND to the VM-internal
+    # interface (see the banner above before doing so).
+    ports: !override
+      - "${UCM_DEV_BIND:-127.0.0.1}:${UCM_HTTPS_PORT:-8443}:8443"
+      - "${UCM_DEV_BIND:-127.0.0.1}:${UCM_HTTP_PORT:-8080}:8080"
+      # The unauthenticated Python debugger stays loopback-only
+      # unconditionally — tunnel (`ssh -L 5678:127.0.0.1:5678 <vm>`) if you
+      # need it from another machine.
       - "127.0.0.1:5678:5678"  # Python debugger (debugpy)
     
     # Relaxed resource limits for development
@@ -91,9 +104,11 @@ services:
     container_name: ucm-mailhog
     restart: unless-stopped
     
+    # Loopback-only like the app ports (the banner's containment claim covers
+    # every published port); UCM_DEV_BIND is the same VM escape hatch.
     ports:
-      - "8025:8025"  # Web UI
-      - "1025:1025"  # SMTP
+      - "${UCM_DEV_BIND:-127.0.0.1}:8025:8025"  # Web UI
+      - "${UCM_DEV_BIND:-127.0.0.1}:1025:1025"  # SMTP
     
     networks:
       - ucm-network

@@ -16,36 +16,47 @@ os.environ["UCM_SKIP_SECRET_VALIDATION"] = "1"
 
 from app import create_app
 from models import db, User
-import bcrypt
 
 def init_database():
     """Initialize database with tables and default user"""
     app = create_app()
-    
+
     with app.app_context():
         # Create all tables
         db.create_all()
         print("✓ Database tables created")
-        
-        # Check if admin user exists
-        admin = User.query.filter_by(username='admin').first()
+
+        # create_app() already seeds the configured admin (app.py /
+        # database_health.py), so this block is a fallback for the case where
+        # that seeding was skipped or swallowed. Look up the CONFIGURED
+        # username — a hard-coded 'admin' missed any INITIAL_ADMIN_USERNAME
+        # override and then tried (and, before this fix, failed) to seed a
+        # duplicate.
+        admin_username = app.config.get("INITIAL_ADMIN_USERNAME", "admin")
+        admin = User.query.filter_by(username=admin_username).first()
         if not admin:
-            # Create default admin user
-            hashed_password = bcrypt.hashpw('changeme123'.encode('utf-8'), bcrypt.gensalt())
+            # Create default admin user with the same properties as the
+            # canonical bootstrap paths in app.py / database_health.py.
+            # NOTE: the User column is `active` — `is_active=True` made this
+            # constructor raise TypeError whenever the block was reached.
             admin = User(
-                username='admin',
-                email='admin@ucm.local',
-                password_hash=hashed_password.decode('utf-8'),
+                username=admin_username,
+                email=app.config.get("INITIAL_ADMIN_EMAIL", "admin@localhost"),
                 role='admin',
-                is_active=True,
-                # Match app.py / database_health.py: the seeded password is
-                # public knowledge, so it must be rotated at first login rather
-                # than silently remaining valid.
-                force_password_change=True
+                active=True,
+                # The seeded password is public knowledge, so it must be
+                # rotated at first login rather than silently remaining valid.
+                force_password_change=True,
+                # Exempt the bootstrap admin from forced 2FA enrolment (#141)
+                # so enabling global enforcement can never lock out this
+                # account — same as the other bootstrap paths.
+                totp_exempt=True
             )
+            admin.set_password(app.config.get("INITIAL_ADMIN_PASSWORD", "changeme123"))
             db.session.add(admin)
             db.session.commit()
-            print("✓ Default admin user created (username: admin, password: changeme123)")
+            print(f"✓ Default admin user created (username: {admin_username}, "
+                  "password: INITIAL_ADMIN_PASSWORD, default changeme123)")
             print("  ⚠️  CHANGE THIS PASSWORD IMMEDIATELY!")
         else:
             print("✓ Admin user already exists")
