@@ -172,14 +172,22 @@ def list_mtls_certificates():
 
 
 @bp.route('/certificates', methods=['POST'])
-@require_auth()
+@require_auth(['write:user_certificates'])
 def create_mtls_certificate():
-    """Issue a new mTLS client certificate and auto-enroll it"""
+    """Issue a new mTLS client certificate and auto-enroll it
+
+    Requires an issuance scope: this makes a CA sign a certificate, which is
+    not a read-only operation. Previously guarded by a bare @require_auth(), so
+    any authenticated principal — including the read-only viewer and auditor
+    roles — could obtain a CA-signed client certificate.
+    """
 
     user = g.current_user
     data = request.get_json() or {}
 
-    # Resolve CA — prefer request ca_id, fall back to trusted CA, then first available
+    # Resolve CA — prefer request ca_id, else the configured mTLS CA.
+    # There is deliberately no "first CA in the table" fallback: that could
+    # silently sign with the root CA when no mTLS CA has been configured.
     ca_id = data.get('ca_id')
     ca = None
     if ca_id:
@@ -189,9 +197,10 @@ def create_mtls_certificate():
         if trusted_refid:
             ca = CA.query.filter_by(refid=trusted_refid).first()
     if not ca:
-        ca = CA.query.first()
-    if not ca:
-        return error_response('No CA available', 400)
+        return error_response(
+            'No mTLS CA configured — set the mTLS trusted CA or pass an explicit ca_id',
+            400,
+        )
 
     validity_days = min(max(int(data.get('validity_days', 365)), 1), 3650)
     cert_name = data.get('name', f'{user.username} mTLS')

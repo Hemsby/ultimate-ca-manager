@@ -205,6 +205,13 @@ class OCSPService:
                     nonce = extension['extn_value'].parsed.native
                     if not isinstance(nonce, bytes):
                         raise ValueError('Malformed OCSP nonce extension')
+                    # RFC 8954 §2.1: the nonce is 1..32 octets. Unbounded input
+                    # would be echoed back into the signed response, letting a
+                    # client inflate the work and bandwidth of every reply.
+                    if not 1 <= len(nonce) <= 32:
+                        raise ValueError(
+                            'OCSP nonce must be 1-32 octets (RFC 8954 §2.1)'
+                        )
 
         for request_item in tbs_request['request_list']:
             single_extensions = request_item['single_request_extensions']

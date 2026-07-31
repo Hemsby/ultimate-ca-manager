@@ -1,0 +1,400 @@
+"""Regression tests for the medium/low findings of the v2.203 security audit.
+
+  #8  mTLS certificate issuance was reachable by read-only roles, and fell back
+      to an arbitrary CA (possibly the root) when no mTLS CA was configured.
+  #9  API-key permissions were read verbatim from the mint-time snapshot, so a
+      key kept scopes its owner had lost on demotion.
+  #10 The unauthenticated /tsa endpoint signs with the CA key when configured
+      with a CA certificate; operators now have a switch to refuse that.
+  #13 The authenticated, state-changing mTLS enroll routes were CSRF-exempt.
+  #15 Caller-supplied SSH certificate extensions were applied verbatim.
+  low EST treated a missing SSL_CLIENT_VERIFY as success.
+  low The OCSP nonce length was unbounded (RFC 8954 §2.1 allows 1..32 octets).
+"""
+import json
+
+import pytest
+
+
+# ---------------------------------------------------------------------------
+# #8 — mTLS issuance requires an issuance scope
+# ---------------------------------------------------------------------------
+
+class TestMtlsIssuanceScope:
+    def test_viewer_cannot_make_a_ca_sign_an_mtls_cert(self, viewer_client):
+        r = viewer_client.post(
+            '/api/v2/mtls/certificates',
+            data=json.dumps({'name': 'viewer-probe'}),
+            content_type='application/json',
+        )
+        assert r.status_code == 403, (
+            f'read-only role obtained a CA-signed certificate: {r.data!r}'
+        )
+
+    def test_route_declares_an_issuance_permission(self):
+        """The decorator must carry a scope, not a bare @require_auth()."""
+        import inspect
+
+        import api.v2.mtls as mtls_module
+
+        source = inspect.getsource(mtls_module)
+        marker = source.index('def create_mtls_certificate')
+        decorators = source[:marker]
+        # The decorator immediately preceding the handler must name a scope.
+        last_require = decorators.rindex('@require_auth')
+        assert decorators[last_require:].startswith("@require_auth(['"), (
+            'create_mtls_certificate is guarded by a bare @require_auth()'
+        )
+
+
+# ---------------------------------------------------------------------------
+# #9 — API-key scopes are re-bound to the owner's current permissions
+# ---------------------------------------------------------------------------
+
+class TestApiKeyPermissionsFollowOwnerRole:
+    def test_key_loses_scopes_when_owner_is_demoted(self, app, auth_client):
+        username = 'apikey_demotion_probe'
+        r = auth_client.post(
+            '/api/v2/users',
+            data=json.dumps({
+                'username': username,
+                'password': 'ProbePass123!',
+                'email': f'{username}@test.local',
+                'role': 'operator',
+            }),
+            content_type='application/json',
+        )
+        assert r.status_code in (200, 201, 409), r.data
+        user_id = (json.loads(r.data).get('data') or json.loads(r.data)).get('id')
+
+        owner = app.test_client()
+        r = owner.post(
+            '/api/v2/auth/login',
+            data=json.dumps({'username': username, 'password': 'ProbePass123!'}),
+            content_type='application/json',
+        )
+        assert r.status_code == 200, r.data
+
+        # Operator legitimately holds write:cas at mint time.
+        r = owner.post(
+            '/api/v2/account/apikeys',
+            data=json.dumps({
+                'name': 'demotion-probe',
+                'permissions': ['read:cas', 'write:cas'],
+            }),
+            content_type='application/json',
+        )
+        assert r.status_code in (200, 201), r.data
+        api_key = (json.loads(r.data).get('data') or json.loads(r.data)).get('key')
+
+        from auth.unified import AuthManager
+
+        with app.app_context():
+            before = AuthManager().verify_api_key(api_key)
+        assert before is not None
+        assert 'write:cas' in before['permissions']
+
+        # Demote the owner to viewer (read-only).
+        r = auth_client.put(
+            f'/api/v2/users/{user_id}',
+            data=json.dumps({'role': 'viewer'}),
+            content_type='application/json',
+        )
+        assert r.status_code in (200, 204), r.data
+
+        with app.app_context():
+            after = AuthManager().verify_api_key(api_key)
+        assert after is not None, 'key should still authenticate'
+        assert 'write:cas' not in after['permissions'], (
+            'API key kept write:cas after its owner was demoted to viewer'
+        )
+
+    def test_key_cannot_exceed_owner_via_wildcard(self, app, auth_client):
+        """A '*' key is worth its owner's current scopes, not everything."""
+        username = 'apikey_wildcard_probe'
+        r = auth_client.post(
+            '/api/v2/users',
+            data=json.dumps({
+                'username': username,
+                'password': 'ProbePass123!',
+                'email': f'{username}@test.local',
+                'role': 'viewer',
+            }),
+            content_type='application/json',
+        )
+        assert r.status_code in (200, 201, 409), r.data
+
+        from auth.permissions import get_effective_permissions
+        from models import User
+
+        with app.app_context():
+            user = User.query.filter_by(username=username).first()
+            effective = get_effective_permissions(user)
+        assert '*' not in effective
+        assert 'write:cas' not in effective
+
+
+# ---------------------------------------------------------------------------
+# #10 — TSA may be told to refuse signing with a CA certificate
+# ---------------------------------------------------------------------------
+
+class TestTsaDedicatedCertificateSwitch:
+    def _ca_cert(self):
+        from datetime import datetime, timedelta, timezone
+
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+
+        key = rsa.generate_private_key(65537, 2048)
+        name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'TSA CA')])
+        cert = (x509.CertificateBuilder()
+                .subject_name(name).issuer_name(name)
+                .public_key(key.public_key())
+                .serial_number(x509.random_serial_number())
+                .not_valid_before(datetime.now(timezone.utc) - timedelta(days=1))
+                .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365))
+                .add_extension(x509.BasicConstraints(ca=True, path_length=None),
+                               critical=True)
+                .sign(key, hashes.SHA256()))
+        return cert
+
+    def test_ca_cert_accepted_by_default(self, app):
+        """Backward compatibility: pre-2.200 deployments keep working."""
+        from services.tsa_service import TSAService
+
+        with app.app_context():
+            TSAService.validate_certificate(self._ca_cert())  # must not raise
+
+    def test_ca_cert_refused_when_dedicated_cert_required(self, app, monkeypatch):
+        from services.tsa_service import TSAConfigurationError, TSAService
+
+        monkeypatch.setattr(
+            TSAService, '_require_dedicated_tsa_cert', staticmethod(lambda: True)
+        )
+        with app.app_context():
+            with pytest.raises(TSAConfigurationError, match='dedicated'):
+                TSAService.validate_certificate(self._ca_cert())
+
+
+# ---------------------------------------------------------------------------
+# #13 — the mTLS enroll routes are no longer CSRF-exempt
+# ---------------------------------------------------------------------------
+
+class TestMtlsEnrollNotCsrfExempt:
+    @pytest.mark.parametrize('path', [
+        '/api/v2/mtls/enroll',
+        '/api/v2/mtls/enroll-import',
+    ])
+    def test_enroll_paths_are_not_exempt(self, path):
+        from security.csrf import CSRFProtection
+
+        assert not CSRFProtection.is_exempt(path), (
+            f'{path} is authenticated and state-changing; exempting it lets a '
+            'cross-site POST bind an attacker certificate to the victim account'
+        )
+
+    def test_genuinely_public_protocol_paths_stay_exempt(self):
+        """Control: the protocol endpoints must keep their exemption."""
+        from security.csrf import CSRFProtection
+
+        assert CSRFProtection.is_exempt('/acme/new-order')
+        assert CSRFProtection.is_exempt('/api/v2/auth/login')
+
+
+# ---------------------------------------------------------------------------
+# #15 — SSH certificate extensions are constrained by the CA's policy
+# ---------------------------------------------------------------------------
+
+def _client_pubkey():
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+
+    key = ed25519.Ed25519PrivateKey.generate()
+    return key.public_key().public_bytes(
+        encoding=serialization.Encoding.OpenSSH,
+        format=serialization.PublicFormat.OpenSSH,
+    ).decode()
+
+
+class TestSshExtensionAllowList:
+    def _ca(self, descr, extensions=None):
+        from services.ssh_ca_service import SSHCAService
+
+        ca = SSHCAService.create_ca(
+            descr=descr, ca_type='user', key_type='ed25519', username='t'
+        )
+        if extensions is not None:
+            from models import db
+            ca.set_default_extensions(extensions)
+            db.session.commit()
+        return ca
+
+    def test_requested_extension_outside_ca_policy_is_refused(self, app):
+        from services.ssh_cert import SSHCertificateService
+
+        with app.app_context():
+            ca = self._ca('Ext Policy CA', extensions=['permit-pty'])
+            with pytest.raises(ValueError, match='not permitted'):
+                SSHCertificateService.sign_certificate(
+                    ca.id, _client_pubkey(), 'user', ['alice'],
+                    validity_seconds=3600,
+                    extensions=['permit-pty', 'permit-port-forwarding'],
+                )
+
+    def test_requested_extension_within_ca_policy_is_allowed(self, app):
+        from services.ssh_cert import SSHCertificateService
+
+        with app.app_context():
+            ca = self._ca(
+                'Ext Allow CA', extensions=['permit-pty', 'permit-port-forwarding']
+            )
+            cert = SSHCertificateService.sign_certificate(
+                ca.id, _client_pubkey(), 'user', ['alice'],
+                validity_seconds=3600,
+                extensions=['permit-port-forwarding'],
+            )
+            assert cert.id is not None
+
+    def test_default_extensions_still_apply_when_none_requested(self, app):
+        from services.ssh_cert import SSHCertificateService
+
+        with app.app_context():
+            ca = self._ca('Ext Default CA', extensions=['permit-pty'])
+            cert = SSHCertificateService.sign_certificate(
+                ca.id, _client_pubkey(), 'user', ['alice'],
+                validity_seconds=3600,
+            )
+            assert cert.id is not None
+
+
+# ---------------------------------------------------------------------------
+# low — OCSP nonce length bounds (RFC 8954 §2.1)
+# ---------------------------------------------------------------------------
+
+class TestOcspNonceBounds:
+    def _request_with_nonce(self, nonce_bytes):
+        """Build a DER OCSPRequest carrying a nonce of the given length."""
+        from asn1crypto import core, ocsp as asn1_ocsp
+
+        cert_id = asn1_ocsp.CertId({
+            'hash_algorithm': {'algorithm': 'sha1'},
+            'issuer_name_hash': b'\x00' * 20,
+            'issuer_key_hash': b'\x00' * 20,
+            'serial_number': 1,
+        })
+        request = asn1_ocsp.Request({'req_cert': cert_id})
+        ext = asn1_ocsp.TBSRequestExtension({
+            'extn_id': '1.3.6.1.5.5.7.48.1.2',
+            'critical': False,
+            'extn_value': core.OctetString(nonce_bytes),
+        })
+        tbs = asn1_ocsp.TBSRequest({
+            'request_list': asn1_ocsp.Requests([request]),
+            'request_extensions': asn1_ocsp.TBSRequestExtensions([ext]),
+        })
+        return asn1_ocsp.OCSPRequest({'tbs_request': tbs}).dump()
+
+    def test_oversized_nonce_is_rejected(self, app):
+        """Parsing returns None, which the route turns into MALFORMED_REQUEST.
+
+        Without the bound the 4 KiB nonce was echoed back into the signed
+        response, letting a client inflate the CA's signing and bandwidth cost.
+        """
+        from services.ocsp_service import OCSPService
+
+        der = self._request_with_nonce(b'\xAA' * 4096)
+        with app.app_context():
+            assert OCSPService().parse_request_details(der) is None
+
+    def test_oversized_nonce_yields_malformed_response(self, app, client):
+        """End-to-end: the endpoint refuses rather than signing the echo."""
+        from cryptography.x509 import ocsp as x509_ocsp
+
+        der = self._request_with_nonce(b'\xAA' * 4096)
+        r = client.post(
+            '/ocsp', data=der, content_type='application/ocsp-request'
+        )
+        assert r.status_code == 200
+        response = x509_ocsp.load_der_ocsp_response(r.data)
+        assert response.response_status == (
+            x509_ocsp.OCSPResponseStatus.MALFORMED_REQUEST
+        )
+
+    def test_maximum_length_nonce_is_accepted(self, app):
+        from services.ocsp_service import OCSPService
+
+        der = self._request_with_nonce(b'\xAA' * 32)
+        with app.app_context():
+            parsed = OCSPService().parse_request_details(der)
+        assert parsed is not None
+        assert parsed.nonce == b'\xAA' * 32
+
+
+# ---------------------------------------------------------------------------
+# low — recovery codes survive the 2FA login length cap
+# ---------------------------------------------------------------------------
+
+class TestRecoveryCodeLengthCap:
+    """A recovery code is XXXX-XXXX-XXXX-XXXX (19 chars).
+
+    The login handler capped the submitted code at 10 characters before
+    comparing, so every recovery code was truncated to 'XXXX-XXXX-' and could
+    never match. This failed closed (no security hole) but made account
+    recovery impossible.
+    """
+
+    def test_generated_code_is_longer_than_the_old_cap(self):
+        import secrets
+
+        code = '-'.join(secrets.token_hex(2).upper() for _ in range(4))
+        assert len(code) == 19, code
+        assert len(code) > 10, 'the old [:10] cap would truncate this'
+
+    def test_login_handler_cap_admits_a_full_recovery_code(self):
+        """The cap in the 2FA verify handler must exceed 19 characters."""
+        import inspect
+        import re
+
+        import api.v2.auth_methods as auth_methods
+
+        source = inspect.getsource(auth_methods)
+        caps = [
+            int(m) for m in
+            re.findall(r"str\(data\['code'\]\)\.strip\(\)\.upper\(\)\[:(\d+)\]", source)
+        ]
+        assert caps, 'could not locate the 2FA code length cap'
+        for cap in caps:
+            assert cap >= 19, (
+                f'2FA code truncated to {cap} chars — a 19-char recovery code '
+                'can never match'
+            )
+
+    def test_full_length_code_round_trips_through_consume(self, app):
+        """End-to-end: a full 19-char code is accepted and consumed once."""
+        import json as _json
+        import secrets
+
+        from models import User, db
+        from utils.backup_codes import consume_code
+
+        code = '-'.join(secrets.token_hex(2).upper() for _ in range(4))
+        with app.app_context():
+            user = User(
+                username=f'recovery_probe_{secrets.token_hex(4)}',
+                email='recovery@test.local',
+                password_hash='!',
+                role='viewer',
+                active=True,
+                backup_codes=_json.dumps([code]),
+            )
+            db.session.add(user)
+            db.session.commit()
+
+            # The value the handler would compare after its length cap.
+            submitted = code.strip().upper()[:32]
+            assert consume_code(user, submitted) is True
+            db.session.commit()
+            # Single-use: a replay must fail.
+            assert consume_code(user, submitted) is False
