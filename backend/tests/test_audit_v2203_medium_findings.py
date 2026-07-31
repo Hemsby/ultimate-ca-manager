@@ -93,6 +93,19 @@ class TestMtlsExplicitCaRequiresCaScope:
             SystemConfig.query.filter_by(key='mtls_trusted_ca_id').delete(
                 synchronize_session=False
             )
+            # These tests enroll real client certificates, including one for
+            # the admin. The database is session-scoped, so leaving them
+            # behind makes `test_mtls.py::test_require_mtls_without_admin_cert`
+            # pass its "at least one admin has an enrolled cert" guard and get
+            # 200 where it asserts 400.
+            from models import AuthCertificate
+            AuthCertificate.query.filter(
+                AuthCertificate.name.in_((
+                    'ca-direct-probe',
+                    'trusted-ca-probe',
+                    'admin-ca-choice-probe',
+                ))
+            ).delete(synchronize_session=False)
             db.session.commit()
 
     def _group_granted_client(self, app, auth_client):
