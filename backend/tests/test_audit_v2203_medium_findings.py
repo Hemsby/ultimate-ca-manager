@@ -10,6 +10,16 @@
   #15 Caller-supplied SSH certificate extensions were applied verbatim.
   low EST treated a missing SSL_CLIENT_VERIFY as success.
   low The OCSP nonce length was unbounded (RFC 8954 §2.1 allows 1..32 octets).
+
+Follow-ups to the #246 fixes (audited after merge):
+  #8  an explicit ca_id still directed ANY CA with only
+      write:user_certificates; overriding the configured mTLS CA now
+      requires write:cas.
+  #9  the re-binding zeroed out category-wildcard keys ('read:*') after an
+      owner demotion, because named roles hold only concrete scopes; they now
+      expand to the owner's current scopes in that category.
+  #15 an explicitly emptied default_extensions policy ([]) was stored as
+      NULL and re-inflated to the full standard set — allow-everything.
 """
 import json
 
@@ -48,8 +58,158 @@ class TestMtlsIssuanceScope:
 
 
 # ---------------------------------------------------------------------------
+# #8 follow-up — an explicit ca_id may not direct an arbitrary CA
+# ---------------------------------------------------------------------------
+
+class TestMtlsExplicitCaRequiresCaScope:
+    """write:user_certificates alone must not direct ANY CA (root included).
+
+    The #246 fix removed the CA.query.first() fallback but left the explicit
+    path open: any holder of write:user_certificates — every operator by
+    role, and grantable to any user through groups — could pass a ca_id
+    naming any CA row and have it sign an auto-enrolled client certificate.
+    Overriding the configured mTLS CA now requires write:cas.
+    """
+
+    @pytest.fixture()
+    def mtls_cas(self, app, create_ca):
+        """Two CAs; the first is configured as the trusted mTLS CA."""
+        mtls_ca = create_ca(cn='mTLS Trusted CA probe')
+        other_ca = create_ca(cn='Root Directed CA probe')
+
+        from models import SystemConfig, db
+
+        with app.app_context():
+            row = SystemConfig.query.filter_by(key='mtls_trusted_ca_id').first()
+            if not row:
+                row = SystemConfig(key='mtls_trusted_ca_id')
+                db.session.add(row)
+            row.value = mtls_ca['refid']
+            db.session.commit()
+
+        yield {'mtls': mtls_ca, 'other': other_ca}
+
+        with app.app_context():
+            SystemConfig.query.filter_by(key='mtls_trusted_ca_id').delete(
+                synchronize_session=False
+            )
+            db.session.commit()
+
+    def _group_granted_client(self, app, auth_client):
+        """A viewer holding write:user_certificates via group membership —
+        the least-privileged principal that can reach the route at all."""
+        username = 'mtls_ca_direct_probe'
+        r = auth_client.post(
+            '/api/v2/users',
+            data=json.dumps({
+                'username': username,
+                'password': 'ProbePass123!',
+                'email': f'{username}@test.local',
+                'role': 'viewer',
+            }),
+            content_type='application/json',
+        )
+        assert r.status_code in (200, 201, 409), r.data
+        user_id = (json.loads(r.data).get('data') or json.loads(r.data)).get('id')
+
+        r = auth_client.post(
+            '/api/v2/groups',
+            data=json.dumps({
+                'name': 'mtls-issue-probe',
+                'description': 'grants self-service mTLS issuance',
+                'permissions': ['write:user_certificates',
+                                'read:user_certificates'],
+            }),
+            content_type='application/json',
+        )
+        assert r.status_code in (200, 201, 409), r.data
+        if r.status_code in (200, 201):
+            group_id = (json.loads(r.data).get('data')
+                        or json.loads(r.data)).get('id')
+            r = auth_client.post(
+                f'/api/v2/groups/{group_id}/members',
+                data=json.dumps({'user_id': user_id}),
+                content_type='application/json',
+            )
+            assert r.status_code in (200, 201, 409), r.data
+
+        c = app.test_client()
+        r = c.post(
+            '/api/v2/auth/login',
+            data=json.dumps({'username': username,
+                             'password': 'ProbePass123!'}),
+            content_type='application/json',
+        )
+        assert r.status_code == 200, r.data
+        return c
+
+    def test_foreign_ca_id_needs_write_cas(self, app, auth_client, mtls_cas):
+        c = self._group_granted_client(app, auth_client)
+        r = c.post(
+            '/api/v2/mtls/certificates',
+            data=json.dumps({'name': 'ca-direct-probe',
+                             'ca_id': mtls_cas['other']['id']}),
+            content_type='application/json',
+        )
+        assert r.status_code == 403, (
+            f'write:user_certificates alone directed a non-mTLS CA: {r.data!r}'
+        )
+
+    def test_configured_mtls_ca_still_selectable_explicitly(
+            self, app, auth_client, mtls_cas):
+        """Passing the configured CA's own id stays allowed — the UI sends it."""
+        c = self._group_granted_client(app, auth_client)
+        r = c.post(
+            '/api/v2/mtls/certificates',
+            data=json.dumps({'name': 'trusted-ca-probe',
+                             'ca_id': mtls_cas['mtls']['refid']}),
+            content_type='application/json',
+        )
+        assert r.status_code in (200, 201), r.data
+
+    def test_admin_keeps_directing_any_ca(self, auth_client, mtls_cas):
+        """The admin flow (Users page issues for a chosen CA) is unchanged."""
+        r = auth_client.post(
+            '/api/v2/mtls/certificates',
+            data=json.dumps({'name': 'admin-ca-choice-probe',
+                             'ca_id': mtls_cas['other']['id']}),
+            content_type='application/json',
+        )
+        assert r.status_code in (200, 201), r.data
+
+
+# ---------------------------------------------------------------------------
 # #9 — API-key scopes are re-bound to the owner's current permissions
 # ---------------------------------------------------------------------------
+
+def _mint_api_key_row(username, permissions):
+    """Insert an APIKey row directly (must run inside an app context).
+
+    Bypasses the minting endpoint's you-can-only-grant-what-you-hold check on
+    purpose: the stored permissions model a snapshot taken while the owner was
+    MORE privileged (e.g. an admin since demoted), which is exactly the state
+    the auth-time re-binding must handle. Returns the plaintext key.
+    """
+    import hashlib
+    import secrets
+
+    from models import User, db
+    from models.api_key import APIKey
+
+    user = User.query.filter_by(username=username).first()
+    assert user is not None, f'test user {username} missing'
+    key = f"ucm_ak_{secrets.token_urlsafe(32)}"
+    row = APIKey(
+        user_id=user.id,
+        key_hash=hashlib.sha256(key.encode()).hexdigest(),
+        key_prefix=key[:12],
+        name=f'{username}-probe-key',
+        permissions=json.dumps(permissions),
+    )
+    db.session.add(row)
+    db.session.commit()
+    return key
+
 
 class TestApiKeyPermissionsFollowOwnerRole:
     def test_key_loses_scopes_when_owner_is_demoted(self, app, auth_client):
@@ -110,7 +270,13 @@ class TestApiKeyPermissionsFollowOwnerRole:
         )
 
     def test_key_cannot_exceed_owner_via_wildcard(self, app, auth_client):
-        """A '*' key is worth its owner's current scopes, not everything."""
+        """A '*' key is worth its owner's current scopes, not everything.
+
+        Mints a key whose stored permissions are '["*"]' — the snapshot of a
+        formerly privileged owner — for a user who is now a viewer, and runs
+        it through verify_api_key. Asserts the wildcard branch replaces the
+        stored '*' with exactly the owner's current effective permissions.
+        """
         username = 'apikey_wildcard_probe'
         r = auth_client.post(
             '/api/v2/users',
@@ -125,13 +291,90 @@ class TestApiKeyPermissionsFollowOwnerRole:
         assert r.status_code in (200, 201, 409), r.data
 
         from auth.permissions import get_effective_permissions
+        from auth.unified import AuthManager
         from models import User
 
         with app.app_context():
-            user = User.query.filter_by(username=username).first()
-            effective = get_effective_permissions(user)
-        assert '*' not in effective
-        assert 'write:cas' not in effective
+            key = _mint_api_key_row(username, ['*'])
+            result = AuthManager().verify_api_key(key)
+            expected = get_effective_permissions(
+                User.query.filter_by(username=username).first()
+            )
+
+        assert result is not None, 'the key itself must still authenticate'
+        assert '*' not in result['permissions'], (
+            "a '*' key kept the admin wildcard although its owner is a viewer"
+        )
+        assert 'write:cas' not in result['permissions']
+        assert sorted(result['permissions']) == sorted(expected), (
+            "a '*' key must be worth exactly the owner's current scopes"
+        )
+
+    def test_category_wildcard_key_tracks_owner_scopes(self, app, auth_client):
+        """A ['read:*', 'write:*'] key of a demoted admin keeps the owner's
+        current read/write scopes — it must not be zeroed out.
+
+        This is the exact shape the UI mints (AccountPage scope presets
+        'read' -> ['read:*'], 'readwrite' -> ['read:*', 'write:*']), and only
+        admins can mint it. Named roles hold only concrete scopes, so an
+        intersection by literal has_permission() matching drops every scope
+        after the demotion the re-binding was built for: the key would
+        authenticate with permissions=[] and 403 on everything.
+        """
+        username = 'apikey_catwildcard_probe'
+        r = auth_client.post(
+            '/api/v2/users',
+            data=json.dumps({
+                'username': username,
+                'password': 'ProbePass123!',
+                'email': f'{username}@test.local',
+                'role': 'admin',
+            }),
+            content_type='application/json',
+        )
+        assert r.status_code in (200, 201, 409), r.data
+        user_id = (json.loads(r.data).get('data') or json.loads(r.data)).get('id')
+
+        with app.app_context():
+            # Minted while the owner was an admin (the only role the minting
+            # endpoint lets store category wildcards).
+            key = _mint_api_key_row(username, ['read:*', 'write:*'])
+
+        # Demote the owner to operator.
+        r = auth_client.put(
+            f'/api/v2/users/{user_id}',
+            data=json.dumps({'role': 'operator'}),
+            content_type='application/json',
+        )
+        assert r.status_code in (200, 204), r.data
+
+        from auth.permissions import get_effective_permissions
+        from auth.unified import AuthManager
+        from models import User
+
+        with app.app_context():
+            result = AuthManager().verify_api_key(key)
+            owner_perms = get_effective_permissions(
+                User.query.filter_by(username=username).first()
+            )
+
+        assert result is not None, 'the key itself must still authenticate'
+        got = set(result['permissions'])
+        assert got, (
+            'category-wildcard key was zeroed out by the demotion — the '
+            "owner legitimately retains the operator read/write scopes"
+        )
+        expected = {
+            p for p in owner_perms
+            if p.split(':', 1)[0] in ('read', 'write')
+        }
+        assert got == expected, (
+            f'expected the owner\'s current read/write scopes, got {sorted(got)}'
+        )
+        # The wildcard must never widen: no delete/admin scopes, no literal
+        # wildcards, nothing the owner does not currently hold.
+        assert 'read:*' not in got and 'write:*' not in got and '*' not in got
+        assert not any(p.startswith(('delete:', 'admin:')) for p in got)
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +510,61 @@ class TestSshExtensionAllowList:
                 validity_seconds=3600,
             )
             assert cert.id is not None
+
+    def test_explicitly_empty_policy_refuses_every_extension(self, app):
+        """An admin clearing the policy to [] means "nothing permitted".
+
+        set_default_extensions([]) used to store NULL, which the getter
+        re-inflated to the full standard set — permit-port-forwarding and
+        permit-agent-forwarding included — silently turning the strictest
+        possible policy into the most permissive one.
+        """
+        from services.ssh_cert import SSHCertificateService
+
+        with app.app_context():
+            ca = self._ca('Ext Empty CA', extensions=[])
+            with pytest.raises(ValueError, match='not permitted'):
+                SSHCertificateService.sign_certificate(
+                    ca.id, _client_pubkey(), 'user', ['alice'],
+                    validity_seconds=3600,
+                    extensions=['permit-port-forwarding'],
+                )
+
+    def test_explicitly_empty_policy_issues_extensionless_certs(self, app):
+        """With an explicit [] policy, the default-application path grants
+        nothing either: the issued certificate carries zero extensions."""
+        from services.ssh_cert import SSHCertificateService
+
+        with app.app_context():
+            ca = self._ca('Ext Empty Default CA', extensions=[])
+            cert = SSHCertificateService.sign_certificate(
+                ca.id, _client_pubkey(), 'user', ['alice'],
+                validity_seconds=3600,
+            )
+            assert cert.get_extensions() == {}
+
+    def test_unset_policy_keeps_the_standard_set(self, app):
+        """Compatibility guard: a CA whose default_extensions column was
+        never configured (NULL — every CA created before the policy existed)
+        keeps applying AND allowing the standard OpenSSH set."""
+        from models import db
+        from models.ssh import SSHCertificateAuthority
+        from services.ssh_cert import SSHCertificateService
+
+        with app.app_context():
+            ca = self._ca('Ext Unset CA')
+            # Simulate the pre-existing row: column never populated.
+            ca.default_extensions = None
+            db.session.commit()
+
+            assert (ca.get_default_extensions()
+                    == list(SSHCertificateAuthority.STANDARD_EXTENSIONS))
+            cert = SSHCertificateService.sign_certificate(
+                ca.id, _client_pubkey(), 'user', ['alice'],
+                validity_seconds=3600,
+                extensions=['permit-pty'],
+            )
+            assert 'permit-pty' in cert.get_extensions()
 
 
 # ---------------------------------------------------------------------------

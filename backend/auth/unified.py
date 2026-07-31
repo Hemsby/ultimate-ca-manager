@@ -121,10 +121,30 @@ class AuthManager:
                 # A wildcard key is worth exactly its owner's current scopes.
                 permissions = list(owner_permissions)
             else:
-                permissions = [
-                    perm for perm in permissions
-                    if has_permission(perm, owner_permissions)
-                ]
+                # Category wildcards ('read:*', 'write:*' — the shapes the UI's
+                # scope presets mint) expand to the owner's current scopes in
+                # that category, symmetric with the bare-'*' branch above.
+                # Filtering them through has_permission() alone would drop them
+                # entirely, because named roles hold only concrete scopes: a
+                # demoted admin's ['read:*'] key would authenticate with NO
+                # permissions even though the owner legitimately retains
+                # read:cas, read:certificates, etc.
+                rebound = []
+                for perm in permissions:
+                    if ':' in perm and perm.endswith(':*'):
+                        category = perm.split(':', 1)[0]
+                        matched = [
+                            p for p in owner_permissions
+                            if p == perm or p.split(':', 1)[0] == category
+                        ]
+                    elif has_permission(perm, owner_permissions):
+                        matched = [perm]
+                    else:
+                        matched = []
+                    for p in matched:
+                        if p not in rebound:
+                            rebound.append(p)
+                permissions = rebound
 
         return {
             'user_id': api_key.user_id,
