@@ -79,11 +79,11 @@ class ChallengeMixin:
             # handles a literal IP directly, and skipping them here let an
             # external client aim a challenge fetch at 127.0.0.1 or the cloud
             # metadata service even with private IPs disallowed.
-            pinned_ip = None
+            pinned_ips = None
             if not allow_private:
                 from utils.ssrf_protection import validate_host_not_private
                 try:
-                    pinned_ip = validate_host_not_private(identifier_value)
+                    pinned_ips = validate_host_not_private(identifier_value)
                 except ValueError as ssrf_err:
                     self._invalidate_challenge(
                         challenge,
@@ -94,18 +94,20 @@ class ChallengeMixin:
                     logger.warning(f"HTTP-01 SSRF blocked for {identifier_value}: {ssrf_err}")
                     return False
 
-            if pinned_ip is not None and identifier_type != "ip":
+            if pinned_ips is not None and identifier_type != "ip":
                 # Close the DNS-rebinding window: the guard resolved the name,
                 # and requests would resolve it again — a short-TTL record can
-                # answer public for the check and private for the fetch. Pin the
-                # connection to the address that was actually validated.
+                # answer public for the check and private for the fetch. Pin
+                # the connection to the addresses that were actually validated
+                # (the guard vetted every one and would have refused the host
+                # otherwise, so keeping the whole set preserves multi-A/
+                # dual-stack failover at no security cost).
                 # Known limitation: only the hardened (allow_private_ips=false)
                 # configuration is pinned. Under the default, private addresses
                 # are a legitimate answer anyway, so pinning would buy only the
-                # metadata check above at the cost of collapsing every on-prem
-                # validation onto a single address (no dual-stack failover).
+                # metadata check above.
                 from utils.ssrf_protection import pin_host
-                with pin_host(identifier_value, pinned_ip):
+                with pin_host(identifier_value, pinned_ips):
                     response = requests.get(url, timeout=10, allow_redirects=False)
             else:
                 response = requests.get(url, timeout=10, allow_redirects=False)
@@ -293,11 +295,11 @@ class ChallengeMixin:
             # SSRF protection: see the HTTP-01 path above — IP identifiers are
             # checked as well, so an "ip" order cannot be used to reach
             # loopback/link-local/metadata addresses.
-            pinned_ip = None
+            pinned_ips = None
             if not allow_private:
                 from utils.ssrf_protection import validate_host_not_private
                 try:
-                    pinned_ip = validate_host_not_private(identifier_value)
+                    pinned_ips = validate_host_not_private(identifier_value)
                 except ValueError as ssrf_err:
                     self._invalidate_challenge(
                         challenge,
@@ -324,11 +326,24 @@ class ChallengeMixin:
             ctx.set_alpn_protocols(['acme-tls/1'])
             
             # Connect to domain/IP. pin_host() is a urllib3 hook and does not
-            # cover a raw socket, so connect straight to the address the guard
-            # validated (same DNS-rebinding window as HTTP-01). The SNI name is
-            # already decoupled below, and check_hostname is off.
-            connect_host = pinned_ip if pinned_ip is not None else identifier_value
-            with socket.create_connection((connect_host, 443), timeout=10) as sock:
+            # cover a raw socket, so connect straight to the addresses the
+            # guard validated (same DNS-rebinding window as HTTP-01), trying
+            # each in turn like urllib3's own resolver loop — the guard vetted
+            # every address, so a down first address must not kill the whole
+            # validation. The SNI name is already decoupled below, and
+            # check_hostname is off.
+            candidates = pinned_ips if pinned_ips else [identifier_value]
+            sock = None
+            last_err = None
+            for cand in candidates:
+                try:
+                    sock = socket.create_connection((cand, 443), timeout=10)
+                    break
+                except OSError as conn_err:
+                    last_err = conn_err
+            if sock is None:
+                raise last_err
+            with sock:
                 with ctx.wrap_socket(sock, server_hostname=sni_hostname) as ssock:
                     # Verify ALPN was negotiated
                     negotiated = ssock.selected_alpn_protocol()

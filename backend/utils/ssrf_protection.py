@@ -23,28 +23,36 @@ def validate_url_not_private(url: str) -> None:
     validate_host_not_private(host)
 
 
-def validate_host_not_private(host: str) -> str:
+def validate_host_not_private(host: str) -> list:
     """Validate that a hostname doesn't resolve to a private/reserved IP.
 
     Raises ValueError if the host is — or resolves to — a private, loopback,
     reserved or link-local address, or if it cannot be resolved at all.
 
-    Returns the single validated IP address, so a caller can pin its
-    connection to exactly what was checked (see pin_host) instead of letting
-    the HTTP client resolve the name a second time.
+    Returns every validated IP address (deduplicated, in resolver order), so
+    a caller can pin its connection to exactly what was checked (see
+    pin_host) instead of letting the HTTP client resolve the name a second
+    time. The whole set comes back because the loop below rejects the host
+    outright if ANY address is forbidden — so on return every address is
+    public-safe, and discarding any of them would only cost the caller
+    multi-A/dual-stack failover, not security.
     """
     # First check if host is already an IP. A trailing root dot
     # ("169.254.169.254.") names the same address on any resolver that accepts
     # it, so it must not turn the literal into an opaque "hostname".
+    # Parsing and policy are decided SEPARATELY: ipaddress.ip_address()
+    # embeds its input verbatim in the ValueError it raises ("'<host>' does
+    # not appear to be an IPv4 or IPv6 address"), so deciding from the
+    # message text would refuse any hostname that merely CONTAINS a policy
+    # word — e.g. private-ca.corp.example.com.
     try:
         ip = ipaddress.ip_address(host.rstrip('.') or host)
+    except ValueError:
+        ip = None  # Not an IP literal — resolve it below.
+    if ip is not None:
         if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
             raise ValueError(f"Host {host} is a private/reserved IP address")
-        return str(ip)
-    except ValueError as e:
-        if "private" in str(e) or "reserved" in str(e):
-            raise
-        # Not an IP, resolve it
+        return [str(ip)]
 
     # Fail CLOSED when the host can be neither parsed nor resolved. Treating
     # that as "not a SSRF risk" was a fail-open: a value like
@@ -56,15 +64,15 @@ def validate_host_not_private(host: str) -> str:
     except socket.gaierror as e:
         raise ValueError(f"Cannot resolve host {host}: {e}")
 
-    chosen = None
+    chosen = []
     for _, _, _, _, sockaddr in addrs:
         ip = ipaddress.ip_address(sockaddr[0])
         if ip.is_private or ip.is_loopback or ip.is_reserved or ip.is_link_local:
             raise ValueError(f"Host {host} resolves to private/reserved IP {ip}")
-        if chosen is None:
-            chosen = str(ip)
+        if str(ip) not in chosen:
+            chosen.append(str(ip))
 
-    if chosen is None:
+    if not chosen:
         raise ValueError(f"Host {host} produced no usable IP addresses")
     return chosen
 
@@ -137,29 +145,36 @@ def validate_url_not_cloud_metadata(url: str, allow_loopback: bool = False) -> N
         raise ValueError(f"Host {host} is a cloud metadata endpoint")
 
     # Check literal IP (host_l has any trailing root dot stripped — "127.0.0.1."
-    # reaches the same address wherever the resolver accepts it)
+    # reaches the same address wherever the resolver accepts it). Parsing and
+    # policy are decided SEPARATELY: ip_address()'s parse error embeds the
+    # hostname verbatim, so matching on the exception message would refuse
+    # legitimate names that merely CONTAIN "metadata"/"loopback"/"unspecified"
+    # — e.g. metadata-db.corp.example.com.
     try:
         ip = ipaddress.ip_address(host_l)
+    except ValueError:
+        ip = None  # Not a literal IP — fall through to DNS resolution.
+    if ip is not None:
         reason = _forbidden_ip_reason(ip, allow_loopback)
         if reason:
             raise ValueError(f"Host {host} is a {reason}")
         return
-    except ValueError as e:
-        if "metadata" in str(e) or "loopback" in str(e) or "unspecified" in str(e):
-            raise
-        # Not a literal IP — fall through to DNS resolution
 
-    # Resolve hostname and check all returned IPs
+    # Resolve hostname and check all returned IPs. Fail CLOSED when the host
+    # cannot be resolved, the same rule validate_host_not_private applies:
+    # "cannot resolve, so cannot reach anything" proved to be a fail-open —
+    # the HTTP client re-parses odd values as a URL authority and resolves on
+    # its own, and a resolver that answers the fetch but SERVFAILs this check
+    # would otherwise switch the guard off entirely.
     try:
         addrs = socket.getaddrinfo(host, None)
-        for _, _, _, _, sockaddr in addrs:
-            ip = ipaddress.ip_address(sockaddr[0])
-            reason = _forbidden_ip_reason(ip, allow_loopback)
-            if reason:
-                raise ValueError(f"Host {host} resolves to {reason} {ip}")
-    except socket.gaierror:
-        # Cannot resolve — not a SSRF risk (can't reach anything)
-        pass
+    except socket.gaierror as e:
+        raise ValueError(f"Cannot resolve host {host}: {e}")
+    for _, _, _, _, sockaddr in addrs:
+        ip = ipaddress.ip_address(sockaddr[0])
+        reason = _forbidden_ip_reason(ip, allow_loopback)
+        if reason:
+            raise ValueError(f"Host {host} resolves to {reason} {ip}")
 
 
 # ---------------------------------------------------------------------------
@@ -191,13 +206,28 @@ _pinned_resolution = threading.local()
 def _patched_create_connection(address, *args, **kwargs):
     """urllib3.util.connection.create_connection wrapper that re-routes
     the connection to a thread-locally pinned IP while keeping the
-    original hostname intact for SNI / cert verification."""
+    original hostname intact for SNI / cert verification.
+
+    A pinned entry may be a single IP or a list of validated IPs; a list is
+    tried in order — mirroring urllib3's own getaddrinfo loop — so pinning
+    does not silently discard multi-A/dual-stack failover. The original
+    hostname is NEVER handed back to the OS resolver while a pin is in
+    place, even when every pinned address fails: a rebinding answer outside
+    the validated set must stay unreachable."""
     pinned = getattr(_pinned_resolution, 'host_to_ip', None)
     if pinned:
         host, port = address
-        ip = pinned.get(host.lower().rstrip('.'))
-        if ip:
-            address = (ip, port)
+        ips = pinned.get(host.lower().rstrip('.'))
+        if ips:
+            if isinstance(ips, str):
+                ips = [ips]
+            err = None
+            for ip in ips:
+                try:
+                    return _orig_create_connection((ip, port), *args, **kwargs)
+                except OSError as e:
+                    err = e
+            raise err
     return _orig_create_connection(address, *args, **kwargs)
 
 
@@ -219,8 +249,10 @@ def _ensure_urllib3_patched():
 
 
 @contextmanager
-def pin_host(host: str, ip: str):
-    """Within this block, all urllib3 connections to `host` go to `ip`."""
+def pin_host(host: str, ip):
+    """Within this block, all urllib3 connections to `host` go to `ip` —
+    a single IP string, or a list of validated IPs tried in order (see
+    _patched_create_connection)."""
     _ensure_urllib3_patched()
     pinned = getattr(_pinned_resolution, 'host_to_ip', None)
     if pinned is None:
@@ -239,42 +271,51 @@ def pin_host(host: str, ip: str):
 
 
 def _resolve_and_validate(url: str, allow_loopback: bool = False) -> tuple:
-    """Resolve URL hostname to a single safe IP. Returns (host, ip).
+    """Resolve URL hostname to its safe IPs. Returns (host, [ips]).
+
+    Every validated address comes back (deduplicated, in resolver order),
+    exactly as validate_host_not_private does and for the same reason: the
+    loop below refuses the host outright if ANY resolved address is
+    forbidden, so on return the whole set is public-safe. Returning only the
+    first would pin the caller's outbound HTTP to one address and lose
+    multi-A/dual-stack failover for zero security benefit.
 
     Raises ValueError if the URL has no hostname, fails to resolve,
-    or every resolved IP is forbidden (cloud metadata / loopback)."""
+    or any resolved IP is forbidden (cloud metadata / loopback)."""
     parsed = urlparse(url)
     host = parsed.hostname
     if not host:
         raise ValueError("URL has no hostname")
 
-    # Already a literal IP — validate and pin to itself.
+    # Already a literal IP — validate and pin to itself. Parse failure must
+    # not be conflated with the policy raise: ip_address() embeds the
+    # hostname in its parse-error message, so a message sniff would refuse
+    # hosts merely containing "metadata"/"loopback"/"unspecified".
     try:
         ip_obj = ipaddress.ip_address(host)
+    except ValueError:
+        ip_obj = None  # Not a literal IP — resolve below.
+    if ip_obj is not None:
         reason = _forbidden_ip_reason(ip_obj, allow_loopback)
         if reason:
             raise ValueError(f"Host {host} is a {reason}")
-        return host, str(ip_obj)
-    except ValueError as e:
-        if "metadata" in str(e) or "loopback" in str(e) or "unspecified" in str(e):
-            raise
-        # Not a literal IP — resolve below.
+        return host, [str(ip_obj)]
 
     try:
         addrs = socket.getaddrinfo(host, None)
     except socket.gaierror as e:
         raise ValueError(f"Cannot resolve {host}: {e}")
 
-    chosen = None
+    chosen = []
     for _, _, _, _, sockaddr in addrs:
         ip = ipaddress.ip_address(sockaddr[0])
         reason = _forbidden_ip_reason(ip, allow_loopback)
         if reason:
             raise ValueError(f"Host {host} resolves to {reason} {ip}")
-        if chosen is None:
-            chosen = str(ip)
+        if str(ip) not in chosen:
+            chosen.append(str(ip))
 
-    if chosen is None:
+    if not chosen:
         raise ValueError(f"Host {host} produced no usable IPs")
 
     return host, chosen
@@ -284,17 +325,19 @@ def safe_request_post(url, allow_loopback: bool = False, **kwargs):
     """requests.post() with DNS-rebinding protection.
 
     Resolves the URL hostname once, validates it against the cloud-metadata
-    deny-list, and pins the underlying TCP connection to that exact IP for
-    the duration of the call. SNI and certificate verification continue to
-    use the original hostname so HTTPS works normally.
+    deny-list, and pins the underlying TCP connection to the addresses that
+    were actually validated for the duration of the call — the whole set, so
+    a multi-A/dual-stack upstream keeps its failover (see pin_host). SNI and
+    certificate verification continue to use the original hostname so HTTPS
+    works normally.
 
     allow_loopback=True permits a colocated upstream on 127.0.0.1 (ACME
     Pebble/step-ca); cloud metadata stays blocked. Default keeps loopback denied.
     """
     import requests
     kwargs.setdefault('timeout', 30)  # never hang forever on a stuck/slow upstream
-    host, ip = _resolve_and_validate(url, allow_loopback)
-    with pin_host(host, ip):
+    host, ips = _resolve_and_validate(url, allow_loopback)
+    with pin_host(host, ips):
         return requests.post(url, **kwargs)
 
 
@@ -302,8 +345,8 @@ def safe_request_get(url, allow_loopback: bool = False, **kwargs):
     """requests.get() counterpart of safe_request_post()."""
     import requests
     kwargs.setdefault('timeout', 30)  # never hang forever on a stuck/slow upstream
-    host, ip = _resolve_and_validate(url, allow_loopback)
-    with pin_host(host, ip):
+    host, ips = _resolve_and_validate(url, allow_loopback)
+    with pin_host(host, ips):
         return requests.get(url, **kwargs)
 
 
@@ -311,6 +354,6 @@ def safe_request_head(url, allow_loopback: bool = False, **kwargs):
     """requests.head() with DNS-rebinding protection (e.g. ACME newNonce)."""
     import requests
     kwargs.setdefault('timeout', 30)
-    host, ip = _resolve_and_validate(url, allow_loopback)
-    with pin_host(host, ip):
+    host, ips = _resolve_and_validate(url, allow_loopback)
+    with pin_host(host, ips):
         return requests.head(url, **kwargs)

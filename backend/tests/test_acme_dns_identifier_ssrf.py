@@ -165,6 +165,27 @@ def dns_public(monkeypatch):
     monkeypatch.setattr(ssrf_protection.socket, 'getaddrinfo', _public)
 
 
+@pytest.fixture
+def dns_private(monkeypatch):
+    """Every name resolves to one RFC 1918 address — the on-prem LAN reality."""
+    def _private(host, *_a, **_kw):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', ('10.0.0.5', 0))]
+
+    monkeypatch.setattr(ssrf_protection.socket, 'getaddrinfo', _private)
+
+
+@pytest.fixture
+def dns_two_public(monkeypatch):
+    """Every name resolves to two public addresses (multi-A / failover shape)."""
+    def _two(host, *_a, **_kw):
+        return [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('93.184.216.34', 0)),
+            (socket.AF_INET, socket.SOCK_STREAM, 6, '', ('198.41.0.4', 0)),
+        ]
+
+    monkeypatch.setattr(ssrf_protection.socket, 'getaddrinfo', _two)
+
+
 # --------------------------------------------------------------------------
 # 1. The guard fails closed on a host it can neither parse nor resolve
 # --------------------------------------------------------------------------
@@ -175,9 +196,18 @@ def test_guard_fails_closed_on_unresolvable_host(value, no_dns):
         ssrf_protection.validate_host_not_private(value)
 
 
-def test_guard_returns_the_validated_ip_for_pinning(dns_public):
-    assert ssrf_protection.validate_host_not_private('example.test') == '93.184.216.34'
-    assert ssrf_protection.validate_host_not_private('8.8.8.8') == '8.8.8.8'
+def test_guard_returns_the_validated_ips_for_pinning(dns_public):
+    assert ssrf_protection.validate_host_not_private('example.test') == ['93.184.216.34']
+    assert ssrf_protection.validate_host_not_private('8.8.8.8') == ['8.8.8.8']
+
+
+def test_guard_returns_every_validated_address(dns_two_public):
+    """The guard raises if ANY resolved address is private, so when it
+    returns, the whole set is already validated — returning only the first
+    would discard failover addresses for zero security benefit."""
+    assert ssrf_protection.validate_host_not_private('multi.example.test') == [
+        '93.184.216.34', '198.41.0.4',
+    ]
 
 
 # --------------------------------------------------------------------------
@@ -284,9 +314,17 @@ def test_tls_alpn01_blocks_metadata_with_private_ips_allowed(
     ('ip', '192.168.1.10'),
     ('ip', '127.0.0.1'),         # colocated client
     ('dns', 'printer.internal.lan'),
+    # Hostnames CONTAINING a policy word. ipaddress.ip_address() embeds its
+    # input verbatim in the parse ValueError ("'<host>' does not appear to
+    # be an IPv4 or IPv6 address"), so a guard that decides policy by
+    # sniffing the exception message refuses all of these outright.
+    ('dns', 'metadata-db.corp.example.com'),
+    ('dns', 'svc-metadata.internal.lan'),
+    ('dns', 'loopback0.rtr1.corp.example.com'),
+    ('dns', 'unspecified-node.corp.lan'),
 ])
 def test_private_targets_still_work_when_allowed(
-    identifier_type, value, outbound, no_dns
+    identifier_type, value, outbound, dns_private
 ):
     """Control: the metadata check must not tighten the default configuration
     beyond metadata itself, or every LAN deployment breaks."""
@@ -310,7 +348,7 @@ def test_http01_pins_the_fetch_to_the_validated_address(outbound, dns_public):
     )
     assert result is False           # the stubbed fetch raises
     assert outbound['fetched']
-    assert outbound['pinned'].get('rebind.example.test') == '93.184.216.34', (
+    assert outbound['pinned'].get('rebind.example.test') == ['93.184.216.34'], (
         'the challenge fetch was not pinned to the validated address — a '
         'second DNS answer can still redirect it'
     )
@@ -327,3 +365,285 @@ def test_pinned_connection_ignores_a_second_dns_answer(monkeypatch):
     with ssrf_protection.pin_host('rebind.example.test', '93.184.216.34'):
         ssrf_protection._patched_create_connection(('rebind.example.test', 80))
     assert seen['address'] == ('93.184.216.34', 80)
+
+
+# --------------------------------------------------------------------------
+# 6. Policy comes from the ADDRESS, never from a parse-error message
+# --------------------------------------------------------------------------
+#
+# ipaddress.ip_address() raises ValueError("'<host>' does not appear to be an
+# IPv4 or IPv6 address") — the hostname embedded verbatim. A guard that
+# re-raises based on substrings of the exception message therefore refuses
+# every ordinary hostname whose NAME contains a policy word.
+
+HOSTNAMES_CONTAINING_POLICY_WORDS = [
+    'metadata-db.corp.example.com',
+    'svc-metadata.internal.lan',
+    'loopback0.rtr1.corp.example.com',
+    'unspecified-node.corp.lan',
+    'private-ca.corp.example.com',
+    'reserved-pool.corp.lan',
+]
+
+
+@pytest.mark.parametrize('host', HOSTNAMES_CONTAINING_POLICY_WORDS)
+def test_metadata_guard_allows_hostnames_containing_policy_words(host, dns_public):
+    # Must not raise: the name resolves to a public address.
+    ssrf_protection.validate_url_not_cloud_metadata(f'http://{host}/x')
+    ssrf_protection.validate_url_not_cloud_metadata(
+        f'http://{host}/x', allow_loopback=True
+    )
+
+
+@pytest.mark.parametrize('host', HOSTNAMES_CONTAINING_POLICY_WORDS)
+def test_private_guard_allows_hostnames_containing_policy_words(host, dns_public):
+    assert ssrf_protection.validate_host_not_private(host) == ['93.184.216.34']
+
+
+@pytest.mark.parametrize('host', HOSTNAMES_CONTAINING_POLICY_WORDS)
+def test_resolve_and_validate_allows_hostnames_containing_policy_words(
+    host, dns_public
+):
+    assert ssrf_protection._resolve_and_validate(f'https://{host}/') == (
+        host, ['93.184.216.34'],
+    )
+
+
+def test_http01_allows_policy_word_hostname_in_hardened_config(
+    outbound, dns_public
+):
+    """allow_private_ips=false: a public-resolving host whose NAME contains
+    'private' must reach the (pinned) fetch, not be refused by a message
+    sniff inside validate_host_not_private."""
+    result, challenge = _drive(
+        'validate_http01_challenge', 'dns', 'private-ca.corp.example.com',
+        allow_private_ips=False,
+    )
+    assert result is False           # the stubbed fetch raises
+    assert outbound['fetched'], 'a public-resolving hostname was blocked'
+    assert 'rejectedIdentifier' not in (challenge.error or '')
+
+
+@pytest.mark.parametrize('url', [
+    'http://169.254.169.254/latest/meta-data/',
+    'http://169.254.169.254./latest/meta-data/',
+    'http://100.100.100.200/',
+    'http://[fd00:ec2::254]/',
+    'http://[::ffff:169.254.169.254]/',
+    'http://metadata.google.internal/computeMetadata/v1/',
+    'http://metadata/computeMetadata/v1/',
+    'http://metadata.goog/',
+])
+def test_genuine_metadata_endpoints_are_still_refused(url):
+    """Control: separating parse from policy must not loosen the deny-list."""
+    with pytest.raises(ValueError):
+        ssrf_protection.validate_url_not_cloud_metadata(url, allow_loopback=True)
+
+
+# --------------------------------------------------------------------------
+# 7. Pinning keeps the WHOLE validated set — failover survives the pin
+# --------------------------------------------------------------------------
+
+def test_http01_pins_the_full_validated_set(outbound, dns_two_public):
+    result, _challenge = _drive(
+        'validate_http01_challenge', 'dns', 'multi.example.test',
+        allow_private_ips=False,
+    )
+    assert result is False           # the stubbed fetch raises
+    assert outbound['fetched']
+    assert outbound['pinned'].get('multi.example.test') == [
+        '93.184.216.34', '198.41.0.4',
+    ], 'pinning must not discard already-validated failover addresses'
+
+
+def test_pinned_connection_fails_over_within_the_validated_set(monkeypatch):
+    """First validated address down -> the pin tries the next, mirroring
+    urllib3's own getaddrinfo loop."""
+    ssrf_protection._ensure_urllib3_patched()
+    attempts = []
+
+    def _connect(address, *_a, **_kw):
+        attempts.append(address)
+        if address[0] == '93.184.216.34':
+            raise ConnectionRefusedError('first validated address is down')
+        return 'sock'
+
+    monkeypatch.setattr(ssrf_protection, '_orig_create_connection', _connect)
+    with ssrf_protection.pin_host(
+        'multi.example.test', ['93.184.216.34', '198.41.0.4']
+    ):
+        result = ssrf_protection._patched_create_connection(
+            ('multi.example.test', 80)
+        )
+    assert result == 'sock'
+    assert attempts == [('93.184.216.34', 80), ('198.41.0.4', 80)]
+
+
+def test_pin_never_falls_back_to_the_hostname_resolution(monkeypatch):
+    """A rebinding answer outside the validated set must stay unreachable:
+    even when every pinned address fails, the original hostname is never
+    handed back to the OS resolver — the last error surfaces instead."""
+    ssrf_protection._ensure_urllib3_patched()
+    attempts = []
+
+    def _refuse(address, *_a, **_kw):
+        attempts.append(address[0])
+        raise ConnectionRefusedError(f'{address[0]} down')
+
+    monkeypatch.setattr(ssrf_protection, '_orig_create_connection', _refuse)
+    with ssrf_protection.pin_host(
+        'rebind.example.test', ['93.184.216.34', '198.41.0.4']
+    ):
+        with pytest.raises(ConnectionRefusedError):
+            ssrf_protection._patched_create_connection(('rebind.example.test', 80))
+    assert attempts == ['93.184.216.34', '198.41.0.4']
+
+
+class _SecondAddressReached(Exception):
+    """Sentinel: the TLS-ALPN probe got as far as the second address."""
+
+
+def test_tls_alpn01_fails_over_within_the_validated_set(
+    monkeypatch, dns_two_public
+):
+    """The raw-socket path must try every validated address, not give up
+    after the first — the guard vetted them all."""
+    import socket as socket_mod
+
+    attempts = []
+
+    def _connect(address, *_a, **_kw):
+        attempts.append(address[0])
+        if address[0] == '93.184.216.34':
+            raise ConnectionRefusedError('first validated address is down')
+        raise _SecondAddressReached(address[0])   # stop before real TLS
+
+    monkeypatch.setattr(socket_mod, 'create_connection', _connect)
+    monkeypatch.setattr(challenge_mod, 'db', _StubDb())
+    result, _challenge = _drive(
+        'validate_tls_alpn01_challenge', 'dns', 'multi.example.test',
+        allow_private_ips=False,
+    )
+    assert result is False           # the sentinel aborts the validation
+    assert attempts == ['93.184.216.34', '198.41.0.4'], (
+        'TLS-ALPN-01 gave up after the first validated address'
+    )
+
+
+# --------------------------------------------------------------------------
+# 7b. The same rule on the admin-driven outbound path
+#     (webhooks / SSO / OIDC / ACME client), which goes through
+#     _resolve_and_validate() + safe_request_get/post/head()
+# --------------------------------------------------------------------------
+#
+# _resolve_and_validate() VALIDATES every resolved address — it raises if any
+# one of them is cloud metadata or loopback — but used to return only the
+# first, so the pin collapsed a multi-A / dual-stack upstream onto a single
+# address. That bought no security (the discarded addresses had already
+# passed the same check) and cost failover: one dead address broke every
+# webhook delivery, SSO metadata fetch and ACME client call to that host.
+
+def test_resolve_and_validate_returns_every_validated_address(dns_two_public):
+    assert ssrf_protection._resolve_and_validate('https://multi.example.test/x') == (
+        'multi.example.test', ['93.184.216.34', '198.41.0.4'],
+    )
+
+
+def test_resolve_and_validate_returns_a_list_for_a_literal_ip():
+    """Literal-IP URLs skip DNS entirely, but the shape must still match."""
+    assert ssrf_protection._resolve_and_validate('https://93.184.216.34/x') == (
+        '93.184.216.34', ['93.184.216.34'],
+    )
+
+
+@pytest.mark.parametrize('verb', ['get', 'post', 'head'])
+def test_safe_request_pins_the_full_validated_set(verb, monkeypatch, dns_two_public):
+    """safe_request_* must hand pin_host every validated address."""
+    import requests
+
+    seen = {}
+
+    def _capture(url, **_kw):
+        seen['pinned'] = dict(
+            getattr(ssrf_protection._pinned_resolution, 'host_to_ip', None) or {}
+        )
+        return 'ok'
+
+    monkeypatch.setattr(requests, verb, _capture)
+    call = getattr(ssrf_protection, f'safe_request_{verb}')
+    assert call('https://multi.example.test/x') == 'ok'
+    assert seen['pinned'].get('multi.example.test') == [
+        '93.184.216.34', '198.41.0.4',
+    ], 'pinning must not discard already-validated failover addresses'
+
+
+@pytest.mark.parametrize('verb', ['get', 'post', 'head'])
+def test_safe_request_fails_over_within_the_validated_set(
+    verb, monkeypatch, dns_two_public
+):
+    """A two-A host whose FIRST address is unreachable still delivers: the
+    pin carries both validated addresses and the connection layer moves on to
+    the next, exactly as urllib3's own getaddrinfo loop would. requests is
+    stubbed to stand in for urllib3 and open the connection itself, so the
+    real resolve -> validate -> pin -> connect chain is what runs."""
+    import requests
+
+    ssrf_protection._ensure_urllib3_patched()
+    attempts = []
+
+    def _connect(address, *_a, **_kw):
+        attempts.append(address)
+        if address[0] == '93.184.216.34':
+            raise ConnectionRefusedError('first validated address is down')
+        return 'sock'
+
+    monkeypatch.setattr(ssrf_protection, '_orig_create_connection', _connect)
+
+    def _request(url, **_kw):
+        # What urllib3 does inside requests, while the pin is in force.
+        sock = ssrf_protection._patched_create_connection(('multi.example.test', 443))
+        return f'delivered over {sock}'
+
+    monkeypatch.setattr(requests, verb, _request)
+    call = getattr(ssrf_protection, f'safe_request_{verb}')
+    assert call('https://multi.example.test/x') == 'delivered over sock'
+    assert attempts == [('93.184.216.34', 443), ('198.41.0.4', 443)], (
+        'the outbound request gave up after the first validated address'
+    )
+
+
+# --------------------------------------------------------------------------
+# 8. The metadata guard fails closed on an unresolvable host
+# --------------------------------------------------------------------------
+#
+# In the DEFAULT configuration (allow_private_ips=true) this guard is the
+# ONLY one that runs before the challenge fetch. Its old
+# ``except socket.gaierror: pass`` waved through any value its own resolver
+# could not answer — while requests re-parses and re-resolves the value on
+# its own: the exact fail-open this PR closed in validate_host_not_private.
+
+def test_metadata_guard_fails_closed_on_unresolvable_host(no_dns):
+    with pytest.raises(ValueError):
+        ssrf_protection.validate_url_not_cloud_metadata(
+            'http://unresolvable.example.test/x', allow_loopback=True
+        )
+
+
+def test_http01_refuses_an_unresolvable_identifier_in_the_default_config(
+    outbound, no_dns
+):
+    result, challenge = _drive(
+        'validate_http01_challenge', 'dns', 'servfail.example.test',
+        allow_private_ips=True,
+    )
+    _assert_rejected(result, challenge, outbound)
+
+
+def test_tls_alpn01_refuses_an_unresolvable_identifier_in_the_default_config(
+    outbound, no_dns
+):
+    result, challenge = _drive(
+        'validate_tls_alpn01_challenge', 'dns', 'servfail.example.test',
+        allow_private_ips=True,
+    )
+    _assert_rejected(result, challenge, outbound)
