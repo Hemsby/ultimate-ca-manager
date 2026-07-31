@@ -6,7 +6,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 // Verify all Phosphor icon imports resolve to real components
 describe('AppShell — icon imports', () => {
-  it('all navigation icons are valid React components', async () => {
+  // The dynamic import pulls in the entire @phosphor-icons/react package;
+  // on a cold module cache that alone can exceed the default 5s timeout.
+  it('all navigation icons are valid React components', { timeout: 30000 }, async () => {
     // Import the actual module to check real exports
     const phosphor = await import('@phosphor-icons/react')
     
