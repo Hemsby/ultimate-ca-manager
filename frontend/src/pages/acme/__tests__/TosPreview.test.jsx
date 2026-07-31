@@ -84,4 +84,45 @@ describe('TosPreview', () => {
     )
     expect(container.querySelector('script')).toBeNull()
   })
+
+  // The old sanitizer did three things plain CommonMark does not; remark-gfm,
+  // remark-breaks and the shared markdown classes keep them working for
+  // ToS text written against the old renderer (PR #247 review).
+
+  it('autolinks a bare URL (remark-gfm)', () => {
+    render(<TosPreview body={'See https://example.com/tos for details'} />)
+    const link = screen.getByRole('link', { name: 'https://example.com/tos' })
+    expect(link.getAttribute('href')).toBe('https://example.com/tos')
+    expect(link.getAttribute('rel')).toContain('noopener')
+  })
+
+  it('still strips a bare javascript: autolink candidate', () => {
+    const { container } = render(
+      <TosPreview body={`Visit ${jsUrl} now`} />
+    )
+    for (const el of container.querySelectorAll('a')) {
+      expect(el.getAttribute('href') ?? '').not.toContain('script:')
+    }
+  })
+
+  it('renders a single newline as a hard break (remark-breaks)', () => {
+    const { container } = render(
+      <TosPreview body={'line one\nline two'} />
+    )
+    expect(container.querySelector('br')).not.toBeNull()
+    expect(container.textContent).toContain('line one')
+    expect(container.textContent).toContain('line two')
+  })
+
+  it('renders list markers as a real styled list', () => {
+    const { container } = render(
+      <TosPreview body={'- first\n- second'} />
+    )
+    const ul = container.querySelector('ul')
+    expect(ul).not.toBeNull()
+    expect(ul.querySelectorAll('li')).toHaveLength(2)
+    // Bullets come from the shared markdown classes on the wrapper —
+    // Tailwind preflight strips default list styling otherwise.
+    expect(container.firstChild.className).toContain('[&_ul]:list-disc')
+  })
 })

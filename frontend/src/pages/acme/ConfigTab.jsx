@@ -5,6 +5,9 @@ import { ToggleSwitch } from '../../components/ui/ToggleSwitch'
 import { Select, Button, HelpCard, CompactSection, CompactGrid, CompactField, Input, Modal } from '../../components'
 import { useState, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
+import remarkGfm from 'remark-gfm'
+import { MARKDOWN_ELEMENT_CLASSES } from '../../lib/ui'
 import ProfilesEditor from './ProfilesEditor'
 
 /** Render a markdown ToS preview.
@@ -16,27 +19,34 @@ import ProfilesEditor from './ProfilesEditor'
  * ReactMarkdown (already used elsewhere in the app) escapes text nodes and
  * builds real React elements, so no raw HTML is ever interpolated; urlTransform
  * additionally pins hrefs to http/https/mailto.
+ *
+ * remark-gfm and remark-breaks preserve what the old sanitizer did beyond
+ * CommonMark: bare URLs autolink and single newlines render as hard breaks,
+ * so hard-wrapped ToS text keeps its line structure.
  */
 export function TosPreview({ body }) {
   if (!body?.trim()) return null
   return (
-    <ReactMarkdown
-      urlTransform={(url) => {
-        try {
-          const parsed = new URL(url, window.location.origin)
-          return ['http:', 'https:', 'mailto:'].includes(parsed.protocol) ? url : ''
-        } catch {
-          return ''
-        }
-      }}
-      components={{
-        a: ({ node, ...props }) => (
-          <a {...props} target="_blank" rel="noopener noreferrer" />
-        ),
-      }}
-    >
-      {body}
-    </ReactMarkdown>
+    <div className={MARKDOWN_ELEMENT_CLASSES}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkBreaks]}
+        urlTransform={(url) => {
+          try {
+            const parsed = new URL(url, window.location.origin)
+            return ['http:', 'https:', 'mailto:'].includes(parsed.protocol) ? url : ''
+          } catch {
+            return ''
+          }
+        }}
+        components={{
+          a: ({ node, ...props }) => (
+            <a {...props} target="_blank" rel="noopener noreferrer" />
+          ),
+        }}
+      >
+        {body}
+      </ReactMarkdown>
+    </div>
   )
 }
 
@@ -165,7 +175,7 @@ export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConf
           {tosExists && savedPreview ? (
             <div className="rounded-lg border border-border bg-bg-tertiary p-3 max-h-52 overflow-y-auto">
               {tos.title && <p className="text-sm font-semibold text-text-primary mb-2">{tos.title}</p>}
-              <div className="text-xs text-text-secondary [&>p]:mb-2 last:[&>p]:mb-0"><TosPreview body={tos?.body} /></div>
+              <div className="text-xs text-text-secondary"><TosPreview body={tos?.body} /></div>
             </div>
           ) : (
             <p className="text-xs text-text-tertiary">{t('acme.termsOfServiceHelper')}</p>
@@ -231,7 +241,7 @@ export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConf
           {editPreview && (
             <div className="rounded-lg border border-border bg-bg-tertiary p-3">
               <p className="text-xs text-text-tertiary mb-2">{t('acme.termsOfServicePreview')}</p>
-              <div className="text-xs text-text-secondary [&>p]:mb-2 last:[&>p]:mb-0"><TosPreview body={editBody} /></div>
+              <div className="text-xs text-text-secondary"><TosPreview body={editBody} /></div>
             </div>
           )}
           <div className="flex justify-end gap-2 pt-4 border-t border-border">
