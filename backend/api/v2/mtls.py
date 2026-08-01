@@ -16,7 +16,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
 
-from auth.unified import require_auth
+from auth.unified import require_auth, has_permission
 from config.settings import is_docker, restart_ucm_service
 from models import User, Certificate, CA, SystemConfig, db
 from models.auth_certificate import AuthCertificate
@@ -188,12 +188,24 @@ def create_mtls_certificate():
     # Resolve CA — prefer request ca_id, else the configured mTLS CA.
     # There is deliberately no "first CA in the table" fallback: that could
     # silently sign with the root CA when no mTLS CA has been configured.
+    trusted_refid = _get_mtls_config('mtls_trusted_ca_id')
     ca_id = data.get('ca_id')
     ca = None
     if ca_id:
         ca = db.session.get(CA, ca_id) or CA.query.filter_by(refid=str(ca_id)).first()
+        # An explicit ca_id may name ANY CA row — the root included — yet the
+        # route only requires write:user_certificates, a self-service scope
+        # every operator holds and that groups may grant to any user.
+        # Overriding the configured mTLS CA is a CA-level decision, so any
+        # other target additionally requires a CA-level scope.
+        if ca and ca.refid != trusted_refid \
+                and not has_permission('write:cas', g.permissions):
+            return error_response(
+                'Issuing from a CA other than the configured mTLS CA '
+                'requires write:cas',
+                403,
+            )
     if not ca:
-        trusted_refid = _get_mtls_config('mtls_trusted_ca_id')
         if trusted_refid:
             ca = CA.query.filter_by(refid=trusted_refid).first()
     if not ca:

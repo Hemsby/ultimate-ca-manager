@@ -4370,6 +4370,8 @@
     "selectCA": "CA für Zeitstempelsignierung auswählen",
     "policyOid": "Richtlinien-OID",
     "policyOidHelp": "OID zur Identifizierung der TSA-Richtlinie, unter der Zeitstempel ausgestellt werden",
+    "requireDedicatedCert": "Dediziertes TSA-Zertifikat erforderlich",
+    "requireDedicatedCertDesc": "Das Signieren von Zeitstempeln mit dem CA-Zertifikat selbst ablehnen. Erfordert ein dediziertes End-Entity-Signaturzertifikat mit kritischer timeStamping-EKU (RFC 3161).",
     "endpoint": "TSA-Endpunkt",
     "endpointDesc": "Verwenden Sie diese URL in Ihrer TSA-Client-Konfiguration",
     "timestampRequest": "Zeitstempelanfrage",

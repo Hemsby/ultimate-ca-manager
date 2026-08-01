@@ -4370,6 +4370,8 @@
     "selectCA": "タイムスタンプ署名用のCAを選択",
     "policyOid": "ポリシーOID",
     "policyOidHelp": "タイムスタンプが発行されるTSAポリシーを識別するOID",
+    "requireDedicatedCert": "専用のTSA証明書を必須にする",
+    "requireDedicatedCertDesc": "CA証明書自体でのタイムスタンプ署名を拒否します。クリティカルなtimeStamping EKUを持つ専用のエンドエンティティ署名証明書が必要です（RFC 3161）。",
     "endpoint": "TSAエンドポイント",
     "endpointDesc": "TSAクライアント設定でこのURLを使用してください",
     "timestampRequest": "タイムスタンプリクエスト",

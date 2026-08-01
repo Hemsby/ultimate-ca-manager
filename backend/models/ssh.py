@@ -84,7 +84,17 @@ class SSHCertificateAuthority(db.Model if db else object):
     ]
 
     def get_default_extensions(self):
-        """Get default extensions list"""
+        """Get default extensions list.
+
+        An unset column (NULL — the policy was never configured) serves the
+        standard OpenSSH extension set, so pre-existing CAs keep issuing
+        unchanged. A stored empty list ('[]') is an explicit "no extensions"
+        policy and returns []. Since signing.py enforces this list as the
+        allow-list for caller-requested extensions, the distinction is a
+        security boundary: without it, clearing the policy re-inflated to the
+        full standard set (permit-port-forwarding and permit-agent-forwarding
+        included).
+        """
         if not self.default_extensions:
             return list(self.STANDARD_EXTENSIONS)
         try:
@@ -93,8 +103,17 @@ class SSHCertificateAuthority(db.Model if db else object):
             return list(self.STANDARD_EXTENSIONS)
 
     def set_default_extensions(self, extensions):
-        """Set default extensions from list"""
-        self.default_extensions = json.dumps(extensions) if extensions else None
+        """Set default extensions from list.
+
+        ``None`` clears the column back to "unset" (standard set applies).
+        An empty list is persisted as ``'[]'`` — an explicit "nothing
+        permitted" policy. It used to collapse to ``None`` (``if extensions``
+        is falsy for ``[]``), which the getter re-inflated to the full
+        standard set: an admin clearing the policy silently got allow-all.
+        """
+        self.default_extensions = (
+            json.dumps(extensions) if extensions is not None else None
+        )
 
     def get_allowed_principals(self):
         """Get allowed principals list"""
