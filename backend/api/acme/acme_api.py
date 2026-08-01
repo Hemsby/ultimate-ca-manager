@@ -939,7 +939,15 @@ def new_authz():
         ok, err_type, err_detail = validate_acme_identifier(identifier)
         if not ok:
             return acme_error(err_type, err_detail)
-        
+
+        eab_cred = service.get_bound_eab_credential(account_id)
+        if eab_cred is not None and not eab_cred.allows_identifier(identifier):
+            return acme_error(
+                'rejectedIdentifier',
+                'Identifier not permitted by the External Account Binding '
+                'credential bound to this account',
+            )
+
         auth = service.create_pre_authorization(account_id, identifier)
         
         authz_url = f"{service.base_url}/acme/authz/{auth.authorization_id}"
@@ -1060,6 +1068,45 @@ def new_order():
                 detail,
                 subproblems=identifier_errors,
             )
+
+        # Per-EAB domain restrictions: if this account was registered via an
+        # EAB credential, every identifier must match the credential's
+        # allowed domain patterns. An empty list denies all issuance.
+        eab_cred = service.get_bound_eab_credential(account.account_id)
+        if eab_cred is not None:
+            eab_rejected = [
+                _identifier_subproblem(
+                    identifier,
+                    'rejectedIdentifier',
+                    'Identifier not permitted by the External Account '
+                    'Binding credential bound to this account',
+                )
+                for identifier in identifiers
+                if not eab_cred.allows_identifier(identifier)
+            ]
+            if eab_rejected:
+                denied_values = ', '.join(
+                    str((sp.get('identifier') or {}).get('value'))
+                    for sp in eab_rejected
+                )
+                _audit_acme(
+                    'acme.order.rejected_eab_domains',
+                    resource_type='acme_account',
+                    resource_id=account.account_id,
+                    details=(
+                        f'EAB kid={eab_cred.kid} rejected identifiers: '
+                        f'{denied_values}'
+                    ),
+                    success=False,
+                )
+                return acme_error(
+                    'rejectedIdentifier' if len(eab_rejected) == 1
+                    else 'compound',
+                    eab_rejected[0]['detail'] if len(eab_rejected) == 1
+                    else 'Multiple identifiers are not permitted by the '
+                         'External Account Binding domain restrictions',
+                    subproblems=eab_rejected,
+                )
 
         replaces = payload.get('replaces')
         if replaces is not None:

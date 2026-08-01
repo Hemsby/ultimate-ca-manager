@@ -1514,7 +1514,15 @@
       "deleteTitle": "Elimina credenziale EAB",
       "delete": "Elimina",
       "deletedSuccess": "Credenziale EAB eliminata",
-      "deleteFailed": "Eliminazione credenziale EAB fallita"
+      "deleteFailed": "Eliminazione credenziale EAB fallita",
+      "allowedDomains": "Domini consentiti",
+      "allowedDomainsHelp": "Un pattern per riga o separato da virgole (es. *.mydomain.com, host.mydomain.com). Lasciare vuoto per bloccare tutte le emissioni per questa credenziale.",
+      "allDomainsLabel": "Tutti i domini (aggiunge * all'elenco consentito)",
+      "allDomains": "Tutti i domini",
+      "noDomains": "Nessuno (emissione bloccata)",
+      "editDomainsTitle": "Modifica domini consentiti",
+      "domainsSaved": "Domini consentiti aggiornati",
+      "domainsSaveFailed": "Errore nell'aggiornamento dei domini consentiti"
     },
     "termsOfServiceTitlePlaceholder": "Termini di Servizio (lasciare vuoto per nascondere)",
     "termsOfServiceBodyPlaceholder": "Scrivi i tuoi termini qui...\n\nSupporta: **grassetto**, *corsivo*, [link](url), - elenchi\n\nUsa righe vuote per i paragrafi.",
