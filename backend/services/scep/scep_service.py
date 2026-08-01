@@ -23,6 +23,7 @@ from cryptography.x509.oid import ExtensionOID
 from config.settings import Config
 from models import CA, Certificate, SCEPRequest, db
 from services.crl_service import CRLService
+from utils.dn_parse import subject_common_name
 from utils.key_codec import load_pem_bytes
 from utils.datetime_utils import utc_now
 from utils.file_naming import cert_cert_path
@@ -1259,11 +1260,9 @@ class SCEPService:
         except x509.ExtensionNotFound:
             pass
 
-        cn_value = None
-        for part in csr.subject.rfc4514_string().split(','):
-            if part.strip().upper().startswith('CN='):
-                cn_value = part.strip()[3:]
-                break
+        # From the subject OBJECT -- see utils.dn_parse.subject_common_name for
+        # why splitting rfc4514_string() picked the WRONG commonName.
+        cn_value = subject_common_name(csr.subject)
         if not cn_value and san_dns_list:
             cn_value = san_dns_list[0]
 
