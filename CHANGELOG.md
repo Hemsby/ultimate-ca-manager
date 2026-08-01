@@ -8,7 +8,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 ---
 
 
-## [Unreleased]
+## [2.204] - 2026-08-01
 
 ### Security
 - **Direct private-key export now requires an admin-only scope** — exporting a certificate's private key (`include_key`, or a `pkcs12`/`pfx`/`key`/`jks` format) required only `write:certificates`, which the `operator` role holds by default — the very role that would otherwise go through the approval-gated Key Recovery flow. That made the four-eyes approval pointless: an operator could simply export the key directly, unapproved. Private-key export is now gated behind the admin-only `read:private_keys` scope; roles without it must use Key Recovery. CA private-key export was already restricted (`write:cas`) and is unchanged. **Upgrade note:** operators can no longer export certificate private keys directly — grant `read:private_keys` to a role (or use an admin account / admin-scoped API key) where direct export is required, otherwise route it through Key Recovery. Reported in #232.
