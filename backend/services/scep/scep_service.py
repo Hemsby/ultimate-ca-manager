@@ -1160,10 +1160,24 @@ class SCEPService:
                     if tpl_eku_names:
                         continue  # template governs Extended Key Usage
                     safe_ekus = [oid for oid in ext.value if oid in _ALLOWED_EKU_OIDS]
-                    if safe_ekus:
-                        builder = builder.add_extension(
-                            x509.ExtendedKeyUsage(safe_ekus), critical=False
+                    if not safe_ekus:
+                        # Every EKU the CSR requested was refused. Emitting no
+                        # ExtendedKeyUsage extension would hand back a certificate
+                        # unrestricted for every purpose (RFC 5280 §4.2.1.12);
+                        # fall back to a server/client device profile instead of
+                        # silently dropping it (same reasoning as sign_csr).
+                        safe_ekus = [
+                            x509.ExtendedKeyUsageOID.SERVER_AUTH,
+                            x509.ExtendedKeyUsageOID.CLIENT_AUTH,
+                        ]
+                        logger.warning(
+                            "SCEP: all CSR-supplied EKUs were refused; issuing "
+                            "with serverAuth+clientAuth instead of an "
+                            "unrestricted certificate"
                         )
+                    builder = builder.add_extension(
+                        x509.ExtendedKeyUsage(safe_ekus), critical=False
+                    )
                 # All other extensions (BasicConstraints, NameConstraints,
                 # PolicyConstraints, AuthorityInfoAccess, custom OIDs, ...)
                 # from the CSR are silently dropped — they MUST be set by us
