@@ -596,7 +596,8 @@ def simple_enroll(label=None):
             ca=ca,
             csr=csr,
             validity_days=days,
-            source='est'
+            source='est',
+            cert_type='device_cert',
         )
         
         # Create audit log
@@ -691,7 +692,7 @@ def simple_reenroll(label=None):
         
         cert_pem, serial = CAService.sign_csr_from_crypto(
             ca=ca, csr=csr, validity_days=days, source='est',
-            renewal_of=client_cert_obj,
+            renewal_of=client_cert_obj, cert_type='device_cert',
         )
 
         from models import AuditLog
@@ -885,7 +886,8 @@ def server_keygen(label=None):
         days = int(validity_days.value) if validity_days else 365
         
         cert_pem, serial = CAService.sign_csr_from_crypto(
-            ca=ca, csr=new_csr, validity_days=days, source='est'
+            ca=ca, csr=new_csr, validity_days=days, source='est',
+            cert_type='device_cert',
         )
         
         cert = x509.load_pem_x509_certificate(cert_pem.encode(), default_backend())

@@ -194,3 +194,90 @@ def test_extra_eku_remerge_does_not_resurrect_capped_eku(ca, leaf_key):
     )
     assert CODE_SIGNING not in ekus
     assert CLIENT_AUTH in ekus
+
+
+# --- total drop must not yield an UNRESTRICTED certificate ------------------
+#
+# Every test above pairs the forbidden EKU with a surviving one, so the cap
+# always had something left to emit. When the cap refused EVERY requested EKU
+# the ExtendedKeyUsage extension was omitted entirely — and a leaf with no EKU
+# extension is unrestricted for all purposes (RFC 5280 §4.2.1.12): a CSR
+# requesting nothing got serverAuth, while a CSR requesting something
+# forbidden got everything. The filter now falls back to the certificate
+# type's own profile, and refuses outright when the type has none.
+
+def test_all_ekus_dropped_falls_back_to_type_profile(ca, leaf_key):
+    """A CSR whose every EKU is refused must not yield an EKU-less leaf."""
+    ekus = _sign_and_get_ekus(
+        ca, _csr(leaf_key, [CODE_SIGNING]), cert_type='server_cert',
+    )
+    assert ekus, 'certificate has no EKU extension: unrestricted'
+    assert ekus == {SERVER_AUTH}
+
+
+def test_all_ekus_dropped_falls_back_for_client_cert(ca, leaf_key):
+    ekus = _sign_and_get_ekus(
+        ca, _csr(leaf_key, [CODE_SIGNING]), cert_type='usr_cert',
+    )
+    assert ekus == {CLIENT_AUTH}
+
+
+def test_any_eku_alone_does_not_yield_unrestricted_leaf(ca, leaf_key):
+    """anyEKU alone was the cheapest route to an unrestricted certificate."""
+    ekus = _sign_and_get_ekus(
+        ca, _csr(leaf_key, [ANY_EKU]), cert_type='server_cert',
+    )
+    assert ekus == {SERVER_AUTH}
+
+
+def test_all_ekus_dropped_on_unprofiled_type_is_refused(ca, leaf_key):
+    """A type with no profile has nothing to fall back to: refuse outright."""
+    with pytest.raises(ValueError, match='not permitted'):
+        _sign_and_get_ekus(
+            ca, _csr(leaf_key, [ANY_EKU]), cert_type='custom',
+        )
+
+
+def test_no_eku_csr_gets_the_code_signing_profile(ca, leaf_key):
+    """Requesting nothing and requesting only-forbidden resolve identically.
+
+    The no-EKU default and the total-drop fallback share one profile map, so
+    typed certificates (code_signing here) no longer issue EKU-less —
+    unrestricted — when the CSR simply omits the extension.
+    """
+    ekus = _sign_and_get_ekus(
+        ca, _csr(leaf_key, None), cert_type='code_signing',
+    )
+    assert ekus == {CODE_SIGNING}
+
+
+def test_every_ceiling_type_has_a_default_within_the_ceiling():
+    """Two invariants the signing paths rely on, pinned per type.
+
+    default ⊆ ceiling: a type's silent default grants its core purpose; its
+    ceiling is what a CSR may explicitly request on top (server_cert defaults
+    to serverAuth but permits clientAuth; email_cert defaults to
+    emailProtection but permits clientAuth for S/MIME + TLS-client devices).
+    The ceiling being wider than the default is deliberate — the default must
+    never exceed the ceiling, or a no-EKU CSR would receive more than any
+    explicit CSR may request.
+
+    default non-empty: the total-drop fallback issues the default profile,
+    and refuses outright only for types with no ceiling entry. A ceiling type
+    with an empty default would turn an all-refused CSR into a hard failure
+    instead of the profile.
+    """
+    from services.trust_store.csr_operations_mixin import (
+        _CERT_TYPE_ALLOWED_EKUS,
+        _default_ekus_for_cert_type,
+    )
+    for cert_type, allowed in _CERT_TYPE_ALLOWED_EKUS.items():
+        default = _default_ekus_for_cert_type(cert_type)
+        assert default, (
+            f'{cert_type!r} has an EKU ceiling but no default profile: an '
+            'all-refused CSR would raise instead of falling back'
+        )
+        assert set(default) <= set(allowed), (
+            f'{cert_type!r} default {sorted(o.dotted_string for o in default)} '
+            'exceeds its own ceiling'
+        )

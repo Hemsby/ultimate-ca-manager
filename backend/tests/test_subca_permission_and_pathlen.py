@@ -95,6 +95,99 @@ class TestSubCaPathLenCap:
         cert = _sign_subca(_ca(path_length=None), _subca_csr(path_length=1))
         assert _path_length(cert) == 1
 
+    # -- CSRs WITHOUT BasicConstraints: the shape UCM's own generator emits --
+    #
+    # The clamp above only ran inside the extension-copy loop, i.e. when the
+    # CSR carried a BasicConstraints extension. TrustStoreService.generate_csr
+    # emits none, so the default API path (POST /api/v2/csrs then sign as
+    # intermediate_ca) took the "add basic extensions if not in CSR" branch,
+    # which hardcoded pathLen 0 without ever consulting the parent — the
+    # pathLen-0 refusal never fired on exactly the CSRs UCM itself produces.
+
+    @staticmethod
+    def _subca_csr_without_bc():
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        return (x509.CertificateSigningRequestBuilder()
+                .subject_name(x509.Name(
+                    [x509.NameAttribute(NameOID.COMMON_NAME, 'sub.example.com')]))
+                .sign(key, hashes.SHA256()))
+
+    def test_pathlen_zero_parent_refuses_csr_without_basic_constraints(self):
+        with pytest.raises(ValueError, match='pathLenConstraint 0'):
+            _sign_subca(_ca(path_length=0), self._subca_csr_without_bc())
+
+    def test_pathlen_one_parent_still_signs_csr_without_basic_constraints(self):
+        """Control: the guard must not break the normal no-BC intermediate."""
+        cert = _sign_subca(_ca(path_length=1), self._subca_csr_without_bc())
+        assert _path_length(cert) == 0
+
+    def test_unconstrained_parent_still_signs_csr_without_basic_constraints(self):
+        cert = _sign_subca(_ca(path_length=None), self._subca_csr_without_bc())
+        assert _path_length(cert) == 0
+
+
+class TestCreateCaPathLenClamp:
+    """The sibling sub-CA route must enforce the same RFC 5280 §4.2.1.9 rule.
+
+    POST /api/v2/cas → create_internal_ca → create_ca_certificate took the
+    user-supplied pathLength with only a 0..32 range check: a pathLen-0
+    parent happily issued a child asserting pathLen 5, and omitting the field
+    under a constrained parent produced an UNLIMITED child. Same permission
+    level as the sign-CSR route, same object minted, no clamp — this class
+    drives the certificate-creation mixin directly (the service layer clamps
+    the stored CA row with the same helper).
+    """
+
+    @staticmethod
+    def _create_child(parent, path_length):
+        parent_cert, parent_key = parent
+        child_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cert_pem, _ = TrustStoreService.create_ca_certificate(
+            subject=x509.Name(
+                [x509.NameAttribute(NameOID.COMMON_NAME, 'Child CA')]),
+            private_key=child_key,
+            issuer=parent_cert.subject,
+            issuer_private_key=parent_key,
+            issuer_cert=parent_cert,
+            validity_days=30,
+            path_length=path_length,
+        )
+        return x509.load_pem_x509_certificate(cert_pem)
+
+    def test_pathlen_zero_parent_refuses_child(self):
+        with pytest.raises(ValueError, match='pathLenConstraint 0'):
+            self._create_child(_ca(path_length=0), path_length=5)
+
+    def test_deeper_request_is_clamped_to_parent(self):
+        cert = self._create_child(_ca(path_length=2), path_length=9)
+        assert _path_length(cert) == 1
+
+    def test_unlimited_request_is_clamped_to_parent(self):
+        """Omitting pathLength used to mint an UNLIMITED child under a
+        constrained parent — the silent worst case."""
+        cert = self._create_child(_ca(path_length=2), path_length=None)
+        assert _path_length(cert) == 1
+
+    def test_within_budget_request_is_honoured(self):
+        cert = self._create_child(_ca(path_length=3), path_length=0)
+        assert _path_length(cert) == 0
+
+    def test_unconstrained_parent_honours_request(self):
+        cert = self._create_child(_ca(path_length=None), path_length=5)
+        assert _path_length(cert) == 5
+
+    def test_root_creation_is_unaffected(self):
+        """No issuer at all (a root) — the operator's choice stands."""
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cert_pem, _ = TrustStoreService.create_ca_certificate(
+            subject=x509.Name(
+                [x509.NameAttribute(NameOID.COMMON_NAME, 'Standalone Root')]),
+            private_key=key,
+            validity_days=30,
+            path_length=3,
+        )
+        assert _path_length(x509.load_pem_x509_certificate(cert_pem)) == 3
+
 
 class TestSubCaRequiresWriteCas:
     """The CSR-sign endpoint must not be a back door around 'write:cas'."""
