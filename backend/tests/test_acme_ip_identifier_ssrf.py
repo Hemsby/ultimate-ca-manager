@@ -133,16 +133,30 @@ class TestChallengeGuardCoversIpIdentifiers:
     ):
         reached = self._prepare(acme_service, monkeypatch, 'ip', value)
         with app.app_context():
-            blocked = self._run_http01(acme_service, monkeypatch, value)
+            blocked, outcome = self._run_http01(acme_service, monkeypatch, value)
         assert blocked is False
         assert not reached['fetched'], (
             'the challenge validator reached out to a private address'
         )
+        # Assert the blocked OUTCOME, not just the return value: False is also
+        # what a failed fetch returns.
+        assert outcome['status'] == 'invalid'
+        assert 'rejectedIdentifier' in outcome['error']
 
     def _run_http01(self, acme_service, monkeypatch, value):
-        """Invoke the HTTP-01 validator against a persisted 'ip' challenge."""
+        """Invoke the HTTP-01 validator against a persisted 'ip' challenge.
+
+        Returns the verdict plus a snapshot of the challenge's recorded
+        outcome. The snapshot has to be taken here, while the session is
+        still open — reading the attributes after the caller's app context
+        exits raises DetachedInstanceError.
+        """
         challenge, account = _make_ip_challenge(value, 'http-01')
-        return acme_service.validate_http01_challenge(challenge, account)
+        blocked = acme_service.validate_http01_challenge(challenge, account)
+        return blocked, {
+            'status': challenge.status,
+            'error': challenge.error or '',
+        }
 
     @pytest.mark.parametrize('value', ['169.254.169.254', '127.0.0.1'])
     def test_tls_alpn01_blocks_private_ip_identifier(
@@ -154,10 +168,17 @@ class TestChallengeGuardCoversIpIdentifiers:
             blocked = acme_service.validate_tls_alpn01_challenge(
                 challenge, account
             )
+            # Snapshot inside the context; the instance detaches on exit.
+            outcome = {
+                'status': challenge.status,
+                'error': challenge.error or '',
+            }
         assert blocked is False
         assert not reached['fetched'], (
             'the TLS-ALPN-01 validator connected to a private address'
         )
+        assert outcome['status'] == 'invalid'
+        assert 'rejectedIdentifier' in outcome['error']
 
     def test_public_ip_identifier_is_not_blocked_by_the_guard(
         self, app, acme_service, monkeypatch
