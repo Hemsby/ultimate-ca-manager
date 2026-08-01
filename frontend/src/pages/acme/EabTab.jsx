@@ -19,6 +19,16 @@ export default function EabTab({ eabRequired, onToggleEabRequired, showCreateMod
   const [newEabSecret, setNewEabSecret] = useState(null)
   const [eabLabel, setEabLabel] = useState('')
   const [eabExpiresInDays, setEabExpiresInDays] = useState('')
+  const [eabAllowedDomainsText, setEabAllowedDomainsText] = useState('')
+  const [eabAllDomains, setEabAllDomains] = useState(false)
+
+  // Allowed-domains editing state
+  const [editingDomainsCred, setEditingDomainsCred] = useState(null)
+  const [editingDomainsText, setEditingDomainsText] = useState('')
+  const [editingAllDomains, setEditingAllDomains] = useState(false)
+
+  const parseDomainPatterns = (text) =>
+    text.split(/[\n,]+/).map(s => s.trim()).filter(Boolean)
 
   // Notes editing state
   const [editingNotesId, setEditingNotesId] = useState(null)
@@ -45,6 +55,10 @@ export default function EabTab({ eabRequired, onToggleEabRequired, showCreateMod
       const days = parseInt(eabExpiresInDays, 10)
       if (!Number.isNaN(days) && days > 0) payload.expires_in_days = days
 
+      payload.allowed_domains = eabAllDomains
+        ? ['*']
+        : parseDomainPatterns(eabAllowedDomainsText)
+
       const res = await acmeService.createEabCredential(payload)
       const created = res.data || res
       setNewEabSecret(created)
@@ -52,6 +66,8 @@ export default function EabTab({ eabRequired, onToggleEabRequired, showCreateMod
       onCloseCreateModal()
       setEabLabel('')
       setEabExpiresInDays('')
+      setEabAllowedDomainsText('')
+      setEabAllDomains(false)
       const list = await acmeService.listEabCredentials()
       setEabCredentials(list.data || [])
     } catch (error) {
@@ -121,6 +137,23 @@ export default function EabTab({ eabRequired, onToggleEabRequired, showCreateMod
       setEditingNotesValue('')
     } catch (error) {
       showError(error.message || t('acme.eab.notesSaveFailed'))
+    }
+  }
+
+  const saveDomains = async () => {
+    if (!editingDomainsCred) return
+    try {
+      const allowed = editingAllDomains
+        ? ['*']
+        : parseDomainPatterns(editingDomainsText)
+      await acmeService.patchEabCredential(editingDomainsCred.id, {
+        allowed_domains: allowed
+      })
+      showSuccess(t('acme.eab.domainsSaved'))
+      setEditingDomainsCred(null)
+      loadCredentials()
+    } catch (error) {
+      showError(error.message || t('acme.eab.domainsSaveFailed'))
     }
   }
 
@@ -211,6 +244,35 @@ export default function EabTab({ eabRequired, onToggleEabRequired, showCreateMod
                       >
                         <Copy size={12} />
                       </button>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5 text-xs text-text-tertiary">
+                      <span>{t('acme.eab.allowedDomains')}:</span>
+                      <span className="font-mono break-all">
+                        {cred.allowed_domains === null
+                          ? t('acme.eab.allDomains')
+                          : cred.allowed_domains.includes('*')
+                            ? t('acme.eab.allDomains')
+                            : cred.allowed_domains.length === 0
+                              ? t('acme.eab.noDomains')
+                              : cred.allowed_domains.join(', ')}
+                      </span>
+                      {canWrite && (
+                        <button
+                          type="button"
+                          className="shrink-0 text-text-tertiary hover:text-accent-primary"
+                          onClick={() => {
+                            setEditingDomainsCred(cred)
+                            const list = cred.allowed_domains || []
+                            setEditingAllDomains(list.includes('*'))
+                            setEditingDomainsText(
+                              list.filter(p => p !== '*').join('\n')
+                            )
+                          }}
+                          title={t('acme.eab.editDomainsTitle')}
+                        >
+                          <Pencil size={12} />
+                        </button>
+                      )}
                     </div>
                     <div className="mt-1 text-xs text-text-tertiary">
                       {t('acme.eab.created')}: {formatDate(cred.created_at)}
@@ -346,6 +408,31 @@ export default function EabTab({ eabRequired, onToggleEabRequired, showCreateMod
             min={1}
             helperText={t('acme.eab.expiresHelp')}
           />
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={eabAllDomains}
+              onChange={(e) => setEabAllDomains(e.target.checked)}
+            />
+            {t('acme.eab.allDomainsLabel')}
+          </label>
+          {!eabAllDomains && (
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                {t('acme.eab.allowedDomains')}
+              </label>
+              <textarea
+                className="w-full px-3 py-2 rounded bg-bg-tertiary border border-border font-mono text-sm"
+                rows={4}
+                placeholder={'*.mydomain.com\nhost.mydomain.com'}
+                value={eabAllowedDomainsText}
+                onChange={(e) => setEabAllowedDomainsText(e.target.value)}
+              />
+              <p className="text-xs text-text-tertiary mt-1">
+                {t('acme.eab.allowedDomainsHelp')}
+              </p>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2 border-t border-border">
             <Button type="button" variant="secondary" onClick={() => { setShowLocalCreate(false); onCloseCreateModal() }}>
               {t('common.cancel')}
@@ -399,6 +486,46 @@ export default function EabTab({ eabRequired, onToggleEabRequired, showCreateMod
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Edit Allowed Domains Modal */}
+      <Modal
+        open={!!editingDomainsCred}
+        onClose={() => setEditingDomainsCred(null)}
+        title={t('acme.eab.editDomainsTitle')}
+      >
+        <div className="p-4 space-y-4">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={editingAllDomains}
+              onChange={(e) => setEditingAllDomains(e.target.checked)}
+            />
+            {t('acme.eab.allDomainsLabel')}
+          </label>
+          {!editingAllDomains && (
+            <div>
+              <textarea
+                className="w-full px-3 py-2 rounded bg-bg-tertiary border border-border font-mono text-sm"
+                rows={4}
+                placeholder={'*.mydomain.com\nhost.mydomain.com'}
+                value={editingDomainsText}
+                onChange={(e) => setEditingDomainsText(e.target.value)}
+              />
+              <p className="text-xs text-text-tertiary mt-1">
+                {t('acme.eab.allowedDomainsHelp')}
+              </p>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2 border-t border-border">
+            <Button type="button" variant="secondary" onClick={() => setEditingDomainsCred(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button type="button" onClick={saveDomains}>
+              {t('common.save')}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </>
   )

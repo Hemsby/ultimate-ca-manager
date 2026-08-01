@@ -180,3 +180,20 @@ class EabMixin:
             db.session.rollback()
             logger.warning(f"Failed to consume EAB credential {kid}: {e}")
             return False
+
+    def get_bound_eab_credential(self, account_id):
+        """Return the EAB credential consumed by this account, if any.
+
+        Used to enforce per-credential domain restrictions on new-order /
+        new-authz. Accounts registered without EAB return None
+        (unrestricted).
+        """
+        if not account_id:
+            return None
+        from models import AcmeEabCredential
+        return (
+            AcmeEabCredential.query
+            .filter_by(used_by_account_id=account_id)
+            .order_by(AcmeEabCredential.used_at.desc())
+            .first()
+        )

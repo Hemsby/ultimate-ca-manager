@@ -476,7 +476,15 @@
       "deleteTitle": "Supprimer le justificatif EAB",
       "delete": "Supprimer",
       "deletedSuccess": "Justificatif EAB supprimé",
-      "deleteFailed": "Échec de la suppression du justificatif EAB"
+      "deleteFailed": "Échec de la suppression du justificatif EAB",
+      "allowedDomains": "Domaines autorisés",
+      "allowedDomainsHelp": "Un motif par ligne ou séparé par des virgules (ex. *.mydomain.com, host.mydomain.com). Laisser vide pour bloquer toute émission pour ce justificatif.",
+      "allDomainsLabel": "Tous les domaines (ajoute * à la liste autorisée)",
+      "allDomains": "Tous les domaines",
+      "noDomains": "Aucun (émission bloquée)",
+      "editDomainsTitle": "Modifier les domaines autorisés",
+      "domainsSaved": "Domaines autorisés mis à jour",
+      "domainsSaveFailed": "Échec de la mise à jour des domaines autorisés"
     },
     "termsOfServiceTitlePlaceholder": "Titre des CGU (laisser vide pour masquer)",
     "termsOfServiceBodyPlaceholder": "Rédigez vos conditions ici...\n\nSupporte : **gras**, *italique*, [liens](url), - listes\n\nUtilisez des lignes vides pour les paragraphes.",

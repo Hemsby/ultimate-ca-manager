@@ -1510,7 +1510,15 @@
       "deleteTitle": "Excluir credencial EAB",
       "delete": "Excluir",
       "deletedSuccess": "Credencial EAB excluída",
-      "deleteFailed": "Falha ao excluir credencial EAB"
+      "deleteFailed": "Falha ao excluir credencial EAB",
+      "allowedDomains": "Domínios permitidos",
+      "allowedDomainsHelp": "Um padrão por linha ou separado por vírgulas (ex. *.mydomain.com, host.mydomain.com). Deixe vazio para bloquear toda emissão para esta credencial.",
+      "allDomainsLabel": "Todos os domínios (adiciona * à lista permitida)",
+      "allDomains": "Todos os domínios",
+      "noDomains": "Nenhum (emissão bloqueada)",
+      "editDomainsTitle": "Editar domínios permitidos",
+      "domainsSaved": "Domínios permitidos atualizados",
+      "domainsSaveFailed": "Falha ao atualizar domínios permitidos"
     },
     "termsOfServiceTitlePlaceholder": "Termos de Serviço (deixe vazio para ocultar)",
     "termsOfServiceBodyPlaceholder": "Escreva seus termos aqui...\n\nSuporta: **negrito**, *itálico*, [links](url), - listas\n\nUse linhas vazias para parágrafos.",

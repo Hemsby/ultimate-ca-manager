@@ -1510,7 +1510,15 @@
       "deleteTitle": "EAB-Credential löschen",
       "delete": "Löschen",
       "deletedSuccess": "EAB-Credential gelöscht",
-      "deleteFailed": "EAB-Credential konnte nicht gelöscht werden"
+      "deleteFailed": "EAB-Credential konnte nicht gelöscht werden",
+      "allowedDomains": "Erlaubte Domains",
+      "allowedDomainsHelp": "Ein Muster pro Zeile oder kommagetrennt (z.B. *.mydomain.com, host.mydomain.com). Leer lassen, um alle Zertifikatsausstellungen für diese Credentials zu blockieren.",
+      "allDomainsLabel": "Alle Domains (fügt * zur erlaubten Liste hinzu)",
+      "allDomains": "Alle Domains",
+      "noDomains": "Keine (Ausstellung blockiert)",
+      "editDomainsTitle": "Erlaubte Domains bearbeiten",
+      "domainsSaved": "Erlaubte Domains aktualisiert",
+      "domainsSaveFailed": "Fehler beim Aktualisieren der erlaubten Domains"
     },
     "termsOfServiceTitlePlaceholder": "Nutzungsbedingungen (leer lassen zum Ausblenden)",
     "termsOfServiceBodyPlaceholder": "Schreiben Sie hier Ihre Bedingungen...\n\nUnterstützt: **Fett**, *Kursiv*, [Links](url), - Listen\n\nLeerzeilen für Absätze verwenden.",

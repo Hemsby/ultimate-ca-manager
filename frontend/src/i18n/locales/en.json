@@ -1510,7 +1510,15 @@
       "deleteTitle": "Delete EAB Credential",
       "delete": "Delete",
       "deletedSuccess": "EAB credential deleted",
-      "deleteFailed": "Failed to delete EAB credential"
+      "deleteFailed": "Failed to delete EAB credential",
+      "allowedDomains": "Allowed domains",
+      "allowedDomainsHelp": "One pattern per line or comma-separated (e.g. *.mydomain.com, host.mydomain.com). Leave empty to block all issuance for this credential.",
+      "allDomainsLabel": "All domains (adds * to the allowed list)",
+      "allDomains": "All domains",
+      "noDomains": "None (issuance blocked)",
+      "editDomainsTitle": "Edit allowed domains",
+      "domainsSaved": "Allowed domains updated",
+      "domainsSaveFailed": "Failed to update allowed domains"
     },
     "termsOfServiceTitlePlaceholder": "Terms of Service (leave empty to hide)",
     "termsOfServiceBodyPlaceholder": "Write your terms here...\n\nSupports: **bold**, *italic*, [links](url), - lists\n\nUse double empty lines for paragraphs.",
