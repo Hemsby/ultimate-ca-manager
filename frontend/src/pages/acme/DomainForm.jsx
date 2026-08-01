@@ -61,6 +61,7 @@ export default function DomainForm({ domain, dnsProviders, cas, onSubmit, onCanc
             label: ca.common_name || ca.descr || `CA #${ca.id}`
           }))
         ]}
+        helperText={t('acme.issuingCAProxyHelper')}
       />
 
       <ToggleSwitch

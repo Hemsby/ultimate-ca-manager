@@ -1349,6 +1349,7 @@
     "autoApproveDesc": "Ignorar a validação de challenge ACME para este domínio. Os certificados são emitidos imediatamente sem verificar o controlo do domínio.",
     "issuingCA": "CA emissora",
     "useDefaultCA": "Usar CA padrão",
+    "issuingCAProxyHelper": "Aplica-se apenas quando o UCM emite o certificado através do seu próprio servidor ACME; sem efeito quando o domínio é encaminhado para o Let's Encrypt (o certificado vem da CA upstream).",
     "defaultCA": "CA padrão",
     "testDnsAccess": "Testar DNS Acesso",
     "domainCreatedSuccess": "Domínio registado com sucesso",

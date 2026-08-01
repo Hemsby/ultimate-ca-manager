@@ -1349,6 +1349,7 @@
     "autoApproveDesc": "このドメインのACMEチャレンジ検証をスキップします。ドメイン制御を確認せずに証明書が即座に発行されます。",
     "issuingCA": "発行CA",
     "useDefaultCA": "デフォルトCAを使用",
+    "issuingCAProxyHelper": "UCM が独自の ACME サーバーで証明書を発行する場合にのみ適用されます。ドメインが Let's Encrypt に転送される場合は効果がありません（証明書は上流の CA から発行されます）。",
     "defaultCA": "デフォルトCA",
     "testDnsAccess": "DNSアクセスをテスト",
     "domainCreatedSuccess": "ドメインが正常に登録されました",

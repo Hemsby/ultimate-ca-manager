@@ -1349,6 +1349,7 @@
     "autoApproveDesc": "跳过此域名的 ACME 质询验证。证书将立即颁发，不验证域名控制权。",
     "issuingCA": "签发CA",
     "useDefaultCA": "使用默认CA",
+    "issuingCAProxyHelper": "仅当 UCM 通过其自身的 ACME 服务器签发证书时适用；当域名转发到 Let's Encrypt 时无效（证书来自上游 CA）。",
     "defaultCA": "默认CA",
     "testDnsAccess": "测试 DNS 访问",
     "domainCreatedSuccess": "域名注册成功",

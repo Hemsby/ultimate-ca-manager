@@ -1349,6 +1349,7 @@
     "autoApproveDesc": "ACME-Challenge-Prüfung für diese Domain überspringen. Zertifikate werden sofort ohne Domain-Control-Verifizierung ausgestellt.",
     "issuingCA": "Ausstellende CA",
     "useDefaultCA": "Standard-CA verwenden",
+    "issuingCAProxyHelper": "Gilt nur, wenn UCM das Zertifikat über seinen eigenen ACME-Server ausstellt; ohne Wirkung, wenn die Domain an Let's Encrypt weitergeleitet wird (das Zertifikat stammt dann von der Upstream-CA).",
     "defaultCA": "Standard-CA",
     "testDnsAccess": "DNS-Zugang testen",
     "domainCreatedSuccess": "Domain erfolgreich registriert",
