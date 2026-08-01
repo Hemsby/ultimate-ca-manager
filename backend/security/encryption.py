@@ -24,6 +24,18 @@ ENCRYPTED_MARKER = b'ENC:'
 MASTER_KEY_PATH = Path('/etc/ucm/master.key')
 
 
+def key_encryption_required() -> bool:
+    """True when the deployment opted in to refusing plaintext key storage.
+
+    Accepts the same truthy spellings as the rest of the codebase
+    (see security.rate_limiter._get_env_bool): '1', 'true', 'yes', 'on'.
+    Public so the disable-encryption endpoint can refuse up front instead
+    of exploding halfway through (#245 follow-up).
+    """
+    val = os.getenv('UCM_REQUIRE_KEY_ENCRYPTION', '').strip().lower()
+    return val in ('1', 'true', 'yes', 'on')
+
+
 class KeyEncryption:
     """
     Handles encryption/decryption of private keys stored in database.
@@ -75,9 +87,9 @@ class KeyEncryption:
             # keys — are stored as plaintext in the database. That used to
             # happen silently; make it loud, and let deployments refuse to run
             # rather than write crown-jewel keys in the clear.
-            if os.getenv('UCM_REQUIRE_KEY_ENCRYPTION', '').lower() == 'true':
+            if key_encryption_required():
                 raise RuntimeError(
-                    'Private-key encryption is required (UCM_REQUIRE_KEY_ENCRYPTION=true) '
+                    'Private-key encryption is required (UCM_REQUIRE_KEY_ENCRYPTION) '
                     f'but no key is configured. Provide {MASTER_KEY_PATH} or set '
                     'KEY_ENCRYPTION_KEY.'
                 )
@@ -99,6 +111,17 @@ class KeyEncryption:
             logger.info("✅ Private key encryption enabled")
         except Exception as e:
             logger.error(f"❌ Invalid encryption key: {e}")
+            # A key that EXISTS but does not parse must not bypass the
+            # require flag: falling back to disabled would write private
+            # keys to the database in plaintext — exactly the fail-open
+            # the flag exists to refuse (#245 follow-up).
+            if key_encryption_required():
+                raise RuntimeError(
+                    'Private-key encryption is required (UCM_REQUIRE_KEY_ENCRYPTION) '
+                    f'but the configured key (source: {self._key_source}) is invalid: {e}. '
+                    f'Fix {MASTER_KEY_PATH} or KEY_ENCRYPTION_KEY — refusing to run '
+                    'with plaintext key storage.'
+                )
             self._enabled = False
     
     def reload(self):
