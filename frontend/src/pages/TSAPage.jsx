@@ -162,6 +162,14 @@ export default function TSAPage() {
               helperText={t('tsa.policyOidHelp')}
               placeholder="1.2.3.4.1"
             />
+
+            <ToggleSwitch
+              checked={config.require_dedicated_cert || false}
+              onChange={(val) => setConfig({ ...config, require_dedicated_cert: val })}
+              label={t('tsa.requireDedicatedCert')}
+              description={t('tsa.requireDedicatedCertDesc')}
+              disabled={!config.enabled}
+            />
           </Card>
 
           {hasPermission('write:settings') && (

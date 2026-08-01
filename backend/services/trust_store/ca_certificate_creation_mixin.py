@@ -81,7 +81,14 @@ class CACertificateCreationMixin:
             not_after = max_end
         builder = builder.not_valid_after(not_after)
 
-        # CA extensions — BasicConstraints with configurable pathLenConstraint
+        # CA extensions — BasicConstraints with configurable pathLenConstraint,
+        # clamped to what the issuing CA permits (RFC 5280 §4.2.1.9). Enforced
+        # here as well as in create_internal_ca so no caller of this mixin can
+        # mint a child asserting a deeper (or unlimited) path than its issuer,
+        # or any sub-CA at all under a pathLen-0 parent.
+        if issuer_cert is not None:
+            from .csr_operations_mixin import capped_path_length
+            path_length = capped_path_length(path_length, issuer_cert)
         builder = builder.add_extension(
             x509.BasicConstraints(ca=True, path_length=path_length),
             critical=True,

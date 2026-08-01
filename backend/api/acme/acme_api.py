@@ -161,6 +161,34 @@ def _is_caa_failure(error: Any) -> bool:
     return bool(re.search(r'\bcaa\b', text, re.IGNORECASE))
 
 
+# A DNS label: letters, digits, hyphen (never leading/trailing), plus underscore
+# for the deployments that use it. Deliberately excludes ':', '@', '/', '?', '#',
+# '%', '[', ']', '\' and whitespace.
+_DNS_LABEL_RE = re.compile(r'^(?!-)[A-Za-z0-9_-]{1,63}(?<!-)$')
+
+
+def _is_valid_dns_identifier(value: Any) -> bool:
+    """Whether `value` is a syntactically valid RFC 8555 §7.1.4 DNS identifier.
+
+    The 'dns' branch used to validate nothing, so a value carrying a port or
+    userinfo ("169.254.169.254:80", "evil@169.254.169.254") was accepted. Such
+    a value is unresolvable as a hostname — which made the challenge validator's
+    private-address guard pass it — but the HTTP client then re-parses it as a
+    URL authority, strips the port/userinfo and reaches the address behind it.
+    """
+    if not isinstance(value, str) or not value or len(value) > 253:
+        return False
+    if value.startswith('*.'):
+        # Wildcard order: the prefix is stripped later, during authorization
+        # normalization, so it must be tolerated here.
+        value = value[2:]
+    if value.endswith('.'):
+        value = value[:-1]          # tolerate a single trailing root dot
+    if not value:
+        return False
+    return all(_DNS_LABEL_RE.match(label) for label in value.split('.'))
+
+
 def validate_acme_identifier(identifier: Dict[str, Any]) -> Tuple[bool, Optional[str], Optional[str]]:
     """Validate a single ACME identifier (RFC 8555 DNS + RFC 8738 IP).
 
@@ -184,6 +212,11 @@ def validate_acme_identifier(identifier: Dict[str, Any]) -> Tuple[bool, Optional
     # Support both DNS (RFC 8555) and IP (RFC 8738) identifiers
     if identifier['type'] not in ('dns', 'ip'):
         return False, 'unsupportedIdentifier', f'Identifier type {identifier["type"]} not supported'
+
+    # Validate DNS name syntax for DNS identifiers (RFC 8555 §7.1.4)
+    if identifier['type'] == 'dns':
+        if not _is_valid_dns_identifier(identifier['value']):
+            return False, 'malformed', 'Malformed DNS identifier value'
 
     # Validate IP address format for IP identifiers (RFC 8738)
     if identifier['type'] == 'ip':
@@ -549,11 +582,17 @@ def terms_of_service():
         for block in body.split('\n\n'):
             block = block.strip()
             if block:
-                # Escape HTML to prevent XSS
-                block = block.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                # Auto-linkify URLs and emails (after escaping)
+                # Escape HTML to prevent XSS. Quotes must be escaped too:
+                # the autolink below interpolates into a double-quoted href,
+                # and an unescaped quote in the URL breaks out of the
+                # attribute (same flaw the admin preview had).
+                block = (block.replace('&', '&amp;').replace('<', '&lt;')
+                         .replace('>', '&gt;').replace('"', '&quot;')
+                         .replace("'", '&#x27;'))
+                # Auto-linkify URLs (after escaping; quotes can no longer
+                # appear raw, and the class excludes them defensively)
                 block = re.sub(
-                    r'(https?://[^\s<>()]+)',
+                    r'(https?://[^\s<>()"\']+)',
                     r'<a href="\1" target="_blank" rel="noopener">\1</a>',
                     block
                 )
@@ -900,7 +939,15 @@ def new_authz():
         ok, err_type, err_detail = validate_acme_identifier(identifier)
         if not ok:
             return acme_error(err_type, err_detail)
-        
+
+        eab_cred = service.get_bound_eab_credential(account_id)
+        if eab_cred is not None and not eab_cred.allows_identifier(identifier):
+            return acme_error(
+                'rejectedIdentifier',
+                'Identifier not permitted by the External Account Binding '
+                'credential bound to this account',
+            )
+
         auth = service.create_pre_authorization(account_id, identifier)
         
         authz_url = f"{service.base_url}/acme/authz/{auth.authorization_id}"
@@ -1021,6 +1068,45 @@ def new_order():
                 detail,
                 subproblems=identifier_errors,
             )
+
+        # Per-EAB domain restrictions: if this account was registered via an
+        # EAB credential, every identifier must match the credential's
+        # allowed domain patterns. An empty list denies all issuance.
+        eab_cred = service.get_bound_eab_credential(account.account_id)
+        if eab_cred is not None:
+            eab_rejected = [
+                _identifier_subproblem(
+                    identifier,
+                    'rejectedIdentifier',
+                    'Identifier not permitted by the External Account '
+                    'Binding credential bound to this account',
+                )
+                for identifier in identifiers
+                if not eab_cred.allows_identifier(identifier)
+            ]
+            if eab_rejected:
+                denied_values = ', '.join(
+                    str((sp.get('identifier') or {}).get('value'))
+                    for sp in eab_rejected
+                )
+                _audit_acme(
+                    'acme.order.rejected_eab_domains',
+                    resource_type='acme_account',
+                    resource_id=account.account_id,
+                    details=(
+                        f'EAB kid={eab_cred.kid} rejected identifiers: '
+                        f'{denied_values}'
+                    ),
+                    success=False,
+                )
+                return acme_error(
+                    'rejectedIdentifier' if len(eab_rejected) == 1
+                    else 'compound',
+                    eab_rejected[0]['detail'] if len(eab_rejected) == 1
+                    else 'Multiple identifiers are not permitted by the '
+                         'External Account Binding domain restrictions',
+                    subproblems=eab_rejected,
+                )
 
         replaces = payload.get('replaces')
         if replaces is not None:

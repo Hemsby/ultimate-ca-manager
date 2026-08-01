@@ -19,7 +19,7 @@ export default {
         title: 'Gruppi',
         items: [
           { label: 'Crea gruppo', text: 'Definisci un gruppo e assegna i membri' },
-          { label: 'Ereditarietà ruoli', text: 'I gruppi possono ereditare ruoli — tutti i membri ottengono i permessi del gruppo' },
+          { label: 'Permessi di gruppo', text: 'Un gruppo concede un insieme di permessi — ogni membro li riceve in aggiunta al proprio ruolo' },
           { label: 'Gestione membri', text: 'Aggiungi o rimuovi utenti dai gruppi' },
         ]
       },
@@ -66,7 +66,7 @@ Ogni utente può avere più chiavi API per l'accesso programmatico. Le chiavi AP
 ### Creazione di un gruppo
 1. Clicca **Crea gruppo**
 2. Inserisci un **nome** e una descrizione opzionale
-3. Assegna un **ruolo** (i membri del gruppo ereditano questo ruolo)
+3. Seleziona i **permessi** concessi dal gruppo (i membri li ricevono in aggiunta al proprio ruolo)
 4. Clicca **Crea**
 
 ### Gestione dei membri
@@ -74,10 +74,10 @@ Ogni utente può avere più chiavi API per l'accesso programmatico. Le chiavi AP
 - Usa il **pannello di trasferimento** per aggiungere/rimuovere utenti
 - Gli utenti possono appartenere a più gruppi
 
-### Ereditarietà dei ruoli
+### Permessi di gruppo
 I permessi effettivi di un utente sono l'**unione** di:
-- Il ruolo assegnato direttamente
-- Tutti i ruoli dai gruppi a cui appartiene
+- I permessi del ruolo assegnato direttamente
+- I permessi concessi da ogni gruppo a cui appartiene
 
 ## Ruoli
 

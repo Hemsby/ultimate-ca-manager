@@ -19,7 +19,7 @@ export default {
         title: 'Gruppen',
         items: [
           { label: 'Gruppe erstellen', text: 'Eine Gruppe definieren und Mitglieder zuweisen' },
-          { label: 'Rollenvererbung', text: 'Gruppen können Rollen erben — alle Mitglieder erhalten Gruppenberechtigungen' },
+          { label: 'Gruppenberechtigungen', text: 'Eine Gruppe gewährt einen Satz von Berechtigungen — jedes Mitglied erhält sie zusätzlich zu seiner eigenen Rolle' },
           { label: 'Mitgliederverwaltung', text: 'Benutzer zu Gruppen hinzufügen oder daraus entfernen' },
         ]
       },
@@ -66,7 +66,7 @@ Jeder Benutzer kann mehrere API-Schlüssel für programmatischen Zugriff haben. 
 ### Gruppe erstellen
 1. Klicken Sie auf **Gruppe erstellen**
 2. Geben Sie einen **Namen** und eine optionale Beschreibung ein
-3. Weisen Sie eine **Rolle** zu (Gruppenmitglieder erben diese Rolle)
+3. Wählen Sie die **Berechtigungen**, die die Gruppe gewährt (Mitglieder erhalten sie zusätzlich zu ihrer eigenen Rolle)
 4. Klicken Sie auf **Erstellen**
 
 ### Mitglieder verwalten
@@ -74,10 +74,10 @@ Jeder Benutzer kann mehrere API-Schlüssel für programmatischen Zugriff haben. 
 - Verwenden Sie das **Transfer-Panel**, um Benutzer hinzuzufügen/zu entfernen
 - Benutzer können mehreren Gruppen angehören
 
-### Rollenvererbung
+### Gruppenberechtigungen
 Die effektiven Berechtigungen eines Benutzers sind die **Vereinigung** von:
-- Ihrer direkt zugewiesenen Rolle
-- Allen Rollen aus Gruppen, denen sie angehören
+- Den Berechtigungen seiner direkt zugewiesenen Rolle
+- Den Berechtigungen, die von jeder Gruppe gewährt werden, der er angehört
 
 ## Rollen
 

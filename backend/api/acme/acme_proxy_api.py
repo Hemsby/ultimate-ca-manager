@@ -405,6 +405,28 @@ def new_order(slug=None):
                 'IP identifiers are not supported.',
                 400,
             )
+
+        # Per-EAB domain restrictions (mirrors local ACME new-order)
+        requester_account_id = _kid_account_id(_request_protected_header())
+        if requester_account_id:
+            eab_cred = AcmeService().get_bound_eab_credential(
+                requester_account_id
+            )
+            if eab_cred is not None:
+                denied = [
+                    str(identifier.get('value'))
+                    for identifier in identifiers
+                    if not eab_cred.allows_identifier(identifier)
+                ]
+                if denied:
+                    return proxy_error(
+                        'rejectedIdentifier',
+                        'Identifier(s) not permitted by the External Account '
+                        'Binding credential bound to this account: '
+                        + ', '.join(denied),
+                        400,
+                    )
+
         requested_challenge = payload.get('challenge_type') or payload.get('challengeType')
         if requested_challenge and requested_challenge != 'dns-01':
             return proxy_error(

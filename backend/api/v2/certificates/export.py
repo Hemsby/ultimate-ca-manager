@@ -267,10 +267,16 @@ def export_certificate(cert_id):
                 400,
             )
 
-    # Private key export requires write permission
+    # Direct private-key export is gated behind the admin-only read:private_keys
+    # scope (not write:certificates, which operators hold): otherwise the
+    # approval-gated Key Recovery flow would be pointless, since anyone who could
+    # request a recovery could just export the key here without approval (#232).
     if include_key or export_format in ('pkcs12', 'pfx', 'key', 'jks'):
-        if not has_permission('write:certificates', g.permissions):
-            return error_response('Private key export requires write:certificates permission', 403)
+        if not has_permission('read:private_keys', g.permissions):
+            return error_response(
+                'Private key export requires the read:private_keys permission; '
+                'roles without it must use the Key Recovery approval flow', 403
+            )
 
     try:
         cert_pem = base64.b64decode(certificate.crt)

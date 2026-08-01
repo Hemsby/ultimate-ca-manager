@@ -79,13 +79,13 @@ Un badge de pourcentage montre quelle part de l'ensemble total des permissions l
 
 Les rôles sont attribués :
 - **Directement** — Sur la page Utilisateurs, modifiez un utilisateur et sélectionnez un rôle
-- **Via les groupes** — Attribuez un rôle à un groupe ; tous les membres en héritent
+- **Via les groupes** — Un groupe accorde un ensemble de permissions ; chaque membre les reçoit en plus de son propre rôle
 
 ## Permissions effectives
 
 Les permissions effectives d'un utilisateur sont calculées comme l'union de :
 1. Les permissions du rôle directement attribué
-2. Tous les rôles des groupes auxquels il appartient
+2. Les permissions accordées par les groupes auxquels il appartient
 
 La règle la plus permissive l'emporte (modèle additif, pas de règles de refus).
 

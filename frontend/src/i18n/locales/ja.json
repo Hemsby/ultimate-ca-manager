@@ -1145,6 +1145,9 @@
     "editGroup": "グループを編集",
     "deleteGroup": "グループを削除",
     "groupName": "グループ名",
+    "permissions": "権限",
+    "permissionsHelp": "このグループの各メンバーに、各自のロールに加えて付与される権限。",
+    "noPermissions": "権限は付与されていません",
     "members": "メンバー",
     "noGroups": "グループが見つかりません",
     "noMembers": "メンバーが見つかりません",
@@ -1349,6 +1352,7 @@
     "autoApproveDesc": "このドメインのACMEチャレンジ検証をスキップします。ドメイン制御を確認せずに証明書が即座に発行されます。",
     "issuingCA": "発行CA",
     "useDefaultCA": "デフォルトCAを使用",
+    "issuingCAProxyHelper": "UCM が独自の ACME サーバーで証明書を発行する場合にのみ適用されます。ドメインが Let's Encrypt に転送される場合は効果がありません（証明書は上流の CA から発行されます）。",
     "defaultCA": "デフォルトCA",
     "testDnsAccess": "DNSアクセスをテスト",
     "domainCreatedSuccess": "ドメインが正常に登録されました",
@@ -1510,7 +1514,15 @@
       "deleteTitle": "EAB資格を削除",
       "delete": "削除",
       "deletedSuccess": "EAB資格を削除しました",
-      "deleteFailed": "EAB資格の削除に失敗しました"
+      "deleteFailed": "EAB資格の削除に失敗しました",
+      "allowedDomains": "許可されたドメイン",
+      "allowedDomainsHelp": "1行に1パターン、またはカンマ区切り（例: *.mydomain.com, host.mydomain.com）。空の場合はこの資格のすべての発行をブロックします。",
+      "allDomainsLabel": "すべてのドメイン（許可リストに * を追加）",
+      "allDomains": "すべてのドメイン",
+      "noDomains": "なし（発行ブロック）",
+      "editDomainsTitle": "許可ドメインの編集",
+      "domainsSaved": "許可ドメインを更新しました",
+      "domainsSaveFailed": "許可ドメインの更新に失敗しました"
     },
     "termsOfServiceTitlePlaceholder": "利用規約（空白で非表示）",
     "termsOfServiceBodyPlaceholder": "ここに規約を入力...\n\n対応：**太字**, *斜体*, [リンク](url), - リスト\n\n段落には空行を使用。",
@@ -1818,7 +1830,8 @@
       "importSelected": "{{count}} 件をインポート",
       "importSuccess": "{{count}} 件を正常にインポートしました（{{skipped}} 件スキップ）",
       "noItemsSelected": "少なくとも1つのアイテムを選択してください",
-      "ignoreCert": "SSL証明書を無視する（自己署名）"
+      "ignoreCert": "SSL証明書を無視する（自己署名）",
+      "sslWarning": "⚠ SSL検証が無効です。接続は中間者攻撃に対して脆弱です。"
     },
     "export": {
       "allCertsTitle": "すべての証明書をエクスポート",
@@ -4370,6 +4383,8 @@
     "selectCA": "タイムスタンプ署名用のCAを選択",
     "policyOid": "ポリシーOID",
     "policyOidHelp": "タイムスタンプが発行されるTSAポリシーを識別するOID",
+    "requireDedicatedCert": "専用のTSA証明書を必須にする",
+    "requireDedicatedCertDesc": "CA証明書自体でのタイムスタンプ署名を拒否します。クリティカルなtimeStamping EKUを持つ専用のエンドエンティティ署名証明書が必要です（RFC 3161）。",
     "endpoint": "TSAエンドポイント",
     "endpointDesc": "TSAクライアント設定でこのURLを使用してください",
     "timestampRequest": "タイムスタンプリクエスト",

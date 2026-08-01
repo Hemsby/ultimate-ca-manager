@@ -315,6 +315,7 @@
     "autoApproveDesc": "Ignorer la validation des challenges ACME pour ce domaine. Les certificats sont émis immédiatement sans vérifier le contrôle du domaine.",
     "issuingCA": "CA émettrice",
     "useDefaultCA": "Utiliser la CA par défaut",
+    "issuingCAProxyHelper": "S'applique uniquement lorsque UCM émet le certificat via son propre serveur ACME ; sans effet lorsque le domaine est transféré à Let's Encrypt (le certificat provient de la CA en amont).",
     "defaultCA": "Par défaut",
     "testDnsAccess": "Tester l'accès DNS",
     "domainCreatedSuccess": "Domaine enregistré avec succès",
@@ -476,7 +477,15 @@
       "deleteTitle": "Supprimer le justificatif EAB",
       "delete": "Supprimer",
       "deletedSuccess": "Justificatif EAB supprimé",
-      "deleteFailed": "Échec de la suppression du justificatif EAB"
+      "deleteFailed": "Échec de la suppression du justificatif EAB",
+      "allowedDomains": "Domaines autorisés",
+      "allowedDomainsHelp": "Un motif par ligne ou séparé par des virgules (ex. *.mydomain.com, host.mydomain.com). Laisser vide pour bloquer toute émission pour ce justificatif.",
+      "allDomainsLabel": "Tous les domaines (ajoute * à la liste autorisée)",
+      "allDomains": "Tous les domaines",
+      "noDomains": "Aucun (émission bloquée)",
+      "editDomainsTitle": "Modifier les domaines autorisés",
+      "domainsSaved": "Domaines autorisés mis à jour",
+      "domainsSaveFailed": "Échec de la mise à jour des domaines autorisés"
     },
     "termsOfServiceTitlePlaceholder": "Titre des CGU (laisser vide pour masquer)",
     "termsOfServiceBodyPlaceholder": "Rédigez vos conditions ici...\n\nSupporte : **gras**, *italique*, [liens](url), - listes\n\nUtilisez des lignes vides pour les paragraphes.",
@@ -1681,6 +1690,9 @@
     "editGroup": "Modifier le groupe",
     "deleteGroup": "Supprimer le groupe",
     "groupName": "Nom du groupe",
+    "permissions": "Permissions",
+    "permissionsHelp": "Permissions accordées à chaque membre de ce groupe, en plus de son propre rôle.",
+    "noPermissions": "Aucune permission accordée",
     "members": "Membres",
     "noGroups": "Aucun groupe trouvé",
     "noMembers": "Aucun membre trouvé",
@@ -1876,7 +1888,8 @@
       "importSelected": "Importer {{count}} sélectionnés",
       "importSuccess": "{{count}} éléments importés avec succès ({{skipped}} ignorés)",
       "noItemsSelected": "Veuillez sélectionner au moins un élément à importer",
-      "ignoreCert": "Ignorer le certificat SSL (auto-signé)"
+      "ignoreCert": "Ignorer le certificat SSL (auto-signé)",
+      "sslWarning": "⚠ La vérification SSL est désactivée. Les connexions sont vulnérables aux attaques man-in-the-middle."
     },
     "export": {
       "allCertsTitle": "Exporter tous les certificats",
@@ -4373,6 +4386,8 @@
     "selectCA": "Sélectionnez une CA pour la signature d'horodatage",
     "policyOid": "OID de politique",
     "policyOidHelp": "OID identifiant la politique TSA sous laquelle les horodatages sont émis",
+    "requireDedicatedCert": "Exiger un certificat TSA dédié",
+    "requireDedicatedCertDesc": "Refuser de signer les horodatages avec le certificat de la CA elle-même. Nécessite un certificat de signature dédié (entité finale) avec une EKU timeStamping critique (RFC 3161).",
     "endpoint": "Point d'accès TSA",
     "endpointDesc": "Utilisez cette URL dans la configuration de votre client TSA",
     "timestampRequest": "Requête d'horodatage",

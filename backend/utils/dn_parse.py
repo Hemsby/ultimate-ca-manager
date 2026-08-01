@@ -2,6 +2,7 @@
 
 from string import hexdigits
 
+from cryptography.x509.oid import NameOID
 from ldap3.utils.dn import parse_dn as ldap_parse_dn
 
 
@@ -105,3 +106,26 @@ def get_parent_dn(dn: str) -> str:
         '+'.join(f'{attribute}={value}' for attribute, value in rdn)
         for rdn in rdns[1:]
     )
+
+
+def subject_common_name(subject) -> str | None:
+    """The FIRST commonName of an x509 subject, or None.
+
+    Use this whenever an x509 Name object is in hand. Do NOT derive a CN by
+    splitting `subject.rfc4514_string()` on ',' and taking the first "CN="
+    token, which is what several call sites did: RFC 4514 s2.1 emits RDNs in
+    REVERSE order, so that token is the LAST commonName. A subject of
+    `CN=web.example.com, CN=admin.example.com` recorded `admin.example.com`
+    as the certificate's identity, while ACME finalize validated
+    `web.example.com` -- the name checked and the name recorded disagreed
+    precisely when a subject carried more than one CN. Splitting on ',' is
+    independently wrong because RFC 4514 escapes a comma inside a value as
+    "\\,", which a plain split does not honour.
+
+    `get_dn_attribute()` above is the counterpart for when only the STRING
+    exists (an LDAP DN, or a subject already persisted as text); it unescapes
+    correctly but cannot recover the original ordering, so prefer this one
+    whenever the object is available.
+    """
+    attrs = subject.get_attributes_for_oid(NameOID.COMMON_NAME)
+    return attrs[0].value if attrs else None

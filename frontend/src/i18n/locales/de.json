@@ -1145,6 +1145,9 @@
     "editGroup": "Gruppe bearbeiten",
     "deleteGroup": "Gruppe löschen",
     "groupName": "Gruppenname",
+    "permissions": "Berechtigungen",
+    "permissionsHelp": "Berechtigungen, die jedem Mitglied dieser Gruppe zusätzlich zu seiner eigenen Rolle gewährt werden.",
+    "noPermissions": "Keine Berechtigungen gewährt",
     "members": "Mitglieder",
     "noGroups": "Keine Gruppen gefunden",
     "noMembers": "Keine Mitglieder gefunden",
@@ -1349,6 +1352,7 @@
     "autoApproveDesc": "ACME-Challenge-Prüfung für diese Domain überspringen. Zertifikate werden sofort ohne Domain-Control-Verifizierung ausgestellt.",
     "issuingCA": "Ausstellende CA",
     "useDefaultCA": "Standard-CA verwenden",
+    "issuingCAProxyHelper": "Gilt nur, wenn UCM das Zertifikat über seinen eigenen ACME-Server ausstellt; ohne Wirkung, wenn die Domain an Let's Encrypt weitergeleitet wird (das Zertifikat stammt dann von der Upstream-CA).",
     "defaultCA": "Standard-CA",
     "testDnsAccess": "DNS-Zugang testen",
     "domainCreatedSuccess": "Domain erfolgreich registriert",
@@ -1510,7 +1514,15 @@
       "deleteTitle": "EAB-Credential löschen",
       "delete": "Löschen",
       "deletedSuccess": "EAB-Credential gelöscht",
-      "deleteFailed": "EAB-Credential konnte nicht gelöscht werden"
+      "deleteFailed": "EAB-Credential konnte nicht gelöscht werden",
+      "allowedDomains": "Erlaubte Domains",
+      "allowedDomainsHelp": "Ein Muster pro Zeile oder kommagetrennt (z.B. *.mydomain.com, host.mydomain.com). Leer lassen, um alle Zertifikatsausstellungen für diese Credentials zu blockieren.",
+      "allDomainsLabel": "Alle Domains (fügt * zur erlaubten Liste hinzu)",
+      "allDomains": "Alle Domains",
+      "noDomains": "Keine (Ausstellung blockiert)",
+      "editDomainsTitle": "Erlaubte Domains bearbeiten",
+      "domainsSaved": "Erlaubte Domains aktualisiert",
+      "domainsSaveFailed": "Fehler beim Aktualisieren der erlaubten Domains"
     },
     "termsOfServiceTitlePlaceholder": "Nutzungsbedingungen (leer lassen zum Ausblenden)",
     "termsOfServiceBodyPlaceholder": "Schreiben Sie hier Ihre Bedingungen...\n\nUnterstützt: **Fett**, *Kursiv*, [Links](url), - Listen\n\nLeerzeilen für Absätze verwenden.",
@@ -1818,7 +1830,8 @@
       "importSelected": "{{count}} ausgewählte importieren",
       "importSuccess": "{{count}} Elemente erfolgreich importiert ({{skipped}} übersprungen)",
       "noItemsSelected": "Bitte wählen Sie mindestens ein Element zum Importieren aus",
-      "ignoreCert": "SSL-Zertifikat ignorieren (selbstsigniert)"
+      "ignoreCert": "SSL-Zertifikat ignorieren (selbstsigniert)",
+      "sslWarning": "⚠ SSL-Überprüfung ist deaktiviert. Verbindungen sind anfällig für Man-in-the-Middle-Angriffe."
     },
     "export": {
       "allCertsTitle": "Alle Zertifikate exportieren",
@@ -4370,6 +4383,8 @@
     "selectCA": "CA für Zeitstempelsignierung auswählen",
     "policyOid": "Richtlinien-OID",
     "policyOidHelp": "OID zur Identifizierung der TSA-Richtlinie, unter der Zeitstempel ausgestellt werden",
+    "requireDedicatedCert": "Dediziertes TSA-Zertifikat erforderlich",
+    "requireDedicatedCertDesc": "Das Signieren von Zeitstempeln mit dem CA-Zertifikat selbst ablehnen. Erfordert ein dediziertes End-Entity-Signaturzertifikat mit kritischer timeStamping-EKU (RFC 3161).",
     "endpoint": "TSA-Endpunkt",
     "endpointDesc": "Verwenden Sie diese URL in Ihrer TSA-Client-Konfiguration",
     "timestampRequest": "Zeitstempelanfrage",

@@ -2,6 +2,7 @@ import base64
 import datetime
 import json
 
+import requests
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -87,7 +88,7 @@ def test_opnsense_import_uses_refid_and_links_cert_caref(app, auth_client, monke
         "prv_payload": cert_key_pem.decode("ascii"),
         "cert_type": "server_cert",
     }]
-    monkeypatch.setattr(import_opnsense, "create_session", lambda verify_ssl=False: _Session(ca_rows, cert_rows))
+    monkeypatch.setattr(import_opnsense, "create_session", lambda verify_ssl=True: _Session(ca_rows, cert_rows))
 
     r = auth_client.post('/api/v2/import/opnsense/import',
                          data=json.dumps({
@@ -129,7 +130,7 @@ def test_opnsense_ca_import_requires_write_cas(app, auth_client, monkeypatch):
     monkeypatch.setattr(
         import_opnsense,
         "create_session",
-        lambda verify_ssl=False: _Session(ca_rows, []),
+        lambda verify_ssl=True: _Session(ca_rows, []),
     )
 
     r_key = auth_client.post(
@@ -157,3 +158,143 @@ def test_opnsense_ca_import_requires_write_cas(app, auth_client, monkeypatch):
         headers={'X-API-Key': api_key},
     )
     assert r.status_code == 403
+
+
+def _capturing_session_factory(captured):
+    """create_session stand-in that records the verify_ssl it was called with.
+
+    The default mirrors the REAL create_session signature (verify_ssl=True) so
+    the capture reflects what the route passed, not what the stub assumed —
+    the pre-#248 fixtures here used `lambda verify_ssl=False`, which would
+    have stayed green even if the backend default regressed.
+    """
+    def _factory(verify_ssl=True):
+        captured['verify_ssl'] = verify_ssl
+        return _Session([], [])
+    return _factory
+
+
+def test_opnsense_test_defaults_to_verify_ssl_true(app, auth_client, monkeypatch):
+    """#248 flipped the backend default to verify TLS; a body that omits
+    verify_ssl must reach create_session with True. Regression guard for the
+    default itself — no pre-existing test exercised the omitted-key case."""
+    from api.v2 import import_opnsense
+
+    captured = {}
+    monkeypatch.setattr(import_opnsense, "create_session", _capturing_session_factory(captured))
+
+    r = auth_client.post(
+        '/api/v2/import/opnsense/test',
+        data=json.dumps({
+            "host": "192.168.1.254",
+            "port": 443,
+            "api_key": "key",
+            "api_secret": "secret",
+        }),
+        content_type='application/json',
+    )
+    assert r.status_code == 200, r.data
+    assert captured['verify_ssl'] is True
+
+
+def test_opnsense_import_defaults_to_verify_ssl_true(app, auth_client, monkeypatch):
+    from api.v2 import import_opnsense
+
+    captured = {}
+    monkeypatch.setattr(import_opnsense, "create_session", _capturing_session_factory(captured))
+
+    r = auth_client.post(
+        '/api/v2/import/opnsense/import',
+        data=json.dumps({
+            "host": "192.168.1.254",
+            "port": 443,
+            "api_key": "key",
+            "api_secret": "secret",
+            "items": [],
+        }),
+        content_type='application/json',
+    )
+    assert r.status_code == 200, r.data
+    assert captured['verify_ssl'] is True
+
+
+class _SSLFailingSession:
+    """Session whose every request fails TLS verification, the way requests
+    surfaces it: SSLError — which is a ConnectionError SUBCLASS, so without
+    a dedicated handler it wears the generic host/port message."""
+
+    def get(self, url, auth=None, timeout=None):
+        raise requests.exceptions.SSLError(
+            "certificate verify failed: self-signed certificate")
+
+
+def test_opnsense_test_tls_failure_names_the_certificate(app, auth_client, monkeypatch):
+    """verify-by-default (#248/#255) makes a stock self-signed OPNsense GUI
+    fail TLS verification on the DEFAULT interactive request; the operator
+    must be told it is the certificate, not 'Check host and port.'"""
+    from api.v2 import import_opnsense
+
+    monkeypatch.setattr(import_opnsense, "create_session",
+                        lambda verify_ssl=True: _SSLFailingSession())
+
+    r = auth_client.post(
+        '/api/v2/import/opnsense/test',
+        data=json.dumps({
+            "host": "192.168.1.254",
+            "port": 443,
+            "api_key": "key",
+            "api_secret": "secret",
+        }),
+        content_type='application/json',
+    )
+    assert r.status_code == 400, r.data
+    body = r.get_data(as_text=True)
+    assert 'certificate' in body
+    assert 'host and port' not in body
+
+
+def test_opnsense_import_tls_failure_names_the_certificate(app, auth_client, monkeypatch):
+    """Same for the import endpoint, whose generic handler said only
+    'Import failed' (500)."""
+    from api.v2 import import_opnsense
+
+    monkeypatch.setattr(import_opnsense, "create_session",
+                        lambda verify_ssl=True: _SSLFailingSession())
+
+    r = auth_client.post(
+        '/api/v2/import/opnsense/import',
+        data=json.dumps({
+            "host": "192.168.1.254",
+            "port": 443,
+            "api_key": "key",
+            "api_secret": "secret",
+            "items": [],
+        }),
+        content_type='application/json',
+    )
+    assert r.status_code == 400, r.data
+    body = r.get_data(as_text=True)
+    assert 'certificate' in body
+    assert 'Import failed' not in body
+
+
+def test_opnsense_explicit_verify_ssl_false_is_honored(app, auth_client, monkeypatch):
+    """The opt-out must keep working: an explicit false reaches create_session."""
+    from api.v2 import import_opnsense
+
+    captured = {}
+    monkeypatch.setattr(import_opnsense, "create_session", _capturing_session_factory(captured))
+
+    r = auth_client.post(
+        '/api/v2/import/opnsense/test',
+        data=json.dumps({
+            "host": "192.168.1.254",
+            "port": 443,
+            "api_key": "key",
+            "api_secret": "secret",
+            "verify_ssl": False,
+        }),
+        content_type='application/json',
+    )
+    assert r.status_code == 200, r.data
+    assert captured['verify_ssl'] is False

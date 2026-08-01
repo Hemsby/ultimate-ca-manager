@@ -1145,6 +1145,9 @@
     "editGroup": "Edit Group",
     "deleteGroup": "Delete Group",
     "groupName": "Group Name",
+    "permissions": "Permissions",
+    "permissionsHelp": "Permissions granted to every member of this group, in addition to their own role.",
+    "noPermissions": "No permissions granted",
     "members": "Members",
     "noGroups": "No groups found",
     "noMembers": "No members found",
@@ -1349,6 +1352,7 @@
     "autoApproveDesc": "Skip ACME challenge validation for this domain. Certificates are issued immediately without verifying domain control.",
     "issuingCA": "Issuing CA",
     "useDefaultCA": "Use default CA",
+    "issuingCAProxyHelper": "Only applies when UCM issues the certificate through its own ACME server; it has no effect when the domain is forwarded to Let's Encrypt (the certificate comes from the upstream CA).",
     "defaultCA": "Default",
     "testDnsAccess": "Test DNS Access",
     "domainCreatedSuccess": "Domain registered successfully",
@@ -1510,7 +1514,15 @@
       "deleteTitle": "Delete EAB Credential",
       "delete": "Delete",
       "deletedSuccess": "EAB credential deleted",
-      "deleteFailed": "Failed to delete EAB credential"
+      "deleteFailed": "Failed to delete EAB credential",
+      "allowedDomains": "Allowed domains",
+      "allowedDomainsHelp": "One pattern per line or comma-separated (e.g. *.mydomain.com, host.mydomain.com). Leave empty to block all issuance for this credential.",
+      "allDomainsLabel": "All domains (adds * to the allowed list)",
+      "allDomains": "All domains",
+      "noDomains": "None (issuance blocked)",
+      "editDomainsTitle": "Edit allowed domains",
+      "domainsSaved": "Allowed domains updated",
+      "domainsSaveFailed": "Failed to update allowed domains"
     },
     "termsOfServiceTitlePlaceholder": "Terms of Service (leave empty to hide)",
     "termsOfServiceBodyPlaceholder": "Write your terms here...\n\nSupports: **bold**, *italic*, [links](url), - lists\n\nUse double empty lines for paragraphs.",
@@ -1818,7 +1830,8 @@
       "importSelected": "Import {{count}} selected",
       "importSuccess": "Successfully imported {{count}} items ({{skipped}} skipped)",
       "noItemsSelected": "Please select at least one item to import",
-      "ignoreCert": "Ignore SSL certificate (self-signed)"
+      "ignoreCert": "Ignore SSL certificate (self-signed)",
+      "sslWarning": "⚠ SSL verification is disabled. Connections are vulnerable to man-in-the-middle attacks."
     },
     "export": {
       "allCertsTitle": "Export All Certificates",
@@ -4373,6 +4386,8 @@
     "selectCA": "Select a CA for timestamp signing",
     "policyOid": "Policy OID",
     "policyOidHelp": "OID identifying the TSA policy under which timestamps are issued",
+    "requireDedicatedCert": "Require a dedicated TSA certificate",
+    "requireDedicatedCertDesc": "Refuse to sign timestamps with the CA certificate itself. Requires a dedicated end-entity signing certificate with a critical timeStamping EKU (RFC 3161).",
     "endpoint": "TSA Endpoint",
     "endpointDesc": "Use this URL in your TSA client configuration",
     "timestampRequest": "Timestamp Request",

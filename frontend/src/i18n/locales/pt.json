@@ -1145,6 +1145,9 @@
     "editGroup": "Editar grupo",
     "deleteGroup": "Eliminar grupo",
     "groupName": "Nome do grupo",
+    "permissions": "Permissões",
+    "permissionsHelp": "Permissões concedidas a cada membro deste grupo, além da sua própria função.",
+    "noPermissions": "Nenhuma permissão concedida",
     "members": "Membros",
     "noGroups": "Sem grupos",
     "noMembers": "Sem membros",
@@ -1349,6 +1352,7 @@
     "autoApproveDesc": "Ignorar a validação de challenge ACME para este domínio. Os certificados são emitidos imediatamente sem verificar o controlo do domínio.",
     "issuingCA": "CA emissora",
     "useDefaultCA": "Usar CA padrão",
+    "issuingCAProxyHelper": "Aplica-se apenas quando o UCM emite o certificado através do seu próprio servidor ACME; sem efeito quando o domínio é encaminhado para o Let's Encrypt (o certificado vem da CA upstream).",
     "defaultCA": "CA padrão",
     "testDnsAccess": "Testar DNS Acesso",
     "domainCreatedSuccess": "Domínio registado com sucesso",
@@ -1510,7 +1514,15 @@
       "deleteTitle": "Excluir credencial EAB",
       "delete": "Excluir",
       "deletedSuccess": "Credencial EAB excluída",
-      "deleteFailed": "Falha ao excluir credencial EAB"
+      "deleteFailed": "Falha ao excluir credencial EAB",
+      "allowedDomains": "Domínios permitidos",
+      "allowedDomainsHelp": "Um padrão por linha ou separado por vírgulas (ex. *.mydomain.com, host.mydomain.com). Deixe vazio para bloquear toda emissão para esta credencial.",
+      "allDomainsLabel": "Todos os domínios (adiciona * à lista permitida)",
+      "allDomains": "Todos os domínios",
+      "noDomains": "Nenhum (emissão bloqueada)",
+      "editDomainsTitle": "Editar domínios permitidos",
+      "domainsSaved": "Domínios permitidos atualizados",
+      "domainsSaveFailed": "Falha ao atualizar domínios permitidos"
     },
     "termsOfServiceTitlePlaceholder": "Termos de Serviço (deixe vazio para ocultar)",
     "termsOfServiceBodyPlaceholder": "Escreva seus termos aqui...\n\nSuporta: **negrito**, *itálico*, [links](url), - listas\n\nUse linhas vazias para parágrafos.",
@@ -1818,7 +1830,8 @@
       "importSelected": "Importar {{count}} selecionados",
       "importSuccess": "{{count}} itens importados com sucesso ({{skipped}} ignorados)",
       "noItemsSelected": "Selecione pelo menos um item para importar",
-      "ignoreCert": "Ignorar certificado SSL (autoassinado)"
+      "ignoreCert": "Ignorar certificado SSL (autoassinado)",
+      "sslWarning": "⚠ A verificação SSL está desativada. As conexões são vulneráveis a ataques man-in-the-middle."
     },
     "export": {
       "allCertsTitle": "Exportar All Certificados",
@@ -4370,6 +4383,8 @@
     "selectCA": "Selecione uma CA para assinatura de carimbos de data/hora",
     "policyOid": "OID de política",
     "policyOidHelp": "OID que identifica a política TSA sob a qual os carimbos de data/hora são emitidos",
+    "requireDedicatedCert": "Exigir um certificado TSA dedicado",
+    "requireDedicatedCertDesc": "Recusar a assinatura de carimbos de data/hora com o próprio certificado da CA. Requer um certificado de assinatura dedicado (entidade final) com uma EKU timeStamping crítica (RFC 3161).",
     "endpoint": "Endpoint TSA",
     "endpointDesc": "Use esta URL na configuração do seu cliente TSA",
     "timestampRequest": "Solicitação de carimbo de data/hora",

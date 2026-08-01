@@ -1145,6 +1145,9 @@
     "editGroup": "Modifica gruppo",
     "deleteGroup": "Elimina gruppo",
     "groupName": "Nome gruppo",
+    "permissions": "Autorizzazioni",
+    "permissionsHelp": "Autorizzazioni concesse a ogni membro di questo gruppo, oltre al proprio ruolo.",
+    "noPermissions": "Nessuna autorizzazione concessa",
     "members": "Membri",
     "noGroups": "Nessun gruppo trovato",
     "noMembers": "Nessun membro trovato",
@@ -1349,6 +1352,7 @@
     "autoApproveDesc": "Salta la validazione del challenge ACME per questo dominio. I certificati vengono emessi immediatamente senza verificare il controllo del dominio.",
     "issuingCA": "CA emittente",
     "useDefaultCA": "Usa CA predefinita",
+    "issuingCAProxyHelper": "Si applica solo quando UCM emette il certificato tramite il proprio server ACME; nessun effetto quando il dominio viene inoltrato a Let's Encrypt (il certificato proviene dalla CA upstream).",
     "defaultCA": "CA predefinita",
     "testDnsAccess": "Test Accesso DNS",
     "domainCreatedSuccess": "Dominio registrato con successo",
@@ -1510,7 +1514,15 @@
       "deleteTitle": "Elimina credenziale EAB",
       "delete": "Elimina",
       "deletedSuccess": "Credenziale EAB eliminata",
-      "deleteFailed": "Eliminazione credenziale EAB fallita"
+      "deleteFailed": "Eliminazione credenziale EAB fallita",
+      "allowedDomains": "Domini consentiti",
+      "allowedDomainsHelp": "Un pattern per riga o separato da virgole (es. *.mydomain.com, host.mydomain.com). Lasciare vuoto per bloccare tutte le emissioni per questa credenziale.",
+      "allDomainsLabel": "Tutti i domini (aggiunge * all'elenco consentito)",
+      "allDomains": "Tutti i domini",
+      "noDomains": "Nessuno (emissione bloccata)",
+      "editDomainsTitle": "Modifica domini consentiti",
+      "domainsSaved": "Domini consentiti aggiornati",
+      "domainsSaveFailed": "Errore nell'aggiornamento dei domini consentiti"
     },
     "termsOfServiceTitlePlaceholder": "Termini di Servizio (lasciare vuoto per nascondere)",
     "termsOfServiceBodyPlaceholder": "Scrivi i tuoi termini qui...\n\nSupporta: **grassetto**, *corsivo*, [link](url), - elenchi\n\nUsa righe vuote per i paragrafi.",
@@ -1818,7 +1830,8 @@
       "importSelected": "Importa {{count}} selezionati",
       "importSuccess": "{{count}} elementi importati con successo ({{skipped}} saltati)",
       "noItemsSelected": "Seleziona almeno un elemento da importare",
-      "ignoreCert": "Ignora certificato SSL (autofirmato)"
+      "ignoreCert": "Ignora certificato SSL (autofirmato)",
+      "sslWarning": "⚠ La verifica SSL è disattivata. Le connessioni sono vulnerabili agli attacchi man-in-the-middle."
     },
     "export": {
       "allCertsTitle": "Esporta Tutti i Certificati",
@@ -4370,6 +4383,8 @@
     "selectCA": "Seleziona una CA per la firma delle marche temporali",
     "policyOid": "OID della politica",
     "policyOidHelp": "OID che identifica la politica TSA sotto la quale vengono emesse le marche temporali",
+    "requireDedicatedCert": "Richiedi un certificato TSA dedicato",
+    "requireDedicatedCertDesc": "Rifiuta di firmare le marche temporali con il certificato della CA stessa. Richiede un certificato di firma dedicato (entità finale) con una EKU timeStamping critica (RFC 3161).",
     "endpoint": "Endpoint TSA",
     "endpointDesc": "Usa questo URL nella configurazione del tuo client TSA",
     "timestampRequest": "Richiesta marca temporale",

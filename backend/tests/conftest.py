@@ -45,6 +45,53 @@ os.environ.setdefault('UCM_DEV_MODE', 'true')
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+class _GuardResolverProxy:
+    """Stand-in for utils.ssrf_protection's `socket` module (and ONLY its):
+    getaddrinfo falls back to a fixed TEST-NET-3 answer when the real
+    resolver fails; everything else forwards to the real socket module."""
+
+    def __init__(self, real_socket):
+        self._real = real_socket
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def getaddrinfo(self, host, *args, **kwargs):
+        try:
+            return self._real.getaddrinfo(host, *args, **kwargs)
+        except self._real.gaierror:
+            return [(self._real.AF_INET, self._real.SOCK_STREAM, 6, '',
+                     ('203.0.113.10', 0))]
+
+
+@pytest.fixture(autouse=True)
+def _deterministic_dns(monkeypatch):
+    """Make the SSRF guards' hostname resolution deterministic.
+
+    The guards fail CLOSED on an unresolvable host (#256), which made every
+    test that validates a made-up hostname (hook.example.com, fake OIDC
+    issuers, ACME upstream stubs, ...) hostage to the runner's resolver: an
+    honest resolver NXDOMAINs those names and the guard refuses them, while
+    an NXDOMAIN-hijacking one resolves them and the guard does not. Neither
+    outcome is about the code under test.
+
+    Only utils.ssrf_protection's view of `socket` is replaced: real answers
+    win, and only a resolver failure falls back to a fixed TEST-NET-3
+    address, which the guards treat as public — so save-time URL validation
+    passes deterministically. Everything else (requests, ldap3, discovery)
+    keeps the REAL resolver, so an actual connection attempt to a made-up
+    host still fails fast with the same error as before, instead of hanging
+    on an unroutable address. SSRF-focused tests that need a specific answer
+    or a resolution FAILURE monkeypatch ssrf_protection.socket.getaddrinfo
+    themselves; that lands on this proxy instance and fully replaces the
+    fallback for the test's duration.
+    """
+    import socket as _socket
+    import utils.ssrf_protection as _ssrf
+
+    monkeypatch.setattr(_ssrf, 'socket', _GuardResolverProxy(_socket))
+
+
 @pytest.fixture(scope='session')
 def app():
     """Create Flask app with test configuration (shared across all tests)."""

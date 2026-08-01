@@ -228,8 +228,10 @@ vi.mock('../../services/auth-methods.service', () => ({
 }))
 vi.mock('../../services/opnsense.service', () => ({
   opnsenseService: {
-    getConfig: vi.fn().mockResolvedValue({ data: {} }),
-    sync: vi.fn().mockResolvedValue({ data: {} }),
+    // Mirror the REAL service interface (test/import) so payload assertions
+    // are possible; the old getConfig/sync mocks matched no real method.
+    test: vi.fn().mockResolvedValue({ stats: { cas: 0, certificates: 0 }, items: [] }),
+    import: vi.fn().mockResolvedValue({ imported: { cas: 0, certificates: 0 }, skipped: 0 }),
   }
 }))
 vi.mock('../../services/truststore.service', () => ({
@@ -274,6 +276,12 @@ vi.mock('../../contexts', () => ({
   useMobile: () => ({
     isMobile: false,
     isTablet: false,
+    isDesktop: true,
+    isTouch: false,
+    isLargeScreen: true,
+    // ResponsiveLayout gates its content area on screenWidth >= 768; without
+    // it the mock rendered every page down the mobile menu-only path.
+    screenWidth: 1280,
     sidebarOpen: true,
     setSidebarOpen: vi.fn(),
   }),
@@ -333,6 +341,10 @@ vi.mock('../../contexts/MobileContext', () => ({
   useMobile: () => ({
     isMobile: false,
     isTablet: false,
+    isDesktop: true,
+    isTouch: false,
+    isLargeScreen: true,
+    screenWidth: 1280,
     sidebarOpen: true,
     setSidebarOpen: vi.fn(),
   }),

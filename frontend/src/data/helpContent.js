@@ -666,7 +666,7 @@ export const helpContent = {
         icon: UsersFour,
         items: [
           { label: 'Create Group', text: 'Define a group and assign members' },
-          { label: 'Role Inheritance', text: 'Groups can inherit roles — all members get group permissions' },
+          { label: 'Group Permissions', text: 'A group grants a set of permissions — every member receives them on top of their own role' },
           { label: 'Member Management', text: 'Add or remove users from groups' },
         ]
       },
@@ -1252,6 +1252,40 @@ export const helpContent = {
       'Approval comments are logged in the audit trail for compliance.',
     ],
     related: ['Policies', 'Certificates', 'Audit Logs']
+  },
+
+  // ===== KEY RECOVERY =====
+  keyRecovery: {
+    title: 'Key Recovery',
+    subtitle: 'Recover archived private keys under dual control',
+    overview: 'Key Recovery retrieves the archived private key of a previously issued certificate through an approval-gated, fully audited workflow. It exists for keys that were not exported at issuance time (the preset did not allow it, or export was skipped) and are needed later — with an approval trail attached to the retrieval.',
+    sections: [
+      {
+        title: 'Workflow',
+        icon: ClockCounterClockwise,
+        items: [
+          { label: 'Request', text: 'A user requests recovery of a specific certificate\'s archived key, with a reason' },
+          { label: 'Approve (four-eyes)', text: 'A second authorised operator reviews and approves — the requester cannot approve their own request' },
+          { label: 'Download', text: 'Once approved, the key is released as a password-protected PKCS#12 bundle' },
+        ]
+      },
+      {
+        title: 'Requirements',
+        icon: Key,
+        items: [
+          { label: 'Archived key', text: 'The certificate\'s private key must be stored in the database — recovery cannot reconstruct a key that was never archived' },
+          { label: 'Dual control', text: 'Request and approval are separate actions by different people; every step is written to the audit trail' },
+        ]
+      },
+    ],
+    tips: [
+      'Key Recovery is for keys that were not exported when the certificate was issued; it is not a replacement for restricting key export at issuance time.',
+      'Every request, approval and download is recorded in the audit trail for compliance.',
+    ],
+    warnings: [
+      'A certificate whose private key was never archived cannot be recovered — there is nothing to release.',
+    ],
+    related: ['Certificates', 'Approvals', 'Audit Logs']
   },
 
   // ===== REPORTS =====

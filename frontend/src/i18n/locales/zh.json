@@ -1145,6 +1145,9 @@
     "editGroup": "编辑组",
     "deleteGroup": "删除组",
     "groupName": "组名",
+    "permissions": "权限",
+    "permissionsHelp": "授予该组每个成员的权限，作为其自身角色的补充。",
+    "noPermissions": "未授予任何权限",
     "members": "成员",
     "noGroups": "未找到组",
     "noMembers": "未找到成员",
@@ -1349,6 +1352,7 @@
     "autoApproveDesc": "跳过此域名的 ACME 质询验证。证书将立即颁发，不验证域名控制权。",
     "issuingCA": "签发CA",
     "useDefaultCA": "使用默认CA",
+    "issuingCAProxyHelper": "仅当 UCM 通过其自身的 ACME 服务器签发证书时适用；当域名转发到 Let's Encrypt 时无效（证书来自上游 CA）。",
     "defaultCA": "默认CA",
     "testDnsAccess": "测试 DNS 访问",
     "domainCreatedSuccess": "域名注册成功",
@@ -1510,7 +1514,15 @@
       "deleteTitle": "删除 EAB 凭据",
       "delete": "删除",
       "deletedSuccess": "EAB 凭据已删除",
-      "deleteFailed": "删除 EAB 凭据失败"
+      "deleteFailed": "删除 EAB 凭据失败",
+      "allowedDomains": "允许的域名",
+      "allowedDomainsHelp": "每行一个模式或用逗号分隔（例如 *.mydomain.com, host.mydomain.com）。留空将阻止此凭据的所有证书签发。",
+      "allDomainsLabel": "所有域名（将 * 添加到允许列表）",
+      "allDomains": "所有域名",
+      "noDomains": "无（签发已阻止）",
+      "editDomainsTitle": "编辑允许的域名",
+      "domainsSaved": "允许的域名已更新",
+      "domainsSaveFailed": "更新允许的域名失败"
     },
     "termsOfServiceTitlePlaceholder": "服务条款（留空隐藏）",
     "termsOfServiceBodyPlaceholder": "在此输入条款...\n\n支持：**加粗**, *斜体*, [链接](url), - 列表\n\n空行分隔段落。",
@@ -1818,7 +1830,8 @@
       "importSelected": "导入 {{count}} 个已选",
       "importSuccess": "成功导入 {{count}} 个项目（跳过 {{skipped}} 个）",
       "noItemsSelected": "请至少选择一个要导入的项目",
-      "ignoreCert": "忽略SSL证书（自签名）"
+      "ignoreCert": "忽略SSL证书（自签名）",
+      "sslWarning": "⚠ SSL验证已禁用。连接容易受到中间人攻击。"
     },
     "export": {
       "allCertsTitle": "导出所有证书",
@@ -4370,6 +4383,8 @@
     "selectCA": "选择用于时间戳签名的CA",
     "policyOid": "策略OID",
     "policyOidHelp": "标识时间戳发行所依据的TSA策略的OID",
+    "requireDedicatedCert": "要求使用专用TSA证书",
+    "requireDedicatedCertDesc": "拒绝使用CA证书本身签署时间戳。需要具有关键timeStamping EKU的专用终端实体签名证书（RFC 3161）。",
     "endpoint": "TSA端点",
     "endpointDesc": "在TSA客户端配置中使用此URL",
     "timestampRequest": "时间戳请求",

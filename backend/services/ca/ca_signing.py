@@ -42,6 +42,7 @@ class CASigningMixin:
         validity_days: int = 365,
         source: str = 'manual',
         renewal_of: x509.Certificate = None,
+        cert_type: str = 'server_cert',
     ) -> Tuple[str, str]:
         """
         Sign a CSR (x509 object) using a CA.
@@ -52,6 +53,12 @@ class CASigningMixin:
             csr: x509 CertificateSigningRequest object
             validity_days: Certificate validity in days
             source: Origin of the request (est, auto-renewal, etc.)
+            renewal_of: Certificate being renewed, if any — its names and
+                EKUs are graced (renewal at par must not silently narrow
+                what the device already has)
+            cert_type: Signing profile for TrustStoreService.sign_csr —
+                decides the EKU ceiling. EST passes 'device_cert';
+                the default keeps every other caller on the TLS profile.
 
         Returns:
             Tuple of (cert_pem_string, serial_number_string)
@@ -82,6 +89,7 @@ class CASigningMixin:
             ca_private_key=ca_private_key,
             validity_days=validity_days,
             digest='sha256',
+            cert_type=cert_type,
             cdp_urls=cdp_urls,
             ocsp_urls=ocsp_urls,
             aia_ca_issuers_urls=aia_ca_issuers_urls,
