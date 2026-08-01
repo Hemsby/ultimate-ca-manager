@@ -421,6 +421,30 @@ class TestExportSingle:
         assert r.status_code == 200
         assert b'BEGIN CERTIFICATE' in r.data
 
+    def test_export_key_denied_without_private_keys_scope(self, app, auth_client, create_cert, create_user):
+        # An operator holds write:certificates but NOT the admin-only
+        # read:private_keys scope, so direct private-key export is refused —
+        # the approval-gated Key Recovery flow is the only path for that role (#232).
+        cert = create_cert(cn='export-op.example.com')
+        cert_id = cert.get('id')
+        create_user(username='op_export_test', role='operator')
+        op = app.test_client()
+        r = op.post('/api/v2/auth/login',
+                    data=json.dumps({'username': 'op_export_test', 'password': 'TestPass123!'}),
+                    content_type='application/json')
+        assert r.status_code == 200
+        # Private key export refused (include_key, and PKCS#12 which always bundles the key)
+        r = op.get(f'{BASE}/{cert_id}/export?format=pem&include_key=true')
+        assert r.status_code == 403
+        r = op.post(f'{BASE}/{cert_id}/export',
+                    data=json.dumps({'format': 'pkcs12', 'password': 'ExportPass123!'}),
+                    content_type='application/json')
+        assert r.status_code == 403
+        # Certificate-only export still works for the operator
+        r = op.get(f'{BASE}/{cert_id}/export?format=pem')
+        assert r.status_code == 200
+        assert b'BEGIN CERTIFICATE' in r.data
+
     def test_export_pem_with_chain(self, auth_client, create_cert):
         cert = create_cert(cn='export-chain.example.com')
         cert_id = cert.get('id')

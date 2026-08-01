@@ -101,7 +101,7 @@ export default function CertificatesPage() {
   }, [])
   
   const { showSuccess, showError, showConfirm, showPrompt, showWarning } = useNotification()
-  const { canWrite, canDelete } = usePermission()
+  const { canWrite, canDelete, hasPermission } = usePermission()
   const { muteToasts } = useWebSocket()
 
   // Load data - reload when filters or sort change
@@ -732,7 +732,7 @@ export default function CertificatesPage() {
         entityType="certificate"
         entityName={exportRowCert?.common_name || exportRowCert?.subject || ''}
         hasPrivateKey={!!exportRowCert?.has_private_key}
-        canExportKey={canWrite('certificates')}
+        canExportKey={hasPermission('read:private_keys')}
         onExport={handleExportRow}
       />
     </>
