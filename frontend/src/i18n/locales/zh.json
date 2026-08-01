@@ -1818,7 +1818,8 @@
       "importSelected": "导入 {{count}} 个已选",
       "importSuccess": "成功导入 {{count}} 个项目（跳过 {{skipped}} 个）",
       "noItemsSelected": "请至少选择一个要导入的项目",
-      "ignoreCert": "忽略SSL证书（自签名）"
+      "ignoreCert": "忽略SSL证书（自签名）",
+      "sslWarning": "⚠ SSL验证已禁用。连接容易受到中间人攻击。"
     },
     "export": {
       "allCertsTitle": "导出所有证书",

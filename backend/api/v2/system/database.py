@@ -201,16 +201,30 @@ def reset_db():
 
         # Create default admin user
         from models import User
-        from werkzeug.security import generate_password_hash
 
+        # NOTE: the User column is `active`, not `is_active` — the wrong kwarg
+        # made this constructor raise TypeError, which the bare `except` below
+        # turned into "Database reset failed" AFTER drop_all() had already
+        # run: a wiped database with no admin user at all.
+        #
+        # Recreate the CONFIGURED bootstrap admin exactly as the canonical
+        # seeding paths do (app.py, database_health.py, init_db.py):
+        # - the configured identity, not a hard-coded 'admin' — a deployment
+        #   with INITIAL_ADMIN_USERNAME set would otherwise get the WRONG
+        #   admin back from a UI button;
+        # - totp_exempt (#141), so a reset under global 2FA enforcement
+        #   cannot recreate an admin that no one can log in as;
+        # - set_password(), which pins the hash algorithm (models/user.py),
+        #   instead of a bare generate_password_hash().
         admin = User(
-            username='admin',
-            email='admin@localhost',
-            password_hash=generate_password_hash('changeme123'),
+            username=current_app.config.get('INITIAL_ADMIN_USERNAME', 'admin'),
+            email=current_app.config.get('INITIAL_ADMIN_EMAIL', 'admin@localhost'),
             role='admin',
-            is_active=True,
-            force_password_change=True
+            active=True,
+            force_password_change=True,
+            totp_exempt=True
         )
+        admin.set_password(current_app.config.get('INITIAL_ADMIN_PASSWORD', 'changeme123'))
         db.session.add(admin)
         ok, err = safe_commit(logger, "Database reset failed")
         if not ok:

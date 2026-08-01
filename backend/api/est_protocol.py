@@ -410,21 +410,34 @@ def _trusted_client_cert():
         or request.headers.get('X-SSL-Client-Verify')
         or ''
     ).upper()
-    # Fail closed: a missing SSL_CLIENT_VERIFY is not evidence of a verified
-    # peer. Treating absent-as-OK meant a trusted proxy that forwarded the
-    # certificate but not the verify result would have its client certs
-    # accepted unvalidated.
-    if verify != 'SUCCESS':
-        logger.warning(
-            "EST: SSL_CLIENT_VERIFY=%r — refusing client cert",
-            verify or '<missing>',
-        )
-        return None
-
-    return (
+    presented = (
         request.environ.get('SSL_CLIENT_CERT')
         or request.headers.get('X-SSL-Client-Cert')
     )
+    # Fail closed: a missing SSL_CLIENT_VERIFY is not evidence of a verified
+    # peer. Treating absent-as-OK meant a trusted proxy that forwarded the
+    # certificate but not the verify result would have its client certs
+    # accepted unvalidated. Only WARN when a certificate was actually
+    # presented, though — an ordinary Basic-auth request through a trusted
+    # proxy that forwards no SSL_CLIENT_* variables (e.g. the sample nginx
+    # config in docs/installation/docker.md) carries no client cert, and
+    # logging "refusing client cert" on its success path is a false alarm
+    # on every request (twice per serverkeygen).
+    if verify != 'SUCCESS':
+        if presented:
+            logger.warning(
+                "EST: SSL_CLIENT_VERIFY=%r — refusing client cert",
+                verify or '<missing>',
+            )
+        else:
+            logger.debug(
+                "EST: no client certificate presented (SSL_CLIENT_VERIFY=%r); "
+                "falling through to other authentication",
+                verify or '<missing>',
+            )
+        return None
+
+    return presented
 
 
 def _authenticate_est_client():
