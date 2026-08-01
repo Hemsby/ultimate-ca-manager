@@ -2480,6 +2480,44 @@ Use the status filter bar at the top to show:
 `
   },
 
+  keyRecovery: {
+    title: 'Key Recovery',
+    content: `
+## Overview
+
+Key Recovery retrieves the **archived private key** of a previously issued certificate through an approval-gated, fully audited workflow. It is meant for keys that were **not exported at issuance time** — the preset did not allow export, or it was simply skipped — and are needed later, with an approval trail attached to the retrieval.
+
+Recovery only works when the private key was archived (stored in the database) at issuance. It cannot reconstruct a key that was never kept.
+
+## Workflow
+
+### 1. Request
+A user opens a recovery request for a specific certificate and provides a reason. The request is recorded and enters the pending state.
+
+### 2. Approve (four-eyes)
+A second authorised operator reviews the request and approves it. The requester **cannot approve their own request** — request and approval are separate actions by different people (dual control).
+
+### 3. Download
+Once approved, the archived key is released as a **password-protected PKCS#12** bundle. The download is recorded in the audit trail.
+
+## Requirements
+
+- **Archived key** — the certificate's private key must be present in the database. Certificates whose key was never archived cannot be recovered.
+- **Dual control** — the request and the approval are distinct steps performed by different users.
+
+## Permissions
+
+- **read:key_recovery** — Request a recovery and view requests
+- **admin** — Approve or deny a pending recovery request
+
+## What it is (and isn't)
+
+Key Recovery adds an **approval trail** to retrieving an archived key after issuance. It is not a substitute for restricting private-key export on presets — if a role can already export keys directly, that is a separate access path to control on its own.
+
+> 💡 Every request, approval and download is written to the audit trail for compliance.
+`
+  },
+
   reports: {
     title: 'Reports',
     content: `
