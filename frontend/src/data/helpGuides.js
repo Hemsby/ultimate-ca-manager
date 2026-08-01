@@ -1390,7 +1390,7 @@ Each user can have multiple API keys for programmatic access. API keys inherit t
 ### Creating a Group
 1. Click **Create Group**
 2. Enter a **name** and optional description
-3. Assign a **role** (group members inherit this role)
+3. Select the **permissions** the group grants (members receive them on top of their own role)
 4. Click **Create**
 
 ### Managing Members
@@ -1398,10 +1398,10 @@ Each user can have multiple API keys for programmatic access. API keys inherit t
 - Use the **transfer panel** to add/remove users
 - Users can belong to multiple groups
 
-### Role Inheritance
+### Group Permissions
 A user's effective permissions are the **union** of:
-- Their directly assigned role
-- All roles from groups they belong to
+- Their directly assigned role's permissions
+- The permissions granted by every group they belong to
 
 ## Roles
 
@@ -1477,13 +1477,13 @@ A percentage badge shows how much of the total permission set the role covers. 1
 
 Roles are assigned:
 - **Directly** — On the Users page, edit a user and select a role
-- **Via Groups** — Assign a role to a group; all members inherit it
+- **Via Groups** — A group grants a permission set; every member receives it in addition to their own role
 
 ## Effective Permissions
 
 A user's effective permissions are computed as the union of:
 1. Their directly assigned role's permissions
-2. All roles from groups they belong to
+2. The permissions granted by groups they belong to
 
 The most permissive rule wins (additive model, no deny rules).
 

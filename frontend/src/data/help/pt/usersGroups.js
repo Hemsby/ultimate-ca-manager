@@ -19,7 +19,7 @@ export default {
         title: 'Grupos',
         items: [
           { label: 'Criar Grupo', text: 'Definir um grupo e atribuir membros' },
-          { label: 'Herança de Função', text: 'Grupos podem herdar funções — todos os membros recebem as permissões do grupo' },
+          { label: 'Permissões de Grupo', text: 'Um grupo concede um conjunto de permissões — cada membro as recebe além de sua própria função' },
           { label: 'Gerenciamento de Membros', text: 'Adicionar ou remover usuários dos grupos' },
         ]
       },
@@ -66,7 +66,7 @@ Cada usuário pode ter múltiplas chaves de API para acesso programático. As ch
 ### Criando um Grupo
 1. Clique em **Criar Grupo**
 2. Insira um **nome** e descrição opcional
-3. Atribua uma **função** (membros do grupo herdam esta função)
+3. Selecione as **permissões** que o grupo concede (membros as recebem além de sua própria função)
 4. Clique em **Criar**
 
 ### Gerenciando Membros
@@ -74,10 +74,10 @@ Cada usuário pode ter múltiplas chaves de API para acesso programático. As ch
 - Use o **painel de transferência** para adicionar/remover usuários
 - Usuários podem pertencer a múltiplos grupos
 
-### Herança de Função
+### Permissões de Grupo
 As permissões efetivas de um usuário são a **união** de:
-- Sua função atribuída diretamente
-- Todas as funções dos grupos aos quais pertence
+- As permissões de sua função atribuída diretamente
+- As permissões concedidas por cada grupo ao qual pertence
 
 ## Funções
 

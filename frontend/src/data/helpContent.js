@@ -666,7 +666,7 @@ export const helpContent = {
         icon: UsersFour,
         items: [
           { label: 'Create Group', text: 'Define a group and assign members' },
-          { label: 'Role Inheritance', text: 'Groups can inherit roles — all members get group permissions' },
+          { label: 'Group Permissions', text: 'A group grants a set of permissions — every member receives them on top of their own role' },
           { label: 'Member Management', text: 'Add or remove users from groups' },
         ]
       },

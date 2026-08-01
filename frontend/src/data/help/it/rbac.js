@@ -79,13 +79,13 @@ Un badge percentuale mostra quanta parte dell'insieme totale dei permessi copre 
 
 I ruoli vengono assegnati:
 - **Direttamente** — Nella pagina Utenti, modifica un utente e seleziona un ruolo
-- **Tramite gruppi** — Assegna un ruolo a un gruppo; tutti i membri lo ereditano
+- **Tramite gruppi** — Un gruppo concede un insieme di permessi; ogni membro lo riceve in aggiunta al proprio ruolo
 
 ## Permessi effettivi
 
 I permessi effettivi di un utente sono calcolati come l'unione di:
 1. I permessi del ruolo assegnato direttamente
-2. Tutti i ruoli dai gruppi a cui appartiene
+2. I permessi concessi dai gruppi a cui appartiene
 
 Prevale la regola più permissiva (modello additivo, senza regole di negazione).
 

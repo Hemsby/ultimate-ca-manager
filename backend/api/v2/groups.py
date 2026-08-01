@@ -61,6 +61,19 @@ def list_groups():
     return success_response(data=[g.to_dict() for g in groups])
 
 
+@bp.route('/api/v2/groups/available-permissions', methods=['GET'])
+@require_auth(['read:groups'])
+def list_group_permissions():
+    """List the permissions a group may grant.
+
+    Source of truth is GROUP_GRANTABLE_PERMISSIONS (derived from the scopes
+    @require_auth actually enforces, minus admin:*/* — group membership must
+    never be a path to administrator), so the picker can never offer a scope
+    the backend would reject or that is silently inert.
+    """
+    return success_response(data=sorted(VALID_GROUP_PERMISSIONS))
+
+
 @bp.route('/api/v2/groups', methods=['POST'])
 @require_auth(['write:groups'])
 def create_group():

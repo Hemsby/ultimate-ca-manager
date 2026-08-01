@@ -79,13 +79,13 @@ Ein Prozent-Badge zeigt, wie viel des gesamten Berechtigungssatzes die Rolle abd
 
 Rollen werden zugewiesen:
 - **Direkt** — Auf der Benutzerseite einen Benutzer bearbeiten und eine Rolle auswählen
-- **Über Gruppen** — Einer Gruppe eine Rolle zuweisen; alle Mitglieder erben sie
+- **Über Gruppen** — Eine Gruppe gewährt einen Berechtigungssatz; jedes Mitglied erhält ihn zusätzlich zu seiner eigenen Rolle
 
 ## Effektive Berechtigungen
 
 Die effektiven Berechtigungen eines Benutzers ergeben sich aus der Vereinigung von:
 1. Den Berechtigungen der direkt zugewiesenen Rolle
-2. Allen Rollen aus Gruppen, denen der Benutzer angehört
+2. Den Berechtigungen, die von den Gruppen gewährt werden, denen der Benutzer angehört
 
 Die permissivste Regel gewinnt (additives Modell, keine Verweigerungsregeln).
 

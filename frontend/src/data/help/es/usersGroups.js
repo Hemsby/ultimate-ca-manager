@@ -19,7 +19,7 @@ export default {
         title: 'Grupos',
         items: [
           { label: 'Crear grupo', text: 'Definir un grupo y asignar miembros' },
-          { label: 'Herencia de roles', text: 'Los grupos pueden heredar roles — todos los miembros obtienen los permisos del grupo' },
+          { label: 'Permisos de grupo', text: 'Un grupo otorga un conjunto de permisos — cada miembro los recibe además de su propio rol' },
           { label: 'Gestión de miembros', text: 'Agregar o eliminar usuarios de los grupos' },
         ]
       },
@@ -66,7 +66,7 @@ Cada usuario puede tener múltiples claves API para acceso programático. Las cl
 ### Crear un grupo
 1. Haga clic en **Crear grupo**
 2. Ingrese un **nombre** y una descripción opcional
-3. Asigne un **rol** (los miembros del grupo heredan este rol)
+3. Seleccione los **permisos** que otorga el grupo (los miembros los reciben además de su propio rol)
 4. Haga clic en **Crear**
 
 ### Gestión de miembros
@@ -74,10 +74,10 @@ Cada usuario puede tener múltiples claves API para acceso programático. Las cl
 - Use el **panel de transferencia** para agregar/eliminar usuarios
 - Los usuarios pueden pertenecer a múltiples grupos
 
-### Herencia de roles
+### Permisos de grupo
 Los permisos efectivos de un usuario son la **unión** de:
-- Su rol asignado directamente
-- Todos los roles de los grupos a los que pertenece
+- Los permisos de su rol asignado directamente
+- Los permisos otorgados por cada grupo al que pertenece
 
 ## Roles
 

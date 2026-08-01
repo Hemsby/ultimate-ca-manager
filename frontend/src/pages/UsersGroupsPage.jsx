@@ -919,6 +919,18 @@ export default function UsersGroupsPage() {
         </CompactGrid>
       </CompactSection>
 
+      <CompactSection title={t('groups.permissions')} icon={ShieldCheck} iconClass="icon-bg-violet">
+        {(selectedGroup.permissions && selectedGroup.permissions.length > 0) ? (
+          <div className="flex flex-wrap gap-1">
+            {selectedGroup.permissions.map(p => (
+              <Badge key={p} size="xs">{p}</Badge>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-text-tertiary">{t('groups.noPermissions')}</div>
+        )}
+      </CompactSection>
+
       <CompactSection title={t('groups.members')} icon={Users} iconClass="icon-bg-blue">
         <div className="space-y-3">
           {/* Manage Members Button */}
@@ -1476,23 +1488,49 @@ function GroupForm({ group, onSubmit, onCancel }) {
   const { t } = useTranslation()
   const [formData, setFormData] = useState({
     name: '',
-    description: ''
+    description: '',
+    permissions: []
   })
+  const [availablePerms, setAvailablePerms] = useState([])
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    groupsService.getAvailablePermissions()
+      .then(res => setAvailablePerms(res.data || res || []))
+      .catch(() => setAvailablePerms([]))
+  }, [])
 
   useEffect(() => {
     if (group) {
       setFormData({
         name: group.name || '',
-        description: group.description || ''
+        description: group.description || '',
+        permissions: group.permissions || []
       })
     } else {
       setFormData({
         name: '',
-        description: ''
+        description: '',
+        permissions: []
       })
     }
   }, [group])
+
+  const togglePermission = (perm) => {
+    setFormData(p => ({
+      ...p,
+      permissions: p.permissions.includes(perm)
+        ? p.permissions.filter(x => x !== perm)
+        : [...p.permissions, perm]
+    }))
+  }
+
+  // Group grantable permissions by their resource (the part after ':')
+  const groupedPerms = availablePerms.reduce((acc, perm) => {
+    const resource = perm.split(':')[1] || perm
+    ;(acc[resource] = acc[resource] || []).push(perm)
+    return acc
+  }, {})
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -1519,6 +1557,34 @@ function GroupForm({ group, onSubmit, onCancel }) {
         onChange={(e) => setFormData(p => ({ ...p, description: e.target.value }))}
         placeholder={t('groups.descriptionPlaceholder')}
       />
+      <div>
+        <label className="block text-sm font-medium text-text-primary mb-1">{t('groups.permissions')}</label>
+        <p className="text-xs text-text-tertiary mb-2">{t('groups.permissionsHelp')}</p>
+        <div className="max-h-64 overflow-y-auto rounded-md border border-border p-3 space-y-3">
+          {Object.keys(groupedPerms).length === 0 ? (
+            <div className="text-xs text-text-tertiary">{t('common.loading')}</div>
+          ) : (
+            Object.entries(groupedPerms).map(([resource, perms]) => (
+              <div key={resource}>
+                <div className="text-xs font-semibold uppercase text-text-tertiary mb-1">{resource}</div>
+                <div className="grid grid-cols-2 gap-1">
+                  {perms.map(perm => (
+                    <label key={perm} className="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.permissions.includes(perm)}
+                        onChange={() => togglePermission(perm)}
+                        className="rounded border-border"
+                      />
+                      <span className="font-mono text-xs">{perm}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
       <div className="flex justify-end gap-2 pt-4 border-t border-border">
         <Button type="button" variant="secondary" onClick={onCancel}>
           {t('common.cancel')}
