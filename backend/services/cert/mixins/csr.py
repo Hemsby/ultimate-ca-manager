@@ -10,6 +10,7 @@ from cryptography.hazmat.backends import default_backend
 
 from models import db, CA, Certificate
 from services.trust_store import TrustStoreService
+from utils.dn_parse import subject_common_name
 from utils.file_naming import cert_cert_path, cert_key_path, cert_csr_path, ca_cert_path, ca_key_path
 
 logger = logging.getLogger(__name__)
@@ -237,13 +238,9 @@ class CSRMixin:
         # Extract subject and SANs
         subject_str = cert.subject.rfc4514_string() if cert.subject else None
 
-        # Extract CN from subject
-        cn_value = None
-        if subject_str:
-            for part in subject_str.split(','):
-                if part.strip().upper().startswith('CN='):
-                    cn_value = part.strip()[3:]
-                    break
+        # From the subject OBJECT -- see utils.dn_parse.subject_common_name for
+        # why splitting rfc4514_string() picked the WRONG commonName.
+        cn_value = subject_common_name(cert.subject)
 
         # Extract SANs
         san_dns_list = []
