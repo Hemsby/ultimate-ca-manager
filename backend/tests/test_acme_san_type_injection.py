@@ -48,9 +48,7 @@ def _csr_with_san(signing_key, san_entries, cn='web.example.com'):
 
 def _validate(csr, domains=frozenset({'web.example.com'}), ips=frozenset()):
     """Call the SAN-type validator the way finalize_order does."""
-    return AcmeService._validate_csr_san_types(
-        AcmeService, csr, set(domains), set(ips)
-    )
+    return AcmeService._validate_csr_san_types(csr, set(domains), set(ips))
 
 
 # --- the authorized case still works ---------------------------------------
