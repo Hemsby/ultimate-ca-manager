@@ -582,11 +582,17 @@ def terms_of_service():
         for block in body.split('\n\n'):
             block = block.strip()
             if block:
-                # Escape HTML to prevent XSS
-                block = block.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
-                # Auto-linkify URLs and emails (after escaping)
+                # Escape HTML to prevent XSS. Quotes must be escaped too:
+                # the autolink below interpolates into a double-quoted href,
+                # and an unescaped quote in the URL breaks out of the
+                # attribute (same flaw the admin preview had).
+                block = (block.replace('&', '&amp;').replace('<', '&lt;')
+                         .replace('>', '&gt;').replace('"', '&quot;')
+                         .replace("'", '&#x27;'))
+                # Auto-linkify URLs (after escaping; quotes can no longer
+                # appear raw, and the class excludes them defensively)
                 block = re.sub(
-                    r'(https?://[^\s<>()]+)',
+                    r'(https?://[^\s<>()"\']+)',
                     r'<a href="\1" target="_blank" rel="noopener">\1</a>',
                     block
                 )
