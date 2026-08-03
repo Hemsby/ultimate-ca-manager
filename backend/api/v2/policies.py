@@ -15,6 +15,7 @@ import base64
 import uuid
 from utils.datetime_utils import utc_now
 from services.audit_service import AuditService
+from security.encryption import encrypt_private_key
 
 logger = logging.getLogger(__name__)
 
@@ -248,13 +249,15 @@ def _issue_approved_certificate(approval):
     except Exception:
         pass
     
-    # Save to DB
+    # Save to DB — encrypt private key at rest (matches CertificateService.sign_csr path)
+    prv_encoded = base64.b64encode(key_pem.encode()).decode()
+    prv_encoded = encrypt_private_key(prv_encoded)
     db_cert = Certificate(
         refid=str(uuid.uuid4())[:8],
         descr=data.get('description', data['cn']),
         caref=ca.refid,
         crt=base64.b64encode(cert_pem.encode()).decode(),
-        prv=base64.b64encode(key_pem.encode()).decode(),
+        prv=prv_encoded,
         cert_type=cert_type,
         subject=new_cert.subject.rfc4514_string(),
         issuer=new_cert.issuer.rfc4514_string(),
