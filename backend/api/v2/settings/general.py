@@ -2,8 +2,8 @@
 Settings - General settings + Certificate Transparency routes
 """
 
-from flask import request
-from auth.unified import require_auth
+from flask import request, g
+from auth.unified import require_auth, has_permission
 from utils.response import success_response, error_response
 from models import db, Certificate
 from services.audit_service import AuditService
@@ -16,6 +16,26 @@ from utils.hsts import hsts_env_locked
 from utils.public_endpoints import validate_admin_base_url, validate_protocol_base_url
 
 logger = logging.getLogger(__name__)
+
+
+# Settings that affect system-wide security posture. Modifying these requires
+# admin:settings (not just write:settings) to prevent a user with write:settings
+# from weakening authentication, lockout, or session controls.
+_ADMIN_ONLY_SETTINGS = frozenset({
+    'enforce_2fa',
+    'session_timeout',
+    'session_max_lifetime',
+    'max_login_attempts',
+    'lockout_duration',
+    'metrics_token',
+    'key_recovery_dual_control',
+    'min_password_length',
+    'max_password_length',
+    'password_require_uppercase',
+    'password_require_lowercase',
+    'password_require_numbers',
+    'password_require_special',
+})
 
 
 def _int_config(key, default):
@@ -84,6 +104,17 @@ def get_general_settings():
 def update_general_settings():
     """Update general settings in database"""
     data = request.json or {}
+
+    # Security-sensitive settings require admin:settings permission
+    provided_keys = set(data.keys())
+    admin_keys_requested = provided_keys & _ADMIN_ONLY_SETTINGS
+    if admin_keys_requested:
+        user_perms = getattr(g, 'permissions', [])
+        if not has_permission('admin:settings', user_perms):
+            return error_response(
+                f'Admin settings permission required to modify: {", ".join(sorted(admin_keys_requested))}',
+                403
+            )
 
     # List of allowed settings
     allowed_keys = [
