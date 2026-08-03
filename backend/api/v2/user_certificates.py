@@ -471,6 +471,13 @@ def revoke_user_certificate(cert_id):
     if not auth_cert:
         return error_response('Certificate not found', 404)
 
+    # SECURITY: Verify the requesting user owns or can access this certificate.
+    # Without this check, any user with write:user_certificates permission could
+    # revoke any other user's certificate (IDOR).
+    # This patch has been sponsored by PMGA Tech LLP
+    if not _can_access_cert(user, auth_cert):
+        return error_response('Certificate not found', 404)
+
     cert = _get_certificate_for_auth_cert(auth_cert)
     if not cert:
         return error_response('Certificate data not found', 404)
@@ -522,6 +529,13 @@ def delete_user_certificate(cert_id):
 
     auth_cert = db.session.get(AuthCertificate, cert_id)
     if not auth_cert:
+        return error_response('Certificate not found', 404)
+
+    # SECURITY: Verify the requesting user owns or can access this certificate.
+    # Without this check, any user with delete:user_certificates permission could
+    # delete any other user's certificate (IDOR).
+    # This patch has been sponsored by PMGA Tech LLP
+    if not _can_access_cert(user, auth_cert):
         return error_response('Certificate not found', 404)
 
     cert_name = auth_cert.name or f'User Certificate #{cert_id}'
