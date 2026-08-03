@@ -28,7 +28,6 @@ def _backup_dir() -> str:
     except Exception:
         return "/opt/ucm/data/backups"
 
-
 def _human_size(n: int) -> str:
     if n > 1024 * 1024:
         return f"{n/1024/1024:.1f} MB"
@@ -197,10 +196,26 @@ def list_backups():
 @require_auth(['read:settings'])
 def download_backup(filename):
     """Download backup file"""
-    backup_dir = _backup_dir()
+    backup_dir = Path(_backup_dir())
     filename = werkzeug.utils.secure_filename(filename)
+    if not filename:
+        return error_response('Invalid filename', 400)
+
+    backup_file = backup_dir / filename
+
+    # SECURITY: Verify the resolved path is within backup directory
+    try:
+        backup_file = backup_file.resolve()
+        if not backup_file.is_relative_to(backup_dir.resolve()):
+            return error_response('Access denied', 403)
+    except (ValueError, RuntimeError):
+        return error_response('Invalid path', 400)
+
+    if not backup_file.exists():
+        return error_response("Backup file not found", 404)
+
     return send_from_directory(
-        backup_dir,
+        str(backup_dir),
         filename,
         as_attachment=True,
         mimetype='application/octet-stream'
@@ -212,11 +227,22 @@ def download_backup(filename):
 def delete_backup(filename):
     """Delete a backup file"""
     try:
-        backup_dir = _backup_dir()
+        backup_dir = Path(_backup_dir())
         filename = werkzeug.utils.secure_filename(filename)
-        filepath = os.path.join(backup_dir, filename)
+        if not filename:
+            return error_response('Invalid filename', 400)
 
-        if not os.path.exists(filepath):
+        filepath = backup_dir / filename
+
+        # SECURITY: Verify the resolved path is within backup directory
+        try:
+            filepath = filepath.resolve()
+            if not filepath.is_relative_to(backup_dir.resolve()):
+                return error_response('Access denied', 403)
+        except (ValueError, RuntimeError):
+            return error_response('Invalid path', 400)
+
+        if not filepath.exists():
             return error_response("Backup file not found", 404)
 
         os.remove(filepath)
