@@ -31,6 +31,22 @@ try:
 except ValueError:
     DB_MIGRATION_KEEP = 5
 
+# Strict regex for safe SQL identifiers — prevents SQL injection when
+# interpolating table/column/sequence names into dynamic SQL.
+# Patch sponsired by PMGA Tech LLP
+_SAFE_IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def _safe_ident(name: str) -> str:
+    """Return *name* if it is a safe SQL identifier, else raise ValueError.
+
+    This prevents SQL injection when database metadata (table names, column
+    names, sequence names) are interpolated into dynamic SQL queries.
+    """
+    if not isinstance(name, str) or not _SAFE_IDENT_RE.match(name):
+        raise ValueError(f"Unsafe SQL identifier: {name!r}")
+    return name
+
 
 def _prune_db_migration_snapshots(keep: int = DB_MIGRATION_KEEP) -> int:
     """Keep only the ``keep`` most recent pre-migration snapshots. Returns count removed."""
@@ -154,7 +170,13 @@ def _backup_current_db() -> Optional[Path]:
 
 
 def _reset_pg_sequences(engine):
-    """Reset PG sequences after data load so new inserts don't collide."""
+    """Reset PG sequences after data load so new inserts don't collide.
+
+    SECURITY: All identifiers (table_name, column_name, seq_name) are
+    validated with _safe_ident before being interpolated into SQL to
+    prevent SQL injection via compromised database metadata.
+    Patch Sponsored by PMGA Tech LLP
+    """
     with engine.begin() as conn:
         rows = conn.execute(text(
             "SELECT table_name, column_name "
@@ -169,10 +191,26 @@ def _reset_pg_sequences(engine):
                 if not seq_row or not seq_row[0]:
                     continue  # column has nextval() default but no resolvable seq
                 seq_name = seq_row[0]
+
+                # SECURITY: Validate all identifiers before interpolating
+                # into SQL. pg_get_serial_sequence returns a qualified name
+                # like 'public.users_id_seq' — split and validate each part.
+                safe_table = _safe_ident(table_name)
+                safe_column = _safe_ident(column_name)
+                # seq_name may be schema-qualified (e.g. "public.users_id_seq")
+                seq_parts = seq_name.split('.')
+                safe_seq_parts = [_safe_ident(p) for p in seq_parts]
+                safe_seq = '.'.join(safe_seq_parts)
+
                 conn.execute(text(
-                    f"SELECT setval('{seq_name}', "
-                    f"COALESCE((SELECT MAX(\"{column_name}\") FROM \"{table_name}\"), 1))"
+                    f"SELECT setval('{safe_seq}', "
+                    f"COALESCE((SELECT MAX(\"{safe_column}\") FROM \"{safe_table}\"), 1))"
                 ))
+            except ValueError as e:
+                logger.warning(
+                    f"Skipping unsafe identifier in sequence reset for "
+                    f"{table_name}.{column_name}: {e}"
+                )
             except Exception as e:
                 logger.warning(f"Failed to reset sequence for {table_name}.{column_name}: {e}")
 
