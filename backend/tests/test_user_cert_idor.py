@@ -1,5 +1,5 @@
 """
-Tests for user certificate IDOR vulnerabilities.
+Tests for user certificate IDOR vulnerabilities (#8-#9).
 
 Verifies that revoke and delete endpoints on /api/v2/user-certificates/<id>
 enforce ownership checks via _can_access_cert().
@@ -44,28 +44,28 @@ def mtls_ca(app, create_ca):
     """Create a CA and configure it as the trusted mTLS CA.
 
     Self-contained: creates its own CA via the API factory, saves and
-    restores the original mtls_trusted_ca_id value, and cleans up the
+    restores the original mtls_trusted_ca value, and cleans up the
     AuthCertificate rows created by these tests on teardown.
     """
     ca = create_ca(cn='mTLS IDOR Test CA')
     from models import SystemConfig, db
     from models import AuthCertificate
     with app.app_context():
-        # Save original mtls_trusted_ca_id to restore later
-        row = SystemConfig.query.filter_by(key='mtls_trusted_ca_id').first()
+        # Save original mtls_trusted_ca to restore later
+        row = SystemConfig.query.filter_by(key='mtls_trusted_ca').first()
         orig_value = row.value if row else None
         if not row:
-            row = SystemConfig(key='mtls_trusted_ca_id')
+            row = SystemConfig(key='mtls_trusted_ca')
             db.session.add(row)
         row.value = ca['refid']
         db.session.commit()
     yield ca
     with app.app_context():
-        # Restore original mtls_trusted_ca_id value (don't just delete it)
-        SystemConfig.query.filter_by(key='mtls_trusted_ca_id').delete()
+        # Restore original mtls_trusted_ca value (don't just delete it)
+        SystemConfig.query.filter_by(key='mtls_trusted_ca').delete()
         if orig_value is not None:
             db.session.add(SystemConfig(
-                key='mtls_trusted_ca_id',
+                key='mtls_trusted_ca',
                 value=orig_value,
             ))
         # Delete only the AuthCertificate rows created by these tests

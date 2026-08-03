@@ -17,8 +17,8 @@ from models import db, SystemConfig, AcmeClientAccount, AcmeClientOrder
 from services.acme.acme_proxy_account import PROXY_ACCOUNT_ID_KEY
 
 
-_STUB_DIRECTORY_URL = 'https://acme-stub.example/ownership-test'
-_UPSTREAM_HOST = 'acme-stub.example'
+_STUB_DIRECTORY_URL = 'https://acme-ownership-stub.example/directory'
+_UPSTREAM_HOST = 'acme-ownership-stub.example'
 
 
 def _set_eab_required(app, enabled):
@@ -107,9 +107,9 @@ def proxy_setup(app, monkeypatch):
     from tests.acme_proxy_upstream_stub import stub_acme_proxy_upstream
 
     fake_directory = {
-        'newNonce': 'https://acme-stub.example/acme/new-nonce',
-        'newAccount': 'https://acme-stub.example/acme/new-account',
-        'newOrder': 'https://acme-stub.example/acme/new-order',
+        'newNonce': f'https://{_UPSTREAM_HOST}/acme/new-nonce',
+        'newAccount': f'https://{_UPSTREAM_HOST}/acme/new-account',
+        'newOrder': f'https://{_UPSTREAM_HOST}/acme/new-order',
         'meta': {},
     }
     stub_acme_proxy_upstream(monkeypatch, fake_directory)

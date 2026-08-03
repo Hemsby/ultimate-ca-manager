@@ -233,7 +233,7 @@ class TestSSOSecretsAPI:
         assert data.get('oauth2_client_secret') == '***'
 
     def test_non_admin_lacks_read_sso(self, app, auth_client, create_user, oauth2_provider):
-        """Operator does not have read:sso and gets 401 from @require_auth."""
+        """Operator does not have read:sso and gets 403 from @require_auth."""
         create_user(
             username='op_sso_noaccess',
             password='OpPass123!',
@@ -244,11 +244,11 @@ class TestSSOSecretsAPI:
 
         pid = oauth2_provider['id']
         r = op_client.get(f'/api/v2/sso/providers/{pid}?include_secrets=true')
-        assert r.status_code == 401, \
-            f'Operator without read:sso should get 401: {r.data}'
+        assert r.status_code == 403, \
+            f'Operator without read:sso should get 403: {r.data}'
 
     def test_non_admin_lacks_read_sso_no_secrets(self, app, auth_client, create_user, oauth2_provider):
-        """Operator without read:sso gets 401 even without include_secrets."""
+        """Operator without read:sso gets 403 even without include_secrets."""
         create_user(
             username='op_sso_list',
             password='OpPass123!',
@@ -259,8 +259,8 @@ class TestSSOSecretsAPI:
 
         pid = oauth2_provider['id']
         r = op_client.get(f'/api/v2/sso/providers/{pid}')
-        assert r.status_code == 401, \
-            f'Operator without read:sso should get 401 on basic get: {r.data}'
+        assert r.status_code == 403, \
+            f'Operator without read:sso should get 403 on basic get: {r.data}'
 
 
 class TestSSOSecretsDefenseInDepth:
