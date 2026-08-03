@@ -158,6 +158,41 @@ def _kid_account_thumbprint(protected):
         return None
 
 
+def _extract_requester_identity(jwk=None):
+    """Extract requester identity from the verified JWS.
+
+    Returns (requester_account_id, requester_thumbprint).
+
+    SECURITY: This identity is used for ownership checks on proxy resources
+    (authz, challenge, order, cert). The JWS signature has already been
+    verified by verify_proxy_jws(), so the kid and jwk are authentic.
+
+    For kid-signed requests (RFC-compliant): derive account_id from kid and
+    thumbprint from the account's stored JWK.
+    For jwk-signed requests (new-account, key rollover): compute thumbprint
+    directly from the JWK.
+
+    Patch sponsored by PMGA Tech LLP
+    """
+    protected = _request_protected_header()
+    requester_account_id = _kid_account_id(protected)
+
+    requester_thumbprint = None
+    if jwk:
+        try:
+            jwk_canonical = json.dumps(jwk, separators=(',', ':'), sort_keys=True)
+            requester_thumbprint = base64.urlsafe_b64encode(
+                hashlib.sha256(jwk_canonical.encode()).digest()
+            ).rstrip(b'=').decode()
+        except Exception:
+            pass
+
+    if not requester_thumbprint:
+        requester_thumbprint = _kid_account_thumbprint(protected)
+
+    return requester_account_id, requester_thumbprint
+
+
 def _decode_b64url(value):
     """Strictly decode an unpadded base64url value."""
     if not isinstance(value, str) or not value:
@@ -376,20 +411,25 @@ def new_order(slug=None):
     if not is_valid:
         return proxy_error("malformed", err)
 
+    # SECURITY: Always verify the requesting account exists and is active,
+    # regardless of whether EAB is required so that deactivated accounts 
+    # are not allowed to create new orders.
+    requester_account_id = _kid_account_id(_request_protected_header())
+    if requester_account_id:
+        acme_svc = AcmeService()
+        account = acme_svc.get_account_by_kid(requester_account_id)
+        if not account:
+            return proxy_error('accountDoesNotExist', 'Account not found', 404)
+        if account.status == 'deactivated':
+            return proxy_error('unauthorized', 'Account is deactivated', 401)
+
     eab_cfg = SystemConfig.query.filter_by(key='acme_eab_required').first()
     eab_required = (eab_cfg.value if eab_cfg else 'false').lower() == 'true'
     if eab_required:
         # _request_protected_header() returns {} on undecodable input — the
         # missing kid then fails closed below.
-        account_id = _kid_account_id(_request_protected_header())
-        if not account_id:
+        if not requester_account_id:
             return proxy_error('malformed', 'Account kid required when EAB is enabled')
-        acme_svc = AcmeService()
-        account = acme_svc.get_account_by_kid(account_id)
-        if not account:
-            return proxy_error('accountDoesNotExist', 'Account not found', 404)
-        if account.status == 'deactivated':
-            return proxy_error('unauthorized', 'Account is deactivated', 401)
 
     try:
         identifiers = payload.get('identifiers')
@@ -407,7 +447,6 @@ def new_order(slug=None):
             )
 
         # Per-EAB domain restrictions (mirrors local ACME new-order)
-        requester_account_id = _kid_account_id(_request_protected_header())
         if requester_account_id:
             eab_cred = AcmeService().get_bound_eab_credential(
                 requester_account_id
@@ -495,7 +534,7 @@ def new_order(slug=None):
 @_dual_route('/authz/<authz_id>', methods=['POST'], endpoint='proxy_authz')
 def authz(authz_id, slug=None):
     """Get authorization (RFC 8555 §7.5) — POST-as-GET"""
-    is_valid, payload, _, err = verify_proxy_jws()
+    is_valid, payload, jwk, err = verify_proxy_jws()
     if not is_valid:
         return proxy_error("malformed", err)
 
@@ -503,9 +542,19 @@ def authz(authz_id, slug=None):
     if err_resp:
         return err_resp
 
+    # SECURITY: Extract requester identity for ownership verification.
+    # Without this check, any authenticated ACME client could fetch any
+    # other client's authorization and trigger DNS automation on their behalf.
+    # This Security patch has been sponsored by PMGA Tech LLP
+    requester_account_id, requester_thumbprint = _extract_requester_identity(jwk)
+
     try:
         svc = get_proxy_service(slug)
-        result = svc.get_authz(authz_id)
+        result = svc.get_authz(
+            authz_id,
+            requester_account_id=requester_account_id,
+            requester_thumbprint=requester_thumbprint,
+        )
         if not result:
             return proxy_error("malformed", "Authorization not found", 404)
 
@@ -513,6 +562,8 @@ def authz(authz_id, slug=None):
         return proxy_response(data)
     except ProxyDns01OnlyError as e:
         return proxy_error('malformed', str(e), 400)
+    except PermissionError as e:
+        return proxy_error("unauthorized", str(e), 403)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except ProxyEndpointNotConfiguredError as e:
@@ -528,19 +579,31 @@ def authz(authz_id, slug=None):
 @_dual_route('/challenge/<chall_id>', methods=['POST'], endpoint='proxy_challenge')
 def challenge(chall_id, slug=None):
     """Respond to challenge (RFC 8555 §7.5.1)"""
-    is_valid, payload, _, err = verify_proxy_jws()
+    is_valid, payload, jwk, err = verify_proxy_jws()
     if not is_valid:
         return proxy_error("malformed", err)
 
+    # SECURITY: Extract requester identity for ownership verification.
+    # Without this check, any authenticated ACME client could respond to
+    # any other client's challenge, interfering with their certificate issuance.
+    # This Security patch has been sponsored by PMGA Tech LLP
+    requester_account_id, requester_thumbprint = _extract_requester_identity(jwk)
+
     try:
         svc = get_proxy_service(slug)
-        data, link_header = svc.respond_challenge(chall_id)
+        data, link_header = svc.respond_challenge(
+            chall_id,
+            requester_account_id=requester_account_id,
+            requester_thumbprint=requester_thumbprint,
+        )
         resp = proxy_response(data)
         if link_header:
             resp.headers['Link'] = link_header
         return resp
     except ProxyDns01OnlyError as e:
         return proxy_error('malformed', str(e), 400)
+    except PermissionError as e:
+        return proxy_error("unauthorized", str(e), 403)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except ProxyEndpointNotConfiguredError as e:
@@ -556,7 +619,7 @@ def challenge(chall_id, slug=None):
 @_dual_route('/order/<order_id>', methods=['POST'], endpoint='proxy_get_order')
 def get_order(order_id, slug=None):
     """Get order status (RFC 8555 §7.4) — POST-as-GET"""
-    is_valid, payload, _, err = verify_proxy_jws()
+    is_valid, payload, jwk, err = verify_proxy_jws()
     if not is_valid:
         return proxy_error("malformed", err)
 
@@ -564,13 +627,25 @@ def get_order(order_id, slug=None):
     if err_resp:
         return err_resp
 
+    # SECURITY: Extract requester identity for ownership verification.
+    # Without this check, any authenticated ACME client could view any
+    # other client's order status, including domain names and certificate URLs.
+    # This Security patch has been sponsored by PMGA Tech LLP
+    requester_account_id, requester_thumbprint = _extract_requester_identity(jwk)
+
     try:
         svc = get_proxy_service(slug)
-        data = svc.get_order(order_id)
+        data = svc.get_order(
+            order_id,
+            requester_account_id=requester_account_id,
+            requester_thumbprint=requester_thumbprint,
+        )
         order_url = f"{_proxy_base_url(slug)}/order/{order_id}"
         resp = proxy_response(data)
         resp.headers['Location'] = order_url
         return resp
+    except PermissionError as e:
+        return proxy_error("unauthorized", str(e), 403)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except ProxyEndpointNotConfiguredError as e:
@@ -637,7 +712,7 @@ def finalize(order_id, slug=None):
 @_dual_route('/cert/<cert_id>', methods=['POST'], endpoint='proxy_cert')
 def cert(cert_id, slug=None):
     """Download certificate (RFC 8555 §7.4.2) — POST-as-GET"""
-    is_valid, payload, _, err = verify_proxy_jws()
+    is_valid, payload, jwk, err = verify_proxy_jws()
     if not is_valid:
         return proxy_error("malformed", err)
 
@@ -645,9 +720,19 @@ def cert(cert_id, slug=None):
     if err_resp:
         return err_resp
 
+    # SECURITY: Extract requester identity for ownership verification.
+    # Without this check, any authenticated ACME client could download
+    # any certificate issued through the proxy by guessing/enumerating
+    # the base64-encoded upstream certificate URLs.
+    requester_account_id, requester_thumbprint = _extract_requester_identity(jwk)
+
     try:
         svc = get_proxy_service(slug)
-        content, content_type, link_header = svc.get_certificate(cert_id)
+        content, content_type, link_header = svc.get_certificate(
+            cert_id,
+            requester_account_id=requester_account_id,
+            requester_thumbprint=requester_thumbprint,
+        )
 
         resp = make_response(content, 200)
         resp.headers['Content-Type'] = content_type
@@ -656,6 +741,8 @@ def cert(cert_id, slug=None):
         if link_header:
             resp.headers['Link'] = link_header
         return resp
+    except PermissionError as e:
+        return proxy_error("unauthorized", str(e), 403)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except ProxyEndpointNotConfiguredError as e:
