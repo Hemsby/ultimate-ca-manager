@@ -1,5 +1,5 @@
 from . import bp, VALID_ROLES, logger
-from flask import request
+from flask import request, g
 from auth.unified import require_auth
 from utils.response import success_response, error_response
 from utils.db_transaction import safe_commit
@@ -56,6 +56,8 @@ def get_provider(provider_id):
     provider = db.get_or_404(SSOProvider, provider_id)
     # Include secrets only for admins
     include_secrets = request.args.get('include_secrets') == 'true'
+    if include_secrets and getattr(g.current_user, 'role', None) != 'admin':
+        return error_response('Secrets available to administrators only', 403)
     return success_response(data=provider.to_dict(include_secrets=include_secrets))
 
 
