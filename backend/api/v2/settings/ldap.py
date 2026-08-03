@@ -56,6 +56,12 @@ def update_ldap_settings():
     for key, value in data.items():
         if key not in ALLOWED_LDAP_KEYS:
             continue
+
+        # Encrypt the bind password at rest instead of storing as plaintext
+        if key == 'bind_password' and value:
+            from utils.encryption import encrypt_if_needed
+            value = encrypt_if_needed(str(value))
+
         config = SystemConfig.query.filter_by(key=f'ldap_{key}').first()
         if config:
             config.value = str(value) if value is not None else ''
@@ -78,8 +84,10 @@ def update_ldap_settings():
         success=True
     )
 
+    # Never echo the bind_password back in the response
+    safe_data = {k: v for k, v in data.items() if k != 'bind_password'}
     return success_response(
-        data=data,
+        data=safe_data,
         message='LDAP settings updated successfully'
     )
 
