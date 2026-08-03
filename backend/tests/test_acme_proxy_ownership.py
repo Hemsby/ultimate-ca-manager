@@ -2,8 +2,11 @@
 Tests for ACME proxy ownership checks.
 
 Verifies that authz, challenge, get_order, and cert endpoints reject
-cross-account access. Two ACME clients create orders; client A must not
-be able to access client B's authz/challenge/order/cert resources.
+cross-account access. Orders are seeded directly in the DB (bypassing
+the new-order API which requires DNS provider configuration). The
+ownership check runs before any upstream call, so cross-account
+requests are rejected with 403 without needing upstream stubs for
+authz/challenge/order/cert responses.
 """
 import base64
 import json
@@ -14,7 +17,8 @@ from models import db, SystemConfig, AcmeClientAccount, AcmeClientOrder
 from services.acme.acme_proxy_account import PROXY_ACCOUNT_ID_KEY
 
 
-_STUB_DIRECTORY_URL = 'https://acme-stub.example/directory'
+_STUB_DIRECTORY_URL = 'https://acme-stub.example/ownership-test'
+_UPSTREAM_HOST = 'acme-stub.example'
 
 
 def _set_eab_required(app, enabled):
@@ -78,6 +82,14 @@ def _b64url(s):
     return base64.urlsafe_b64encode(s.encode()).rstrip(b'=').decode()
 
 
+def _compute_thumbprint(jwk):
+    import hashlib
+    jwk_canonical = json.dumps(jwk, separators=(',', ':'), sort_keys=True)
+    return base64.urlsafe_b64encode(
+        hashlib.sha256(jwk_canonical.encode()).digest()
+    ).rstrip(b'=').decode()
+
+
 @pytest.fixture(autouse=True)
 def _reset_eab_after_test(app):
     yield
@@ -86,7 +98,12 @@ def _reset_eab_after_test(app):
 
 @pytest.fixture
 def proxy_setup(app, monkeypatch):
-    """Set up proxy with upstream stub and two client identities."""
+    """Set up proxy with upstream stub and two client identities.
+
+    Creates two ACME proxy accounts via the API (new-account does not
+    require DNS provider), then seeds two proxy orders directly in the
+    DB with known account_ids and thumbprints.
+    """
     from tests.acme_proxy_upstream_stub import stub_acme_proxy_upstream
 
     fake_directory = {
@@ -98,11 +115,15 @@ def proxy_setup(app, monkeypatch):
     stub_acme_proxy_upstream(monkeypatch, fake_directory)
 
     with app.app_context():
+        # Save original PROXY_ACCOUNT_ID_KEY value to restore later
+        orig_proxy_id = SystemConfig.query.filter_by(key=PROXY_ACCOUNT_ID_KEY).first()
+        orig_proxy_id_val = orig_proxy_id.value if orig_proxy_id else None
+        # Delete only our own config row — don't touch other tests' data
         SystemConfig.query.filter_by(key=PROXY_ACCOUNT_ID_KEY).delete()
+        # Delete only our own account (by unique directory_url) — don't touch other tests'
         AcmeClientAccount.query.filter_by(
             directory_url=_STUB_DIRECTORY_URL
         ).delete()
-        AcmeClientOrder.query.filter_by(is_proxy_order=True).delete()
         db.session.commit()
 
         acct = AcmeClientAccount(
@@ -122,23 +143,85 @@ def proxy_setup(app, monkeypatch):
     # Two client key pairs
     key_a, jwk_a = _generate_rsa_key_and_jwk()
     key_b, jwk_b = _generate_rsa_key_and_jwk()
+    thumb_a = _compute_thumbprint(jwk_a)
+    thumb_b = _compute_thumbprint(jwk_b)
+
+    # Create two accounts via the API (new-account works without DNS provider)
+    _set_eab_required(app, False)
+
+    kid_a = _create_proxy_account(app, client_fixture=None, key=key_a, jwk=jwk_a)
+    kid_b = _create_proxy_account(app, client_fixture=None, key=key_b, jwk=jwk_b)
+
+    # Unique upstream URLs for seeded orders (unique paths to avoid collisions
+    # with other test files that use the same stub host)
+    authz_url_a = f'https://{_UPSTREAM_HOST}/acme/authz/ownership-a'
+    authz_url_b = f'https://{_UPSTREAM_HOST}/acme/authz/ownership-b'
+    order_url_a = f'https://{_UPSTREAM_HOST}/acme/order/ownership-a'
+    order_url_b = f'https://{_UPSTREAM_HOST}/acme/order/ownership-b'
+    cert_url_a = f'https://{_UPSTREAM_HOST}/acme/cert/ownership-a'
+    chall_url_a = f'https://{_UPSTREAM_HOST}/acme/challenge/ownership-a/0'
+
+    # Seed two orders directly in the DB
+    with app.app_context():
+        order_a = AcmeClientOrder(
+            domains='["a.example.com"]',
+            environment='staging',
+            challenge_type='dns-01',
+            status='pending',
+            order_url=order_url_a,
+            upstream_order_url=order_url_a,
+            upstream_authz_urls=json.dumps([authz_url_a]),
+            is_proxy_order=True,
+            account_id=kid_a.split('/')[-1],
+            client_jwk_thumbprint=thumb_a,
+            certificate_url=cert_url_a,
+        )
+        order_b = AcmeClientOrder(
+            domains='["b.example.com"]',
+            environment='staging',
+            challenge_type='dns-01',
+            status='pending',
+            order_url=order_url_b,
+            upstream_order_url=order_url_b,
+            upstream_authz_urls=json.dumps([authz_url_b]),
+            is_proxy_order=True,
+            account_id=kid_b.split('/')[-1],
+            client_jwk_thumbprint=thumb_b,
+        )
+        db.session.add_all([order_a, order_b])
+        db.session.commit()
+        order_a_id = order_a.id
+        order_b_id = order_b.id
 
     yield {
-        'key_a': key_a, 'jwk_a': jwk_a,
-        'key_b': key_b, 'jwk_b': jwk_b,
+        'key_a': key_a, 'jwk_a': jwk_a, 'kid_a': kid_a, 'thumb_a': thumb_a,
+        'key_b': key_b, 'jwk_b': jwk_b, 'kid_b': kid_b, 'thumb_b': thumb_b,
+        'authz_url_a': authz_url_a, 'authz_url_b': authz_url_b,
+        'order_url_a': order_url_a, 'order_url_b': order_url_b,
+        'cert_url_a': cert_url_a, 'chall_url_a': chall_url_a,
     }
 
     with app.app_context():
+        # Restore original PROXY_ACCOUNT_ID_KEY value (don't just delete it)
         SystemConfig.query.filter_by(key=PROXY_ACCOUNT_ID_KEY).delete()
+        if orig_proxy_id_val is not None:
+            db.session.add(SystemConfig(
+                key=PROXY_ACCOUNT_ID_KEY,
+                value=orig_proxy_id_val,
+                description='restored',
+            ))
+        # Delete only our own rows — by specific IDs, not by host-wide filters
+        AcmeClientOrder.query.filter_by(id=order_a_id).delete()
+        AcmeClientOrder.query.filter_by(id=order_b_id).delete()
         AcmeClientAccount.query.filter_by(
             directory_url=_STUB_DIRECTORY_URL
         ).delete()
-        AcmeClientOrder.query.filter_by(is_proxy_order=True).delete()
         db.session.commit()
 
 
-def _create_account_and_order(app, client, key, jwk, domain):
-    """Create a proxy account and order, return (kid, order_url, authz_url, chall_url, cert_url)."""
+def _create_proxy_account(app, client_fixture, key, jwk):
+    """Create a proxy account via the API and return the kid URL."""
+    client = app.test_client()
     nonce = _get_nonce(client)
     url_acct = 'http://localhost/acme/proxy/new-account'
     jws_acct = _build_jws(url_acct, {'termsOfServiceAgreed': True}, jwk, key, nonce=nonce)
@@ -148,24 +231,7 @@ def _create_account_and_order(app, client, key, jwk, domain):
         content_type='application/jose+json',
     )
     assert r_acct.status_code == 201, f'Account creation failed: {r_acct.data}'
-    kid = r_acct.headers['Location']
-
-    nonce2 = _get_nonce(client)
-    url_order = 'http://localhost/acme/proxy/new-order'
-    payload = {'identifiers': [{'type': 'dns', 'value': domain}]}
-    jws_order = _build_jws(url_order, payload, jwk, key, nonce=nonce2, use_kid=kid)
-    r_order = client.post(
-        '/acme/proxy/new-order',
-        data=json.dumps(jws_order),
-        content_type='application/jose+json',
-    )
-    assert r_order.status_code == 201, f'Order creation failed: {r_order.data}'
-    order_data = r_order.get_json()
-    order_url = order_data.get('Location', '')
-    authz_url = order_data.get('authorizations', [None])[0] if order_data.get('authorizations') else None
-    finalize_url = order_data.get('finalize')
-
-    return kid, order_url, authz_url, finalize_url
+    return r_acct.headers['Location']
 
 
 class TestAcmeProxyOwnershipAuthz:
@@ -173,21 +239,11 @@ class TestAcmeProxyOwnershipAuthz:
 
     def test_authz_cross_account_denied(self, app, client, proxy_setup):
         """Client B cannot fetch client A's authz."""
-        kid_a, order_url_a, authz_url_a, _ = _create_account_and_order(
-            app, client, proxy_setup['key_a'], proxy_setup['jwk_a'], 'a.example.com'
-        )
-        _create_account_and_order(
-            app, client, proxy_setup['key_b'], proxy_setup['jwk_b'], 'b.example.com'
-        )
-
-        if not authz_url_a:
-            pytest.skip('No authz URL returned from new-order')
-
-        authz_id = authz_url_a.split('/')[-1]
+        authz_id = _b64url(proxy_setup['authz_url_a'])
         nonce = _get_nonce(client)
         url = f'http://localhost/acme/proxy/authz/{authz_id}'
         jws = _build_jws(url, '', proxy_setup['jwk_b'], proxy_setup['key_b'],
-                         nonce=nonce, use_kid='http://localhost/acme/proxy/acct/b')
+                         nonce=nonce, use_kid=proxy_setup['kid_b'])
 
         r = client.post(
             f'/acme/proxy/authz/{authz_id}',
@@ -198,25 +254,15 @@ class TestAcmeProxyOwnershipAuthz:
 
 
 class TestAcmeProxyOwnershipChallenge:
-    """#4 — challenge endpoint must verify ownership."""
+    """#5 — challenge endpoint must verify ownership."""
 
     def test_challenge_cross_account_denied(self, app, client, proxy_setup):
         """Client B cannot respond to client A's challenge."""
-        kid_a, order_url_a, authz_url_a, _ = _create_account_and_order(
-            app, client, proxy_setup['key_a'], proxy_setup['jwk_a'], 'a.example.com'
-        )
-        _create_account_and_order(
-            app, client, proxy_setup['key_b'], proxy_setup['jwk_b'], 'b.example.com'
-        )
-
-        if not authz_url_a:
-            pytest.skip('No authz URL returned from new-order')
-
-        chall_id = _b64url(authz_url_a + '/0')
+        chall_id = _b64url(proxy_setup['chall_url_a'])
         nonce = _get_nonce(client)
         url = f'http://localhost/acme/proxy/challenge/{chall_id}'
         jws = _build_jws(url, {}, proxy_setup['jwk_b'], proxy_setup['key_b'],
-                         nonce=nonce, use_kid='http://localhost/acme/proxy/acct/b')
+                         nonce=nonce, use_kid=proxy_setup['kid_b'])
 
         r = client.post(
             f'/acme/proxy/challenge/{chall_id}',
@@ -227,25 +273,15 @@ class TestAcmeProxyOwnershipChallenge:
 
 
 class TestAcmeProxyOwnershipGetOrder:
-    """#4 — get_order endpoint must verify ownership."""
+    """#6 — get_order endpoint must verify ownership."""
 
     def test_get_order_cross_account_denied(self, app, client, proxy_setup):
         """Client B cannot view client A's order."""
-        kid_a, order_url_a, _, _ = _create_account_and_order(
-            app, client, proxy_setup['key_a'], proxy_setup['jwk_a'], 'a.example.com'
-        )
-        _create_account_and_order(
-            app, client, proxy_setup['key_b'], proxy_setup['jwk_b'], 'b.example.com'
-        )
-
-        if not order_url_a:
-            pytest.skip('No order URL returned')
-
-        order_id = _b64url(order_url_a)
+        order_id = _b64url(proxy_setup['order_url_a'])
         nonce = _get_nonce(client)
         url = f'http://localhost/acme/proxy/order/{order_id}'
         jws = _build_jws(url, '', proxy_setup['jwk_b'], proxy_setup['key_b'],
-                         nonce=nonce, use_kid='http://localhost/acme/proxy/acct/b')
+                         nonce=nonce, use_kid=proxy_setup['kid_b'])
 
         r = client.post(
             f'/acme/proxy/order/{order_id}',
@@ -256,23 +292,15 @@ class TestAcmeProxyOwnershipGetOrder:
 
 
 class TestAcmeProxyOwnershipCert:
-    """#4 — cert endpoint must verify ownership."""
+    """#7 — cert endpoint must verify ownership."""
 
     def test_cert_cross_account_denied(self, app, client, proxy_setup):
         """Client B cannot download client A's certificate."""
-        kid_a, order_url_a, _, _ = _create_account_and_order(
-            app, client, proxy_setup['key_a'], proxy_setup['jwk_a'], 'a.example.com'
-        )
-        _create_account_and_order(
-            app, client, proxy_setup['key_b'], proxy_setup['jwk_b'], 'b.example.com'
-        )
-
-        cert_url = 'https://acme-stub.example/acme/cert/1'
-        cert_id = _b64url(cert_url)
+        cert_id = _b64url(proxy_setup['cert_url_a'])
         nonce = _get_nonce(client)
         url = f'http://localhost/acme/proxy/cert/{cert_id}'
         jws = _build_jws(url, '', proxy_setup['jwk_b'], proxy_setup['key_b'],
-                         nonce=nonce, use_kid='http://localhost/acme/proxy/acct/b')
+                         nonce=nonce, use_kid=proxy_setup['kid_b'])
 
         r = client.post(
             f'/acme/proxy/cert/{cert_id}',

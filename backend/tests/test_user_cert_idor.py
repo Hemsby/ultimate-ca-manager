@@ -31,6 +31,50 @@ CONTENT_JSON = 'application/json'
 BASE = '/api/v2/user-certificates'
 
 
+_CERT_NAMES = (
+    'Owner Cert', 'User A Cert', 'Admin Revoked Cert',
+    'Delete Owner Cert', 'User A Delete Cert', 'Admin Deleted Cert',
+    'Deep Revoke Cert', 'Deep Own Cert',
+    'Deep Delete Cert', 'Deep Own Delete Cert',
+)
+
+
+@pytest.fixture(scope='module')
+def mtls_ca(app, create_ca):
+    """Create a CA and configure it as the trusted mTLS CA.
+
+    Self-contained: creates its own CA via the API factory, saves and
+    restores the original mtls_trusted_ca_id value, and cleans up the
+    AuthCertificate rows created by these tests on teardown.
+    """
+    ca = create_ca(cn='mTLS IDOR Test CA')
+    from models import SystemConfig, db
+    from models import AuthCertificate
+    with app.app_context():
+        # Save original mtls_trusted_ca_id to restore later
+        row = SystemConfig.query.filter_by(key='mtls_trusted_ca_id').first()
+        orig_value = row.value if row else None
+        if not row:
+            row = SystemConfig(key='mtls_trusted_ca_id')
+            db.session.add(row)
+        row.value = ca['refid']
+        db.session.commit()
+    yield ca
+    with app.app_context():
+        # Restore original mtls_trusted_ca_id value (don't just delete it)
+        SystemConfig.query.filter_by(key='mtls_trusted_ca_id').delete()
+        if orig_value is not None:
+            db.session.add(SystemConfig(
+                key='mtls_trusted_ca_id',
+                value=orig_value,
+            ))
+        # Delete only the AuthCertificate rows created by these tests
+        AuthCertificate.query.filter(
+            AuthCertificate.name.in_(_CERT_NAMES)
+        ).delete(synchronize_session=False)
+        db.session.commit()
+
+
 def post_json(client, url, data):
     return client.post(url, data=json.dumps(data), content_type=CONTENT_JSON)
 
@@ -72,7 +116,7 @@ def _create_mtls_cert_for_user(auth_client, user_id, name='Test Client Cert'):
 class TestUserCertIdorRevoke:
     """#8 — revoke_user_certificate must enforce ownership."""
 
-    def test_owner_can_revoke_own_cert(self, app, auth_client, create_user):
+    def test_owner_can_revoke_own_cert(self, app, auth_client, create_user, mtls_ca):
         """Operator can revoke their own certificate."""
         user_a_client, user_a = _create_user_and_login(
             app, auth_client, create_user, 'idor_revoke_owner'
@@ -83,7 +127,7 @@ class TestUserCertIdorRevoke:
         r = post_json(user_a_client, f'{BASE}/{cert_id}/revoke', {'reason': 'unspecified'})
         assert r.status_code == 200, f'Owner should be able to revoke: {r.data}'
 
-    def test_operator_can_revoke_any_cert(self, app, auth_client, create_user):
+    def test_operator_can_revoke_any_cert(self, app, auth_client, create_user, mtls_ca):
         """Operator can revoke any user's certificate (by design — trusted role)."""
         _, user_a = _create_user_and_login(
             app, auth_client, create_user, 'idor_revoke_op_a'
@@ -97,7 +141,7 @@ class TestUserCertIdorRevoke:
         r = post_json(user_b_client, f'{BASE}/{cert_id}/revoke', {'reason': 'unspecified'})
         assert r.status_code == 200, f'Operator should be able to revoke any cert: {r.data}'
 
-    def test_admin_can_revoke_any_cert(self, app, auth_client, create_user):
+    def test_admin_can_revoke_any_cert(self, app, auth_client, create_user, mtls_ca):
         """Admin can revoke any user's certificate."""
         _, user_a = _create_user_and_login(
             app, auth_client, create_user, 'idor_revoke_admin'
@@ -117,7 +161,7 @@ class TestUserCertIdorRevoke:
 class TestUserCertIdorDelete:
     """#9 — delete_user_certificate must enforce ownership."""
 
-    def test_owner_can_delete_own_cert(self, app, auth_client, create_user):
+    def test_owner_can_delete_own_cert(self, app, auth_client, create_user, mtls_ca):
         """Operator can delete their own certificate."""
         user_a_client, user_a = _create_user_and_login(
             app, auth_client, create_user, 'idor_delete_owner'
@@ -128,7 +172,7 @@ class TestUserCertIdorDelete:
         r = user_a_client.delete(f'{BASE}/{cert_id}')
         assert r.status_code == 200, f'Owner should be able to delete: {r.data}'
 
-    def test_operator_can_delete_any_cert(self, app, auth_client, create_user):
+    def test_operator_can_delete_any_cert(self, app, auth_client, create_user, mtls_ca):
         """Operator can delete any user's certificate (by design — trusted role)."""
         _, user_a = _create_user_and_login(
             app, auth_client, create_user, 'idor_delete_op_a'
@@ -142,7 +186,7 @@ class TestUserCertIdorDelete:
         r = user_b_client.delete(f'{BASE}/{cert_id}')
         assert r.status_code == 200, f'Operator should be able to delete any cert: {r.data}'
 
-    def test_admin_can_delete_any_cert(self, app, auth_client, create_user):
+    def test_admin_can_delete_any_cert(self, app, auth_client, create_user, mtls_ca):
         """Admin can delete any user's certificate."""
         _, user_a = _create_user_and_login(
             app, auth_client, create_user, 'idor_delete_admin'
@@ -169,7 +213,7 @@ class TestUserCertIdorDefenseInDepth:
     """
 
     def test_custom_role_cannot_revoke_other_user_cert(
-        self, app, auth_client, create_user, monkeypatch
+        self, app, auth_client, create_user, monkeypatch, mtls_ca
     ):
         """A non-operator user with write:user_certificates cannot revoke another's cert."""
         from api.v2 import user_certificates as uc_module
@@ -207,7 +251,7 @@ class TestUserCertIdorDefenseInDepth:
             f'Custom role user should not revoke another user cert: {r.data}'
 
     def test_custom_role_can_revoke_own_cert(
-        self, app, auth_client, create_user, monkeypatch
+        self, app, auth_client, create_user, monkeypatch, mtls_ca
     ):
         """A non-operator user with write:user_certificates can revoke their own cert."""
         from api.v2 import user_certificates as uc_module
@@ -239,7 +283,7 @@ class TestUserCertIdorDefenseInDepth:
             f'Custom role user should revoke own cert: {r.data}'
 
     def test_custom_role_cannot_delete_other_user_cert(
-        self, app, auth_client, create_user, monkeypatch
+        self, app, auth_client, create_user, monkeypatch, mtls_ca
     ):
         """A non-operator user with delete:user_certificates cannot delete another's cert."""
         from api.v2 import user_certificates as uc_module
@@ -274,7 +318,7 @@ class TestUserCertIdorDefenseInDepth:
             f'Custom role user should not delete another user cert: {r.data}'
 
     def test_custom_role_can_delete_own_cert(
-        self, app, auth_client, create_user, monkeypatch
+        self, app, auth_client, create_user, monkeypatch, mtls_ca
     ):
         """A non-operator user with delete:user_certificates can delete their own cert."""
         from api.v2 import user_certificates as uc_module
