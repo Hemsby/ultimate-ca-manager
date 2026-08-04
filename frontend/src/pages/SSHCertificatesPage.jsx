@@ -805,6 +805,15 @@ function IssueCertificateForm({ cas, onSubmit, onCancel }) {
     }
   }, [cas])
 
+  // Auto-sync cert type when CA selection changes
+  useEffect(() => {
+    if (!caId) return
+    const selectedCA = cas.find(ca => String(ca.id) === caId)
+    if (selectedCA && selectedCA.ca_type && selectedCA.ca_type !== certType) {
+      setCertType(selectedCA.ca_type)
+    }
+  }, [caId, cas])
+
   const toggleExtension = (ext) => {
     setExtensions(prev =>
       prev.includes(ext) ? prev.filter(e => e !== ext) : [...prev, ext]
