@@ -782,7 +782,14 @@ class AcmeProxyService:
 
         # SECURITY: Find the proxy order associated with this challenge and
         # verify the requester owns it before proceeding.
-        order = self._find_order_for_challenge(chall_url, AcmeClientOrder)
+        # Challenge URLs are sub-paths of authz URLs (e.g., .../authz/123/0).
+        # Derive the authz URL by stripping the last path segment, then use
+        # the same SQL-based lookup as get_authz for reliability.
+        authz_url_from_chall = chall_url.rsplit('/', 1)[0]
+        order = AcmeClientOrder.query.filter(
+            AcmeClientOrder.is_proxy_order == True,
+            AcmeClientOrder.upstream_authz_urls.contains(authz_url_from_chall)
+        ).first()
         if order:
             self._verify_order_ownership(
                 order, requester_account_id, requester_thumbprint
