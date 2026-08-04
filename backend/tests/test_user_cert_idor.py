@@ -1,5 +1,5 @@
 """
-Tests for user certificate IDOR vulnerabilities (#8-#9).
+Tests for user certificate IDOR vulnerabilities.
 
 Verifies that revoke and delete endpoints on /api/v2/user-certificates/<id>
 enforce ownership checks via _can_access_cert().
@@ -170,7 +170,7 @@ class TestUserCertIdorDelete:
         cert_id = cert.get('id')
 
         r = user_a_client.delete(f'{BASE}/{cert_id}')
-        assert r.status_code == 200, f'Owner should be able to delete: {r.data}'
+        assert r.status_code == 204, f'Owner should be able to delete: {r.data}'
 
     def test_operator_can_delete_any_cert(self, app, auth_client, create_user, mtls_ca):
         """Operator can delete any user's certificate (by design — trusted role)."""
@@ -184,7 +184,7 @@ class TestUserCertIdorDelete:
         cert_id = cert.get('id')
 
         r = user_b_client.delete(f'{BASE}/{cert_id}')
-        assert r.status_code == 200, f'Operator should be able to delete any cert: {r.data}'
+        assert r.status_code == 204, f'Operator should be able to delete any cert: {r.data}'
 
     def test_admin_can_delete_any_cert(self, app, auth_client, create_user, mtls_ca):
         """Admin can delete any user's certificate."""
@@ -195,7 +195,7 @@ class TestUserCertIdorDelete:
         cert_id = cert.get('id')
 
         r = auth_client.delete(f'{BASE}/{cert_id}')
-        assert r.status_code == 200, f'Admin should be able to delete: {r.data}'
+        assert r.status_code == 204, f'Admin should be able to delete: {r.data}'
 
     def test_delete_nonexistent_cert(self, auth_client):
         """Delete non-existent cert returns 404."""
@@ -346,5 +346,5 @@ class TestUserCertIdorDefenseInDepth:
         monkeypatch.setattr(uc_module, '_is_auditor', _patched_auditor)
 
         r = user_b_client.delete(f'{BASE}/{cert_id}')
-        assert r.status_code == 200, \
+        assert r.status_code == 204, \
             f'Custom role user should delete own cert: {r.data}'

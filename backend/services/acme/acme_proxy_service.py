@@ -1005,8 +1005,11 @@ class AcmeProxyService:
                     authz_urls = json.loads(order.upstream_authz_urls)
                     # Challenge URLs are under the authz URL path on most CAs
                     for authz_url in authz_urls:
-                        # Match by common URL prefix (same CA host/path structure)
-                        if self._urls_share_ca(chall_url, authz_url):
+                        # Match by URL prefix: the challenge URL should start
+                        # with the authz URL (same CA host + path prefix).
+                        # Hostname-only matching can match the wrong order when
+                        # multiple pending orders share the same CA host.
+                        if chall_url.startswith(authz_url):
                             return order
                 except (json.JSONDecodeError, TypeError):
                     pass
