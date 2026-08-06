@@ -254,8 +254,11 @@ class ChallengeMixin:
 
         auth = challenge.authorization
         identifier = auth.identifier_value if auth else ''
-        is_wildcard = identifier.startswith('*.')
-        requested = dns_persist.normalize_domain(identifier[2:] if is_wildcard else identifier)
+        # RFC 8555 §7.1.4: wildcard authorizations store the base domain and
+        # signal the wildcard via the flag, not a '*.' prefix in the value.
+        is_wildcard = bool(auth and auth.wildcard) or identifier.startswith('*.')
+        requested = dns_persist.normalize_domain(
+            identifier[2:] if identifier.startswith('*.') else identifier)
 
         account_uri = f"{self.base_url}/acme/acct/{account.account_id}"
         issuer_domains = dns_persist.get_issuer_domain_names(

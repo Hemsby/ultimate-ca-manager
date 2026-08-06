@@ -152,6 +152,10 @@ class TestRecordMatching:
 
 
 def _make_persist_challenge(app, account_id, fqdn):
+    # Store like OrderMixin._normalize_authorization_identifier does
+    # (RFC 8555 §7.1.4): base domain in the identifier, wildcard as a flag.
+    is_wildcard = fqdn.startswith('*.')
+    base = fqdn[2:] if is_wildcard else fqdn
     with app.app_context():
         order = AcmeOrder(
             account_id=account_id,
@@ -163,9 +167,10 @@ def _make_persist_challenge(app, account_id, fqdn):
         authz = AcmeAuthorization(
             order_id=order.order_id,
             account_id=account_id,
-            identifier=json.dumps({'type': 'dns', 'value': fqdn}),
+            identifier=json.dumps({'type': 'dns', 'value': base}),
             status='pending',
             expires=utc_now() + timedelta(days=1),
+            wildcard=is_wildcard,
         )
         db.session.add(authz)
         db.session.commit()
