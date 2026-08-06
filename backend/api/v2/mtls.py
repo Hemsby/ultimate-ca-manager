@@ -464,7 +464,7 @@ def enroll_presented_certificate():
         if spoof_attempt and not trusted_proxy.is_request_from_trusted_proxy():
             logger.warning(
                 "mTLS enroll: ignoring proxy cert headers from untrusted peer %s",
-                request.remote_addr,
+                trusted_proxy.immediate_peer_addr(),
             )
         elif 'X-SSL-Client-Verify' in headers:
             cert_info = CertificateParser.extract_from_nginx_headers(headers)
