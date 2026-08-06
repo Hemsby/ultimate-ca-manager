@@ -1582,7 +1582,12 @@
     "caaEnforceWarning": "In isolated networks every ACME issuance will fail if the resolver cannot answer CAA queries.",
     "tlsAlpn01Desc": "validation via TLS on port 443 (RFC 8737)",
     "tlsAlpnPort": "TLS-ALPN-01 port",
-    "tlsAlpnPortHelper": "Local port the TLS-ALPN-01 responder listens on during validation (default 443)."
+    "tlsAlpnPortHelper": "Local port the TLS-ALPN-01 responder listens on during validation (default 443).",
+    "dnsPersistSection": "Persistent DNS Validation (dns-persist-01)",
+    "dnsPersistEnabled": "Offer dns-persist-01 challenge (draft-ietf-acme-dns-persist)",
+    "dnsPersistEnabledDesc": "Validation via a persistent TXT record at _validation-persist.<domain> bound to the ACME account. Clients renew without writing DNS records.",
+    "dnsPersistWarning": "Risk: a compromise of the ACME account key grants issuance capability for the domain until the TXT record is removed (draft §7.2). Enable only for accounts and zones you control.",
+    "dnsPersistIssuerNote": "Issuer domain names for the TXT record: {{domains}} (from CAA identifiers, or the ACME public hostname when unset)."
   },
   "scep": {
     "title": "SCEP Protocol",

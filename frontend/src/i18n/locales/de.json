@@ -1582,7 +1582,12 @@
     "caaEnforceWarning": "In isolierten Netzwerken schlägt jede ACME-Ausstellung fehl, wenn der Resolver CAA-Anfragen nicht beantworten kann.",
     "tlsAlpn01Desc": "Validierung über TLS auf Port 443 (RFC 8737)",
     "tlsAlpnPort": "TLS-ALPN-01-Port",
-    "tlsAlpnPortHelper": "Lokaler Port, auf dem der TLS-ALPN-01-Responder während der Validierung lauscht (Standard 443)."
+    "tlsAlpnPortHelper": "Lokaler Port, auf dem der TLS-ALPN-01-Responder während der Validierung lauscht (Standard 443).",
+    "dnsPersistSection": "Persistente DNS-Validierung (dns-persist-01)",
+    "dnsPersistEnabled": "dns-persist-01-Challenge anbieten (draft-ietf-acme-dns-persist)",
+    "dnsPersistEnabledDesc": "Validierung über einen persistenten TXT-Eintrag unter _validation-persist.<Domain>, an das ACME-Konto gebunden. Erneuerungen ohne DNS-Schreibzugriff.",
+    "dnsPersistWarning": "Risiko: Kompromittierter ACME-Kontoschlüssel erlaubt Ausstellung für die Domain, bis der TXT-Eintrag entfernt wird (draft §7.2). Nur für kontrollierte Konten/Zonen aktivieren.",
+    "dnsPersistIssuerNote": "Issuer-Domains für den TXT-Eintrag: {{domains}} (aus den CAA-Identifiern, sonst ACME-Hostname)."
   },
   "scep": {
     "title": "SCEP-Protokoll",

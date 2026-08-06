@@ -1582,7 +1582,12 @@
     "caaEnforceWarning": "在隔离网络中，如果解析器无法应答 CAA 查询，所有 ACME 签发都会失败。",
     "tlsAlpn01Desc": "通过 443 端口的 TLS 验证（RFC 8737）",
     "tlsAlpnPort": "TLS-ALPN-01 端口",
-    "tlsAlpnPortHelper": "验证期间 TLS-ALPN-01 响应器监听的本地端口（默认 443）。"
+    "tlsAlpnPortHelper": "验证期间 TLS-ALPN-01 响应器监听的本地端口（默认 443）。",
+    "dnsPersistSection": "持久化 DNS 验证 (dns-persist-01)",
+    "dnsPersistEnabled": "提供 dns-persist-01 质询 (draft-ietf-acme-dns-persist)",
+    "dnsPersistEnabledDesc": "通过绑定到 ACME 账户的 _validation-persist.<域名> 持久 TXT 记录完成验证。续期无需写入 DNS。",
+    "dnsPersistWarning": "风险：ACME 账户密钥泄露后，在 TXT 记录被删除前均可为该域名签发证书（draft §7.2）。仅对您控制的账户和区域启用。",
+    "dnsPersistIssuerNote": "TXT 记录的发行者域名：{{domains}}（取自 CAA 标识符，未设置时为 ACME 公共主机名）。"
   },
   "scep": {
     "title": "SCEP协议",

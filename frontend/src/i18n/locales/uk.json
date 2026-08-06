@@ -1582,7 +1582,12 @@
     "caaEnforceWarning": "В ізольованих мережах кожен випуск ACME не вдасться, якщо резолвер не може відповісти на запити CAA.",
     "tlsAlpn01Desc": "перевірка через TLS на порту 443 (RFC 8737)",
     "tlsAlpnPort": "Порт TLS-ALPN-01",
-    "tlsAlpnPortHelper": "Локальний порт, який слухає відповідач TLS-ALPN-01 під час перевірки (типово 443)."
+    "tlsAlpnPortHelper": "Локальний порт, який слухає відповідач TLS-ALPN-01 під час перевірки (типово 443).",
+    "dnsPersistSection": "Постійна DNS-валідація (dns-persist-01)",
+    "dnsPersistEnabled": "Пропонувати dns-persist-01 (draft-ietf-acme-dns-persist)",
+    "dnsPersistEnabledDesc": "Валідація через постійний TXT-запис у _validation-persist.<домен>, прив'язаний до ACME-акаунта. Подовження без запису в DNS.",
+    "dnsPersistWarning": "Ризик: компрометація ключа ACME-акаунта дозволяє видачу для домену, поки існує TXT-запис (draft §7.2). Вмикайте лише для контрольованих акаунтів і зон.",
+    "dnsPersistIssuerNote": "Домени емітента для TXT-запису: {{domains}} (з ідентифікаторів CAA, або публічне ім'я хоста ACME)."
   },
   "scep": {
     "title": "Протокол SCEP",

@@ -1582,7 +1582,12 @@
     "caaEnforceWarning": "隔離ネットワークでは、リゾルバーがCAAクエリに応答できない場合、すべてのACME発行が失敗します。",
     "tlsAlpn01Desc": "ポート443のTLS経由で検証（RFC 8737）",
     "tlsAlpnPort": "TLS-ALPN-01ポート",
-    "tlsAlpnPortHelper": "検証中にTLS-ALPN-01レスポンダーが待ち受けるローカルポート（既定443）。"
+    "tlsAlpnPortHelper": "検証中にTLS-ALPN-01レスポンダーが待ち受けるローカルポート（既定443）。",
+    "dnsPersistSection": "永続的DNS検証 (dns-persist-01)",
+    "dnsPersistEnabled": "dns-persist-01 チャレンジを提供 (draft-ietf-acme-dns-persist)",
+    "dnsPersistEnabledDesc": "_validation-persist.<ドメイン> の永続 TXT レコードで検証。ACME アカウントに紐付け。更新時の DNS 書き込み不要。",
+    "dnsPersistWarning": "リスク：ACME アカウント鍵の漏洩により、TXT レコードが削除されるまで当該ドメインへの発行が可能になります（draft §7.2）。管理下のアカウント・ゾーンにのみ有効化してください。",
+    "dnsPersistIssuerNote": "TXT レコードの発行者ドメイン名：{{domains}}（CAA 識別子から取得、未設定時は ACME 公開ホスト名）。"
   },
   "scep": {
     "title": "SCEPプロトコル",
