@@ -455,7 +455,8 @@ def enroll_presented_certificate():
     # Also try proxy headers — only when the immediate peer is trusted
     # (same gate as login_mtls in auth_methods.py).
     if not cert_info:
-        headers = dict(request.headers)
+        # Case-insensitive mapping — do NOT dict() it (see login_mtls).
+        headers = request.headers
         spoof_attempt = (
             'X-SSL-Client-Verify' in headers
             or 'X-SSL-Client-S-DN' in headers

@@ -146,7 +146,8 @@ def detect_auth_methods():
                 )
             else:
                 # Reverse-proxy headers — same trusted-proxy gate as login_mtls().
-                headers = dict(request.headers)
+                # Case-insensitive mapping — do NOT dict() it (see login_mtls).
+                headers = request.headers
                 spoof_attempt = (
                     'X-SSL-Client-Verify' in headers
                     or 'X-SSL-Client-S-DN' in headers
@@ -528,7 +529,11 @@ def login_mtls():
             # in UCM_TRUSTED_PROXIES (default: loopback). Without this gate
             # any caller who can reach gunicorn directly can spoof
             # X-SSL-Client-* headers and forge mTLS authentication.
-            headers = dict(request.headers)
+            # request.headers is a case-insensitive mapping. Do NOT wrap it
+            # in dict(): WSGI reconstructs header names title-cased
+            # (X-Ssl-Client-Verify), so exact-case lookups against
+            # dict(request.headers) never match and proxy cert auth dies.
+            headers = request.headers
             spoof_attempt = (
                 'X-SSL-Client-Verify' in headers
                 or 'X-SSL-Client-S-DN' in headers

@@ -134,6 +134,32 @@ class TestRejectUntrustedProxyHeaders:
             assert reject_untrusted_proxy_headers('X-SSL-Client-Verify') is True
 
 
+class TestMtlsMiddlewareProxyGate:
+    """middleware.mtls_middleware._extract_certificate must honor proxy cert
+    headers from a trusted proxy even when ProxyFix rewrote REMOTE_ADDR, and
+    ignore them when the real peer is untrusted."""
+
+    def _extract(self, app, monkeypatch, environ_overrides):
+        from middleware.mtls_middleware import _extract_certificate
+        monkeypatch.setattr(
+            'services.certificate_parser.CertificateParser.extract_from_nginx_headers',
+            staticmethod(lambda headers: {'cn': 'sentinel'}),
+        )
+        headers = {'X-SSL-Client-Verify': 'SUCCESS'}
+        with app.test_request_context('/', headers=headers, environ_overrides=environ_overrides):
+            return _extract_certificate()
+
+    def test_headers_honored_from_trusted_proxy_with_proxyfix(self, app, monkeypatch):
+        monkeypatch.setenv('UCM_TRUSTED_PROXIES', NGINX_IP)
+        overrides = {'REMOTE_ADDR': CLIENT_IP, **_proxyfix_orig(NGINX_IP)}
+        assert self._extract(app, monkeypatch, overrides) == {'cn': 'sentinel'}
+
+    def test_headers_ignored_for_spoofed_xff_peer(self, app, monkeypatch):
+        monkeypatch.delenv('UCM_TRUSTED_PROXIES', raising=False)  # default: loopback
+        overrides = {'REMOTE_ADDR': '127.0.0.1', **_proxyfix_orig(ATTACKER_IP)}
+        assert self._extract(app, monkeypatch, overrides) is None
+
+
 @pytest.fixture
 def proxyfix_app(app, monkeypatch):
     """Session app temporarily wrapped in a real ProxyFix middleware, with

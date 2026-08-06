@@ -33,7 +33,11 @@ def _extract_certificate():
         logger.debug(f"mTLS proxy headers ignored: {immediate_peer_addr()} not in trusted proxies")
         return None
 
-    headers = dict(request.headers)
+    # request.headers is already a case-insensitive mapping. Do NOT wrap it
+    # in dict(): WSGI reconstructs header names title-cased
+    # (X-Ssl-Client-Verify), so exact-case lookups against
+    # dict(request.headers) never match and proxy cert auth silently dies.
+    headers = request.headers
     if 'X-SSL-Client-Verify' in headers:
         cert_info = CertificateParser.extract_from_nginx_headers(headers)
         if cert_info:
