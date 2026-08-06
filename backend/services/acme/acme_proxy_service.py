@@ -38,6 +38,10 @@ class ProxyDns01OnlyError(ValueError):
     """The ACME proxy deliberately supports DNS identifiers/DNS-01 only."""
 
 
+class ProxyResourceNotFoundError(LookupError):
+    """No local proxy order tracks the requested upstream resource."""
+
+
 class AcmeProxyService:
     # Default upstream (Let's Encrypt Staging for safety by default, user can change)
     DEFAULT_UPSTREAM = "https://acme-staging-v02.api.letsencrypt.org/directory"
@@ -616,37 +620,80 @@ class AcmeProxyService:
         
         return upstream_order, order_id
 
-    def get_authz(self, authz_id_b64):
+    @staticmethod
+    def _verify_order_ownership(local_order, requester_account_id=None,
+                                requester_thumbprint=None, resource='Order'):
+        """Refuse serving an owner-bound proxy order to another account (#260).
+
+        Orders carry their owner's local ACME account id and/or client JWK
+        thumbprint since creation; a verified requester identity matching
+        neither is rejected, and an owner-bound order with no derivable
+        requester identity fails closed. Orders with no owner binding (legacy
+        rows created before ownership tracking) are served as before.
+
+        Raises PermissionError when ownership cannot be established.
+        """
+        if not (local_order.account_id or local_order.client_jwk_thumbprint):
+            return
+        denied = None
+        if not requester_account_id and not requester_thumbprint:
+            denied = 'no requester identity'
+        elif requester_account_id and local_order.account_id and \
+                local_order.account_id != requester_account_id:
+            denied = f'requested by foreign account {requester_account_id}'
+        elif local_order.client_jwk_thumbprint and requester_thumbprint and \
+                local_order.client_jwk_thumbprint != requester_thumbprint:
+            denied = 'JWK thumbprint mismatch'
+        if denied:
+            logger.warning(
+                "ACME proxy: refused %s access on order %s (%s)",
+                resource.lower(), local_order.id, denied,
+            )
+            raise PermissionError(f"{resource} does not belong to this account")
+
+    def get_authz(self, authz_id_b64, requester_account_id=None,
+                  requester_thumbprint=None):
         """Proxy authz fetch — only exposes dns-01 challenges and triggers automation.
-        
+
         The proxy can only handle dns-01 validation (via DNS provider).
         http-01 and tls-alpn-01 require the upstream CA to reach the client
         directly, which doesn't work through a proxy.
+
+        Ownership is enforced before the upstream round-trip: the authz must
+        belong to a tracked proxy order owned by the requester (#260).
         """
         from api.v2.acme_domains import find_provider_for_domain
         from models import AcmeClientOrder
-        
+
         # Fix padding + validate upstream host (anti-SSRF)
         authz_url = self._decode_proxy_id(authz_id_b64)
-        
-        resp = self._post_with_account(authz_url, "")
-        
-        if resp.status_code != 200:
-            logger.error(f"Upstream authz fetch failed: {resp.status_code} {resp.text}")
-            return None
-             
-        authz = resp.json()
-        
-        # Extract identifier (domain)
-        identifier = authz.get('identifier', {})
-        domain = identifier.get('value', '').lstrip('*.')
-        
-        # Find the proxy order that contains this authz URL
+
+        # Find the proxy order that contains this authz URL — every proxy
+        # order records its upstream authz URLs at creation, so an untracked
+        # URL is either foreign or no longer served.
         order = AcmeClientOrder.query.filter(
             AcmeClientOrder.is_proxy_order == True,
             AcmeClientOrder.upstream_authz_urls.contains(authz_url)
         ).first()
-        
+        if order is None:
+            raise ProxyResourceNotFoundError("Authorization not found")
+        self._verify_order_ownership(
+            order, requester_account_id, requester_thumbprint,
+            resource='Authorization',
+        )
+
+        resp = self._post_with_account(authz_url, "")
+
+        if resp.status_code != 200:
+            logger.error(f"Upstream authz fetch failed: {resp.status_code} {resp.text}")
+            return None
+
+        authz = resp.json()
+
+        # Extract identifier (domain)
+        identifier = authz.get('identifier', {})
+        domain = identifier.get('value', '').lstrip('*.')
+
         # Filter to dns-01 only — the proxy handles DNS record creation
         # automatically. http-01/tls-alpn-01 cannot work through a proxy
         # because the upstream CA needs direct access to the client.
@@ -709,36 +756,63 @@ class AcmeProxyService:
         authz['challenges'] = proxy_challenges
         return authz, identifier
 
-    def respond_challenge(self, chall_id_b64):
-        """Proxy challenge response. If automation is already running/done, just return status."""
+    def respond_challenge(self, chall_id_b64, requester_account_id=None,
+                          requester_thumbprint=None):
+        """Proxy challenge response. If automation is already running/done, just return status.
+
+        Ownership is enforced before any challenge data is returned or
+        automation is triggered (#260). Challenge and authz URLs live in
+        disjoint namespaces on most CAs (e.g. LE's ``/acme/chall-v3/`` vs
+        ``/acme/authz-v3/``), so the owning order is resolved through the
+        authz URL upstream itself returns in the Link rel="up" header
+        (mandatory per RFC 8555 §7.5.1) and matched exactly against the
+        order's recorded authz URLs.
+        """
         from api.v2.acme_domains import find_provider_for_domain
         from models import AcmeClientOrder
-        
+
         chall_url = self._decode_proxy_id(chall_id_b64)
-        
+
         # Fetch the challenge to get token and status
         resp = self._post_with_account(chall_url, "")
         if resp.status_code != 200:
             raise RuntimeError(f"Failed to fetch challenge: {resp.text}")
-        
+
         challenge_data = resp.json()
         token = challenge_data.get('token')
         challenge_type = challenge_data.get('type')
         status = challenge_data.get('status')
-        
+
+        # Resolve the owning order from the authoritative authz URL; fall back
+        # to the legacy host-based match only when upstream sent no Link header.
+        order = None
+        authz_url = self._upstream_authz_url_from_link(resp.headers.get('Link'))
+        if authz_url:
+            order = AcmeClientOrder.query.filter(
+                AcmeClientOrder.is_proxy_order == True,
+                AcmeClientOrder.upstream_authz_urls.contains(authz_url)
+            ).first()
+        if order is None:
+            order = self._find_order_for_challenge(chall_url, AcmeClientOrder)
+        if order is None:
+            raise ProxyResourceNotFoundError("Challenge not found")
+        self._verify_order_ownership(
+            order, requester_account_id, requester_thumbprint,
+            resource='Challenge',
+        )
+
         if challenge_type != 'dns-01':
             raise ProxyDns01OnlyError(
                 f"Unsupported challenge type: {challenge_type}. "
                 "The ACME proxy only supports dns-01 validation."
             )
-        
+
         if status != 'pending':
             # Already processing or finished
             challenge_data['url'] = f"{self.base_url}/challenge/{chall_id_b64}"
             return challenge_data, self._get_authz_link(resp.headers.get('Link'))
 
         # If still pending, check if we already triggered automation in get_authz
-        order = self._find_order_for_challenge(chall_url, AcmeClientOrder)
         if order:
             challenges_data = order.challenges_dict
             if chall_url in challenges_data and challenges_data[chall_url].get('status') == 'initiated':
@@ -776,8 +850,9 @@ class AcmeProxyService:
         
         return challenge_data, self._get_authz_link(resp.headers.get('Link'))
 
-    def _get_authz_link(self, upstream_link):
-        """Extract and rewrite authz Link header from upstream response"""
+    @staticmethod
+    def _upstream_authz_url_from_link(upstream_link):
+        """Raw upstream authz URL from a challenge response Link rel="up" header."""
         if not upstream_link:
             return None
         import re
@@ -785,9 +860,12 @@ class AcmeProxyService:
         if not match:
             # Try without rel="up" just in case
             match = re.search(r'<([^>]+)>', upstream_link)
-            
-        if match:
-            authz_url = match.group(1)
+        return match.group(1) if match else None
+
+    def _get_authz_link(self, upstream_link):
+        """Extract and rewrite authz Link header from upstream response"""
+        authz_url = self._upstream_authz_url_from_link(upstream_link)
+        if authz_url:
             authz_id = base64.urlsafe_b64encode(authz_url.encode()).rstrip(b'=').decode()
             return f'<{self.base_url}/authz/{authz_id}>;rel="up"'
         return None
@@ -1037,10 +1115,23 @@ class AcmeProxyService:
             "signature": sig_b64
         }
 
-    def get_order(self, order_id_b64):
-        """Get order status (POST-as-GET)"""
+    def get_order(self, order_id_b64, requester_account_id=None,
+                  requester_thumbprint=None):
+        """Get order status (POST-as-GET) — the order must be a tracked proxy
+        order owned by the requester (#260)."""
+        from models import AcmeClientOrder
+
         order_url = self._decode_proxy_id(order_id_b64)
-        
+
+        local_order = AcmeClientOrder.query.filter_by(
+            upstream_order_url=order_url, is_proxy_order=True
+        ).first()
+        if local_order is None:
+            raise ProxyResourceNotFoundError("Order not found")
+        self._verify_order_ownership(
+            local_order, requester_account_id, requester_thumbprint,
+        )
+
         resp = self._post_with_account(order_url, "")
         if resp.status_code != 200:
             raise Exception(f"Upstream error: {resp.text}")
@@ -1069,11 +1160,11 @@ class AcmeProxyService:
                        requester_thumbprint=None):
         """Proxy finalize.
 
-        If requester_account_id is provided, verify it matches the local
-        AcmeClientOrder.account_id (set when the order was created from this
-        same client's JWK thumbprint). Mismatch → PermissionError → ACME 403.
-        When client_jwk_thumbprint is stored on the order, the finalize JWK
-        must match even if no local account was registered.
+        The order must be a tracked proxy order owned by the requester —
+        same binding as every other order-scoped proxy endpoint (#260):
+        account_id and/or client_jwk_thumbprint recorded at new-order must
+        match the verified requester identity, failing closed when an
+        owner-bound order gets no derivable identity at all.
         """
         from models import AcmeClientOrder
 
@@ -1082,31 +1173,12 @@ class AcmeProxyService:
         local_order = AcmeClientOrder.query.filter_by(
             upstream_order_url=order_url, is_proxy_order=True
         ).first()
-        if local_order:
-            # Fail closed: an order bound to an owner must never finalize when
-            # the requester identity could not be established at all.
-            owner_bound = bool(local_order.account_id or local_order.client_jwk_thumbprint)
-            if owner_bound and not requester_account_id and not requester_thumbprint:
-                logger.warning(
-                    "ACME proxy finalize: no requester identity for owned order %s",
-                    local_order.id,
-                )
-                raise PermissionError("Order does not belong to this account")
-            if requester_account_id and local_order.account_id and \
-                    local_order.account_id != requester_account_id:
-                logger.warning(
-                    "ACME proxy finalize: account %s tried to finalize order owned by %s",
-                    requester_account_id, local_order.account_id
-                )
-                raise PermissionError("Order does not belong to this account")
-            if local_order.client_jwk_thumbprint and requester_thumbprint and \
-                    local_order.client_jwk_thumbprint != requester_thumbprint:
-                logger.warning(
-                    "ACME proxy finalize: JWK thumbprint mismatch for order %s",
-                    local_order.id,
-                )
-                raise PermissionError("Order does not belong to this account")
-        
+        if local_order is None:
+            raise ProxyResourceNotFoundError("Order not found")
+        self._verify_order_ownership(
+            local_order, requester_account_id, requester_thumbprint,
+        )
+
         # ACME expects CSR in base64url-encoded DER (without headers) inside JSON
         # We assume csr_pem comes from our API handler which decoded the client's JWS
         # Client sends base64url(DER). API handler decodes to PEM?
@@ -1161,14 +1233,27 @@ class AcmeProxyService:
 
         return order
 
-    def get_certificate(self, cert_id_b64):
-        """Proxy certificate download with DNS cleanup and storage"""
+    def get_certificate(self, cert_id_b64, requester_account_id=None,
+                        requester_thumbprint=None):
+        """Proxy certificate download with DNS cleanup and storage.
+
+        The certificate must belong to a tracked proxy order owned by the
+        requester (#260); the order is resolved before the upstream fetch.
+        """
         from models import AcmeClientOrder, Certificate
         from services.acme.dns_providers import create_provider
         from services.cert_service import CertificateService
-        
+
         cert_url = self._decode_proxy_id(cert_id_b64)
-        
+
+        order = self._find_order_for_certificate(cert_url)
+        if order is None:
+            raise ProxyResourceNotFoundError("Certificate not found")
+        self._verify_order_ownership(
+            order, requester_account_id, requester_thumbprint,
+            resource='Certificate',
+        )
+
         resp = self._post_with_account(cert_url, "")
 
         # Never forward the upstream Link header: its rel="alternate" entries
@@ -1244,10 +1329,9 @@ class AcmeProxyService:
                 # Log but don't fail - cert was obtained
                 logger.error(f"[ACME Proxy] Error storing certificate: {e}")
             
-            # Link certificate to order; DNS cleanup runs in the background so
-            # the client is not blocked on DNS-provider API latency (#218).
-            order = self._find_order_for_certificate(cert_url)
-
+            # Link certificate to order (resolved before the upstream fetch);
+            # DNS cleanup runs in the background so the client is not blocked
+            # on DNS-provider API latency (#218).
             if order:
                 records_to_cleanup = []
                 try:
