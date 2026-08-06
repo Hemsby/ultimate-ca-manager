@@ -10,6 +10,9 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+### Added
+- **Certificates issued from a template now record how they diverged from it** — key type, validity and digest are template defaults that a request may legitimately override (issue #226 shipped that behavior); the issued certificate keeps its template link and now records which of those values were explicitly overridden (#258, option 2 debated there). The certificate detail shows the template name with a "modified from template" indicator listing the divergent fields, and the certificate list gains a Template filter to find diverged certificates. The record is written at issuance and frozen — editing the template later does not rewrite history. The value is exposed as `template_overrides` (list of field names) in the certificate API responses; renewals at par keep it.
+
 ## [2.204] - 2026-08-01
 
 ### Security

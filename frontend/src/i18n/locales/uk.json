@@ -797,7 +797,12 @@
       "maxReached": "Досягнуто максимум {{max}} EKU",
       "helper": "Можна додати ще {{remaining}} EKU (RFC 5280 §4.2.1.12).",
       "defaultLocked": "За замовчуванням для цього типу сертифіката"
-    }
+    },
+    "template": "Шаблон",
+    "allTemplates": "Усі шаблони",
+    "modifiedFromTemplate": "Змінено відносно шаблону",
+    "issuedFromTemplate": "Видано з шаблону: {{name}}",
+    "templateOverridesHint": "Відрізняється від шаблону '{{name}}' у: {{fields}}"
   },
   "cas": {
     "parentCA": "Батьківський ЦС",
