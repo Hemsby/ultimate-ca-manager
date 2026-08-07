@@ -16,6 +16,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 
 ### Fixed
+- **SSH CA TTL fields accept the duration format the UI advertises** — the create/edit placeholders say "e.g. 24h, 7d, 365d", but `default_ttl`/`max_ttl` were cast with a bare `int()`, so `365d` was rejected with `invalid literal for int()` (and the import path stored the raw string, crashing later at issuance). All three entry points (create, update, import) now normalize through `utils.duration.parse_duration_seconds()` — plain numbers stay valid as seconds, `s/m/h/d/w/y` suffixes are accepted, and malformed values fail with a clear 400 naming the accepted formats.
 - **Approved issuance (policy workflow) now honors the certificate template** — when a deferred certificate request finalized after approval, the legacy approval issuance path ignored the template's Key Usage / Extended Key Usage, used hardcoded cert-type profiles, always signed with SHA-256 (ignoring the template digest), fell back to its own request defaults instead of the template's key type/validity, stored the resulting private key unencrypted, dropped the `template_id` linkage, and skipped the CA-expiration sanity check. The approval path now applies the template's extensions template / digest / defaults like the direct issuance path (#226), encrypts the issued private key via `encrypt_private_key`, preserves the template link with `template_overrides` (#258), and refuses validity beyond the CA's own end-of-life.
 
 ### Added
