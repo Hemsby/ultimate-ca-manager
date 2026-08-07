@@ -16,6 +16,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 
 ### Fixed
+- **EST settings no longer reject a fresh CA selection when the previously configured CA was deleted** — deleting a CA leaves its `est_ca_refid` value behind, and `GET /api/v2/est/config` keeps returning that stale refid (reporting `ca_id: null`); the settings page PATCHes the whole object back, so the stale refid arrived alongside the fresh `ca_id` and the update handler, which validated `ca_refid` first, answered `CA not found` before ever looking at the valid selection. When both fields are sent, `ca_id` is now authoritative; a `ca_refid`-only request is validated exactly as before.
 - **Approved issuance (policy workflow) now honors the certificate template** — when a deferred certificate request finalized after approval, the legacy approval issuance path ignored the template's Key Usage / Extended Key Usage, used hardcoded cert-type profiles, always signed with SHA-256 (ignoring the template digest), fell back to its own request defaults instead of the template's key type/validity, stored the resulting private key unencrypted, dropped the `template_id` linkage, and skipped the CA-expiration sanity check. The approval path now applies the template's extensions template / digest / defaults like the direct issuance path (#226), encrypts the issued private key via `encrypt_private_key`, preserves the template link with `template_overrides` (#258), and refuses validity beyond the CA's own end-of-life.
 
 ### Added
