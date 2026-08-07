@@ -1437,6 +1437,8 @@
     "proxyUpstreamCAAccount": "上游 CA 账户",
     "proxyUpstreamCAAccountHelper": "选择已注册的外部 ACME CA 账户。EAB 和凭据在下方“外部 CA 账户”中管理。",
     "proxySelectCaAccount": "选择 CA 账户…",
+    "proxyPruneReplacedCertificates": "清理已被替换的证书",
+    "proxyPruneReplacedCertificatesDesc": "当相同域名的续期成功后，自动删除通过代理导入的证书。已吊销的证书始终保留。",
     "proxyNoCaAccounts": "未配置外部 CA 账户。请在下方“外部 CA 账户”中添加。",
     "proxyManageCaAccountsHint": "EAB 和各 CA 设置在下方“外部 CA 账户”中管理。",
     "proxyEnabled": "通过 ACME 代理暴露",

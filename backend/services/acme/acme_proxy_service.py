@@ -178,6 +178,84 @@ class AcmeProxyService:
         )
         return True
 
+    @staticmethod
+    def _prune_replaced_certificates_enabled() -> bool:
+        """Opt-in purge of superseded proxy-imported certificates (#240).
+
+        Default: disabled — proxy-issued certificates are inventoried forever
+        unless the operator opts in.
+        """
+        cfg = SystemConfig.query.filter_by(
+            key='acme.proxy.prune_replaced_certificates').first()
+        if not cfg or cfg.value is None:
+            return False
+        parsed = str(cfg.value).strip().lower()
+        if parsed in ('true', '1', 'yes', 'on'):
+            return True
+        if parsed in ('false', '0', 'no', 'off'):
+            return False
+        logger.warning(
+            "Invalid acme.proxy.prune_replaced_certificates value '%s'; "
+            "falling back to disabled.", cfg.value
+        )
+        return False
+
+    def _prune_replaced_certificates(self, order, new_certificate_id: int) -> int:
+        """Delete proxy-imported certificates superseded by this renewal (#240).
+
+        Opt-in via ``acme.proxy.prune_replaced_certificates``. Only certificates
+        imported through an *older proxy order with the exact same domain set*
+        (``source='acme_client'``) are removed; revoked certificates are always
+        kept (inventory/revocation history), and certificates not issued through
+        the proxy are never touched. Best-effort: never raises, failures are
+        logged.
+        """
+        if not self._prune_replaced_certificates_enabled():
+            return 0
+
+        from models import AcmeClientOrder, Certificate
+        from services.cert_service import CertificateService
+
+        old_orders = AcmeClientOrder.query.filter(
+            AcmeClientOrder.is_proxy_order.is_(True),
+            AcmeClientOrder.domains == order.domains,
+            AcmeClientOrder.id != order.id,
+            AcmeClientOrder.certificate_id.isnot(None),
+        ).all()
+
+        pruned = 0
+        for old_order in old_orders:
+            cert = db.session.get(Certificate, old_order.certificate_id)
+            if cert is None or cert.id == new_certificate_id:
+                continue
+            if cert.revoked or cert.source != 'acme_client':
+                # Revoked: keep for CRL/history. Non-proxy origin: never touch.
+                continue
+            # Detach every order still pointing at this certificate (FK safety)
+            for ref in AcmeClientOrder.query.filter_by(certificate_id=cert.id).all():
+                ref.certificate_id = None
+            try:
+                db.session.flush()
+            except Exception as e:
+                db.session.rollback()
+                logger.error(
+                    f"[ACME Proxy] Prune: failed to detach orders from "
+                    f"certificate {cert.id}: {e}"
+                )
+                continue
+            if CertificateService.delete_certificate(cert.id, username='acme_proxy'):
+                pruned += 1
+            else:
+                logger.error(
+                    f"[ACME Proxy] Prune: failed to delete certificate {cert.id}"
+                )
+        if pruned:
+            logger.info(
+                "[ACME Proxy] Pruned %d superseded certificate(s) for domains %s",
+                pruned, order.domains,
+            )
+        return pruned
+
     def _load_or_create_account_key(self):
         """Load upstream account private key from the linked AcmeClientAccount."""
         from services.acme.acme_client_service import AcmeClientService
@@ -1354,6 +1432,13 @@ class AcmeProxyService:
                 except Exception as e:
                     db.session.rollback()
                     logger.error(f"Failed during certificate cleanup: {e}")
+
+                # Opt-in: purge certificates superseded by this renewal (#240)
+                if stored_cert:
+                    try:
+                        self._prune_replaced_certificates(order, stored_cert.id)
+                    except Exception as e:
+                        logger.error(f"[ACME Proxy] Prune of replaced certificates failed: {e}")
 
                 if records_to_cleanup:
                     import threading

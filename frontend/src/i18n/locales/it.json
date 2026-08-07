@@ -1437,6 +1437,8 @@
     "proxyUpstreamCAAccount": "Account CA a monte",
     "proxyUpstreamCAAccountHelper": "Seleziona un account ACME esterno registrato. EAB e credenziali si gestiscono in Account CA esterni sotto.",
     "proxySelectCaAccount": "Seleziona account CA…",
+    "proxyPruneReplacedCertificates": "Elimina certificati sostituiti",
+    "proxyPruneReplacedCertificatesDesc": "Elimina automaticamente i certificati importati dal proxy quando un rinnovo per gli stessi domini riesce. I certificati revocati vengono sempre conservati.",
     "proxyNoCaAccounts": "Nessun account CA esterno configurato. Aggiungine uno in Account CA esterni sotto.",
     "proxyManageCaAccountsHint": "EAB e impostazioni per CA si gestiscono in Account CA esterni sotto.",
     "proxyEnabled": "Esporre tramite proxy ACME",

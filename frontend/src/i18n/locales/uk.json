@@ -1437,6 +1437,8 @@
     "proxyUpstreamCAAccount": "Обліковий запис CA вгорі по течії",
     "proxyUpstreamCAAccountHelper": "Виберіть зареєстрований зовнішній ACME CA. EAB і облікові дані керуються в Зовнішніх CA нижче.",
     "proxySelectCaAccount": "Вибрати обліковий запис CA…",
+    "proxyPruneReplacedCertificates": "Видаляти замінені сертифікати",
+    "proxyPruneReplacedCertificatesDesc": "Автоматично видаляти імпортовані проксі сертифікати після успішного оновлення для тих самих доменів. Відкликані сертифікати завжди зберігаються.",
     "proxyNoCaAccounts": "Зовнішні CA не налаштовані. Додайте обліковий запис у Зовнішніх CA нижче.",
     "proxyManageCaAccountsHint": "EAB і налаштування для кожного CA керуються в Зовнішніх CA нижче.",
     "proxyEnabled": "Надати через ACME-проксі",
