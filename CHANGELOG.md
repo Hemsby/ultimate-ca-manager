@@ -10,6 +10,8 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+## [2.206] - 2026-08-08
+
 ### Added
 - **Optional purge of replaced ACME-proxy certificates** (#240) — new opt-in ACME setting `acme.proxy.prune_replaced_certificates` (UI toggle under ACME → Let's Encrypt proxy): when a proxy order finalizes, certificates previously imported by proxy orders for the exact same domain set are deleted instead of piling up in the inventory. Revoked certificates are always kept, and certificates not issued through the proxy are never touched. Off by default. (Note: the proxy never stores the client's private key in the first place — keys stay client-side by design of ACME CSRs.)
 - **CRL validity window extended to 5 years for offline CAs** (#236) — `validity_days` now accepts 1–1825 (was 1–365) and the CRL/OCSP page offers 90d/180d/1y/3y/5y options, with a warning past one year since relying parties may keep stale revocation data for the full window. Intended for offline root CAs that cannot re-sign CRLs on schedule; online CAs should stay at short validity.
