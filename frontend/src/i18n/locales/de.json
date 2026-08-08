@@ -1753,6 +1753,7 @@
     "crlScheduleUpdated": "CRL Zeitplan aktualisiert",
     "crlScheduleFailed": "CRL Zeitplan konnte nicht aktualisiert werden",
     "crlValidity": "Gültigkeit",
+    "crlValidityOfflineWarning": "Lange Gültigkeit ist für Offline-CAs gedacht; Vertrauensparteien können für das gesamte Fenster veraltete Sperrdaten beibehalten.",
     "crlPublishInterval": "Veröffentlichen alle",
     "crlPublishAuto": "Auto (vor Ablauf)",
     "crlDigest": "Signatur Digest",

@@ -1753,6 +1753,7 @@
     "crlScheduleUpdated": "Agendamento de CRL atualizado",
     "crlScheduleFailed": "Falha ao atualizar o agendamento de CRL",
     "crlValidity": "Validade",
+    "crlValidityOfflineWarning": "A validade prolongada destina-se a CAs offline; as partes confiantes podem manter dados de revogação desatualizados durante toda a janela.",
     "crlPublishInterval": "Publicar a cada",
     "crlPublishAuto": "Auto (antes de expirar)",
     "crlDigest": "Resumo da assinatura",

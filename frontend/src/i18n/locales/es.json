@@ -1753,6 +1753,7 @@
     "crlScheduleUpdated": "Programación de CRL actualizada",
     "crlScheduleFailed": "Error al actualizar la programación de CRL",
     "crlValidity": "Validez",
+    "crlValidityOfflineWarning": "La validez prolongada está pensada para CA offline; las partes dependientes pueden mantener datos de revocación obsoletos durante toda la ventana.",
     "crlPublishInterval": "Publicar cada",
     "crlPublishAuto": "Auto (antes de expirar)",
     "crlDigest": "Resumen de firma",

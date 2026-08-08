@@ -1049,7 +1049,17 @@ export default function CRLOCSPPage() {
                 <option value="7">7d</option>
                 <option value="14">14d</option>
                 <option value="30">30d</option>
+                <option value="90">90d</option>
+                <option value="180">180d</option>
+                <option value="365">1y</option>
+                <option value="1095">3y</option>
+                <option value="1825">5y</option>
               </select>
+              {(selectedCA?.crl_validity_days || 0) > 365 && (
+                <span className="text-xs status-warning-text">
+                  {t('crlOcsp.crlValidityOfflineWarning')}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <label htmlFor="crl-publish-interval" className="text-xs text-text-secondary">{t('crlOcsp.crlPublishInterval')}</label>

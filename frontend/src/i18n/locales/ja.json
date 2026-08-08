@@ -1753,6 +1753,7 @@
     "crlScheduleUpdated": "CRLスケジュールを更新しました",
     "crlScheduleFailed": "CRLスケジュールの更新に失敗しました",
     "crlValidity": "有効期間",
+    "crlValidityOfflineWarning": "長い有効期限はオフラインCA向けです。依拠者はその期間中、古い失効データを保持し続ける可能性があります。",
     "crlPublishInterval": "公開間隔",
     "crlPublishAuto": "自動（期限前）",
     "crlDigest": "署名ダイジェスト",

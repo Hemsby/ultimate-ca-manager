@@ -1753,6 +1753,7 @@
     "crlScheduleUpdated": "Pianificazione CRL aggiornata",
     "crlScheduleFailed": "Aggiornamento della pianificazione CRL non riuscito",
     "crlValidity": "Validità",
+    "crlValidityOfflineWarning": "La validità estesa è pensata per CA offline; le parti verificanti possono conservare dati di revoca obsoleti per l'intera finestra.",
     "crlPublishInterval": "Pubblica ogni",
     "crlPublishAuto": "Auto (prima della scadenza)",
     "crlDigest": "Digest della firma",

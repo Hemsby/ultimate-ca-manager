@@ -1753,6 +1753,7 @@
     "crlScheduleUpdated": "Розклад CRL оновлено",
     "crlScheduleFailed": "Не вдалося оновити розклад CRL",
     "crlValidity": "Термін дії",
+    "crlValidityOfflineWarning": "Тривала дійсність призначена для офлайн-CA; сторони, що довіряють CRL, можуть зберігати застарілі дані відкликання протягом усього вікна.",
     "crlPublishInterval": "Публікувати кожні",
     "crlPublishAuto": "Авто (перед закінченням)",
     "crlDigest": "Дайджест підпису",

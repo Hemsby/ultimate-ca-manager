@@ -69,6 +69,18 @@ class TestCrlConfigApi:
         assert client.get('/api/v2/crl/1/config').status_code == 401
         assert _post(client, '/api/v2/crl/1/config', {}).status_code == 401
 
+    def test_validity_above_1825_rejected(self, auth_client, create_ca):
+        ca = create_ca(cn='Sched TooLong CA')
+        r = _post(auth_client, f"/api/v2/crl/{ca['id']}/config", {'validity_days': 1826})
+        assert r.status_code == 400
+
+    def test_validity_1825_accepted_for_offline_roots(self, auth_client, create_ca):
+        """#236: offline root CAs may need multi-year CRL validity."""
+        ca = create_ca(cn='Sched OfflineRoot CA')
+        r = _post(auth_client, f"/api/v2/crl/{ca['id']}/config", {'validity_days': 1825})
+        assert r.status_code == 200, r.data
+        assert get_json(r)['data']['crl_validity_days'] == 1825
+
 
 class TestCrlGenerationHonorsSchedule:
 

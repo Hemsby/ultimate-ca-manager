@@ -1753,6 +1753,7 @@
     "crlScheduleUpdated": "CRL schedule updated",
     "crlScheduleFailed": "Failed to update CRL schedule",
     "crlValidity": "Validity",
+    "crlValidityOfflineWarning": "Long validity is intended for offline CAs; relying parties may keep stale revocation data for the whole window.",
     "crlPublishInterval": "Publish every",
     "crlPublishAuto": "Auto (near expiry)",
     "crlDigest": "Signature digest",

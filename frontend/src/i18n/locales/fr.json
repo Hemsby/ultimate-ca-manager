@@ -1468,6 +1468,7 @@
     "crlScheduleUpdated": "Planification CRL mise à jour",
     "crlScheduleFailed": "Échec de la mise à jour de la planification CRL",
     "crlValidity": "Validité",
+    "crlValidityOfflineWarning": "Une longue validité est destinée aux CA hors ligne ; les parties s'appuyant sur la CRL peuvent conserver des données de révocation périmées pendant toute la durée.",
     "crlPublishInterval": "Publier toutes les",
     "crlPublishAuto": "Auto (avant expiration)",
     "crlDigest": "Empreinte de signature",

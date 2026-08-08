@@ -1753,6 +1753,7 @@
     "crlScheduleUpdated": "CRL计划已更新",
     "crlScheduleFailed": "更新CRL计划失败",
     "crlValidity": "有效期",
+    "crlValidityOfflineWarning": "较长的有效期仅适用于离线 CA；依赖方可能在整段时间内保留过期的吊销数据。",
     "crlPublishInterval": "发布间隔",
     "crlPublishAuto": "自动（到期前）",
     "crlDigest": "签名摘要",
