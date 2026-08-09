@@ -270,6 +270,34 @@ class TestNakedCsrSubjectDerivation:
         )
         assert r.status_code == 400
 
+    def test_naked_csr_with_realm_mismatch_still_rejected(
+        self, client, app, wstep_kerberos_config, monkeypatch
+    ):
+        """A principal from a realm other than the one the AD Connector is
+        configured against must never reach the AD lookup at all --
+        sAMAccountName alone isn't globally unique across realms, so
+        skipping this check could map a cross-realm principal onto a
+        same-named account in the wrong domain. lookup_computer_dns_hostname
+        is deliberately left unmocked (would error if called) so this test
+        actually proves the realm check short-circuits before it, not just
+        that the lookup happens to fail on its own."""
+        _configure_ad_connector(app)  # HAGLAND.DOMAIN
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: negotiate_auth.NegotiateResult(
+                status='authenticated', client_principal='HOST$@OTHER.DOMAIN',
+            ),
+        )
+
+        csr, _key = _make_naked_csr()
+        r = client.post(
+            ISSUE_URL, data=_build_rst(csr),
+            headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+        )
+        assert r.status_code == 400
+
     # Golden reference: a real ADCS-issued User certificate pulled from the
     # lab (dc1.hagland.domain's "Active Directory Enrollment Policy",
     # enrolled interactively as roy.hagland). Confirms the exact subject

@@ -76,7 +76,7 @@ export default function AdConnectorForm({ config, onSave, onCancel }) {
         </label>
       </div>
 
-      {!formData.verify_ssl && (
+      {formData.verify_ssl && (
         <Textarea
           label={t('adConnector.caBundle')}
           value={formData.ca_bundle}

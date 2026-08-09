@@ -10,7 +10,7 @@ Two things live here:
    computer account's sAMAccountName, and is the only signal available to
    tell "this is a machine" apart from "this is a user" -- there is no
    template selector anywhere in MS-WSTEP's wire protocol to key off instead
-   (see wstep_service.py's ``_match_template_oid`` docstring).
+   (see wstep_service.py's ``_match_template`` docstring).
 
 2. The actual AD lookups (``lookup_computer_dns_hostname``,
    ``lookup_user_ad_identity``) MS-WSTEP's Kerberos issuance path uses to
@@ -53,6 +53,48 @@ def parse_kerberos_principal(principal):
     if not local or not realm:
         return None
     return local, realm
+
+
+def _realm_from_base_dn(base_dn):
+    """``'DC=hagland,DC=domain'`` -> ``'HAGLAND.DOMAIN'`` -- the standard AD
+    convention of domain DNS name == Kerberos realm (upper-cased). ``None``
+    if the DN has no DC components at all (malformed base_dn)."""
+    from ldap3.utils.dn import parse_dn
+
+    try:
+        components = parse_dn(base_dn)
+    except Exception:
+        return None
+    dc_values = [value for attr, value, _sep in components if attr.upper() == 'DC']
+    if not dc_values:
+        return None
+    return '.'.join(dc_values).upper()
+
+
+def realm_matches_connector(realm):
+    """Whether ``realm`` (from an authenticated Kerberos principal, e.g.
+    ``'HAGLAND.DOMAIN'``) matches the domain this AD Connector is configured
+    against, so a caller can refuse to map a principal from an unexpected
+    realm to a same-named ``sAMAccountName`` in *this* domain -- Kerberos
+    cross-realm trust means a client_principal's realm isn't necessarily the
+    domain UCM's AD Connector actually points at, and ``sAMAccountName``
+    alone (what ``parse_kerberos_principal`` splits it into) is not globally
+    unique the way a realm-qualified principal is.
+
+    False (fail closed) if the connector isn't configured/enabled, its
+    base_dn doesn't parse to a realm, or ``realm`` is empty -- callers must
+    treat that identically to "lookup not possible", not "skip the check".
+    Never raises.
+    """
+    if not realm:
+        return False
+    from models import ADConnectorConfig
+
+    config = ADConnectorConfig.get_singleton()
+    if not config or not config.enabled or not config.base_dn:
+        return False
+    connector_realm = _realm_from_base_dn(config.base_dn)
+    return bool(connector_realm) and connector_realm == realm.upper()
 
 
 def is_machine_principal(principal):
@@ -103,6 +145,14 @@ def _build_tls(config):
     return ldap3.Tls(validate=ssl.CERT_REQUIRED), cleanup
 
 
+# Every lookup here runs synchronously inside a WSTEP/XCEP request handler
+# (gevent-cooperative, but still blocking that greenlet) -- a black-holed
+# or firewall-dropped DC with no timeout would stall the enrollment request
+# indefinitely instead of failing closed like every other error mode here.
+_LDAP_CONNECT_TIMEOUT_SECONDS = 10
+_LDAP_RECEIVE_TIMEOUT_SECONDS = 10
+
+
 def _connect(config):
     """Bind as the connector's service account. Returns an open, bound
     ``ldap3.Connection``. Raises on any failure -- callers translate that
@@ -113,11 +163,11 @@ def _connect(config):
     try:
         server = ldap3.Server(
             config.server, port=config.port, use_ssl=config.use_ssl,
-            tls=tls, get_info=ldap3.ALL,
+            tls=tls, get_info=ldap3.ALL, connect_timeout=_LDAP_CONNECT_TIMEOUT_SECONDS,
         )
         return ldap3.Connection(
             server, user=config.bind_dn, password=config.bind_password,
-            auto_bind=True, check_names=False,
+            auto_bind=True, check_names=False, receive_timeout=_LDAP_RECEIVE_TIMEOUT_SECONDS,
         )
     finally:
         # auto_bind=True performs the TLS handshake synchronously above, so

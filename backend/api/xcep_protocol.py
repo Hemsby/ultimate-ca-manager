@@ -81,12 +81,17 @@ def _check_credentials(username, password):
     if not (xcep_username and xcep_password and xcep_username.value and xcep_password.value):
         return False
 
-    username_match = hmac.compare_digest(username, xcep_username.value)
+    # hmac.compare_digest on two `str` operands requires both to be
+    # ASCII-only and raises TypeError otherwise -- a non-ASCII Basic-auth
+    # username/password would 500 instead of the SOAP auth-failed fault
+    # every other bad-credential case gets. bytes operands have no such
+    # restriction, so encode first.
+    username_match = hmac.compare_digest(username.encode('utf-8'), xcep_username.value.encode('utf-8'))
     from werkzeug.security import check_password_hash
     if xcep_password.value.startswith(('scrypt:', 'pbkdf2:')):
         password_match = check_password_hash(xcep_password.value, password)
     else:
-        password_match = hmac.compare_digest(password, xcep_password.value)
+        password_match = hmac.compare_digest(password.encode('utf-8'), xcep_password.value.encode('utf-8'))
     return username_match and password_match
 
 

@@ -87,12 +87,17 @@ def _check_credentials(username, password):
     if not (wstep_username and wstep_password and wstep_username.value and wstep_password.value):
         return False
 
-    username_match = hmac.compare_digest(username, wstep_username.value)
+    # hmac.compare_digest on two `str` operands requires both to be
+    # ASCII-only and raises TypeError otherwise -- a non-ASCII Basic-auth
+    # username/password would 500 instead of the SOAP auth-failed fault
+    # every other bad-credential case gets. bytes operands have no such
+    # restriction, so encode first.
+    username_match = hmac.compare_digest(username.encode('utf-8'), wstep_username.value.encode('utf-8'))
     from werkzeug.security import check_password_hash
     if wstep_password.value.startswith(('scrypt:', 'pbkdf2:')):
         password_match = check_password_hash(wstep_password.value, password)
     else:
-        password_match = hmac.compare_digest(password, wstep_password.value)
+        password_match = hmac.compare_digest(password.encode('utf-8'), wstep_password.value.encode('utf-8'))
     return username_match and password_match
 
 
@@ -199,7 +204,7 @@ def _issue_and_respond(ca, parsed, username, action='certificate.issued', kerber
     """
     cert_pem, error = wstep_service.issue(
         ca, parsed.csr_der, _validity_days(), require_pop=not parsed.was_pkcs7_wrapped,
-        kerberos_principal=kerberos_principal,
+        kerberos_principal=kerberos_principal, outer_signed_data=parsed.outer_signed_data,
     )
     if error:
         return _fault_response(error, status=400, relates_to=parsed.message_id)
@@ -346,7 +351,7 @@ def renew_certificate_bound():
         return _fault_response(f'Malformed request: {e}', status=400)
 
     cert_pem, error = wstep_service.renew(
-        ca, parsed.csr_der, parsed.security_header, _validity_days(),
+        ca, parsed.csr_der, parsed.security_header, parsed.csr_element, _validity_days(),
         require_pop=not parsed.was_pkcs7_wrapped,
     )
     if error:

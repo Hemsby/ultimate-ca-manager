@@ -131,6 +131,19 @@ def test_get_policies_rejects_bad_credentials(client, xcep_config):
     assert 'WWW-Authenticate' not in r.headers
 
 
+def test_get_policies_rejects_non_ascii_credentials_without_crashing(client, xcep_config):
+    """hmac.compare_digest on two `str` operands raises TypeError for
+    non-ASCII input -- a wrong-but-non-ASCII Basic-auth credential must
+    still get the normal SOAP auth-failed fault (400), not an unhandled
+    500."""
+    token = base64.b64encode('xcep-test:wröng-pässwörd'.encode('utf-8')).decode()
+    r = client.post(
+        XCEP_URL, data=b'<GetPolicies/>',
+        headers={'Authorization': f'Basic {token}'},
+    )
+    assert r.status_code == 400
+
+
 def _get_policies_request_with_username_token(username, password, message_id='urn:uuid:test-1'):
     """Build a real GetPolicies request authenticated via WS-Security
     UsernameToken in the SOAP header — the actual mechanism a real

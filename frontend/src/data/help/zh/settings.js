@@ -74,6 +74,8 @@ export default {
           { label: 'HTTPS', text: 'UCM Web 界面的 TLS 证书' },
           { label: '更新', text: '检查新版本、查看变更日志、自动更新（DEB/RPM）' },
           { label: 'Webhook', text: '证书事件（签发、吊销、过期）的 HTTP Webhook — 允许内部 LAN URL；阻止云元数据 IP。可选出站认证：Bearer、Basic、API 密钥或自定义标头' },
+          { label: 'Active Directory', text: 'UCM 自身的 AD/LDAP 连接，用于与证书相关的查询（Kerberos 主体解析、AD 派生主题）' },
+          { label: 'Windows 自动注册', text: 'MS-XCEP/MS-WSTEP 原生 Windows 注册：策略发现、证书签发和 Kerberos/SPNEGO 绑定' },
         ]
       },
       {
@@ -84,6 +86,27 @@ export default {
           { label: 'Microsoft 365 / Outlook.com', text: '注册具有 SMTP.Send 委派权限的 Azure AD 应用' },
           { label: '刷新令牌', text: 'UCM 存储刷新令牌并在每次发送前自动续订访问令牌' },
           { label: '回退', text: '未配置 OAuth2 时,密码认证仍受支持' },
+        ]
+      },
+      {
+        title: 'Active Directory 连接器',
+        content: 'UCM 自身与 Active Directory 的 LDAP 连接，独立于在 SSO 下配置的任何 LDAP 提供程序 —— 后者用于登录 UCM，前者用于与证书相关的 AD 查询。',
+        items: [
+          { label: '用途', text: '将 Kerberos 计算机或用户主体解析为其 AD 对象，以便 UCM 能像真实 Windows CA 一样派生证书主题/SAN' },
+          { label: '字段', text: '服务器、端口、可选 CA 验证的 LDAPS、Base DN、Bind DN/密码' },
+          { label: '测试连接', text: '保存前验证连通性和凭据' },
+          { label: 'GPO 注册 URL', text: '要在组策略中注册的 Kerberos 和用户名/密码证书注册策略 URL' },
+        ]
+      },
+      {
+        title: 'Windows 自动注册（XCEP/WSTEP）',
+        content: '通过 MS-XCEP 策略发现和 MS-WSTEP 签发实现的原生 Windows 证书注册 —— 支持 MMC/certreq 手动注册和无人值守的 GPO 自动注册。',
+        items: [
+          { label: 'XCEP', text: '使 Windows 客户端能够在注册前发现可用的证书模板' },
+          { label: 'WSTEP', text: '在发现策略后处理证书请求和续订' },
+          { label: 'Kerberos/SPNEGO', text: '绑定用于静默 GPO 自动注册的 Kerberos 身份验证端点（需要来自域控制器的 SPN 和 keytab）' },
+          { label: '设置清单', text: '该标签页会实时显示手动和无人值守注册所需的已配置项与待配置项' },
+          { label: 'AD 派生主题', text: '模板可以选择通过 AD 连接器从 Active Directory 派生其主题/SAN，用于无人值守注册' },
         ]
       },
 
@@ -336,6 +359,52 @@ UCM 支持两种数据库后端：
 - **保留**：保留最近 N 个，清理较旧的
 - 使用备份密码**加密**备份
 
+
+## Active Directory 连接器
+
+UCM 自身与 Active Directory 的 LDAP 连接，独立于在 SSO 下配置的任何 LDAP 提供程序。后者用于登录 UCM；前者用于与证书相关的 AD 查询，且无论是否配置了 SSO 均可独立工作。
+
+- **用途** — 将 Kerberos 计算机或用户主体解析为其 AD 对象，以便 UCM 能像真实 Windows CA 一样派生证书主题/SAN
+- **服务器** — 域控制器的主机名/IP 和端口
+- **LDAPS** — 切换以通过 SSL/TLS 使用 LDAP；**验证 SSL 证书** 验证域控制器的证书（当证书不受公共信任时，可选地针对自定义 CA 证书包进行验证）
+- **Base DN** 和 **Bind DN / 密码** — 用于查询的服务账户凭据
+- **测试连接** — 保存前验证连通性和凭据
+
+### GPO 注册策略 URL
+
+配置完成后，在组策略中（公钥策略 → 证书服务客户端 – 证书注册策略）将其中一个显示的 URL 注册为证书注册策略服务器，并同时配置证书服务客户端 – 自动注册：
+- **Kerberos** — 无需凭据提示；需要已加入域的客户端，并将 GPO 的身份验证类型设置为 Kerberos
+- **用户名/密码** — 需要输入凭据；仅用于交互式的“申请新证书”注册
+
+## Windows 自动注册（XCEP/WSTEP）
+
+通过 **MS-XCEP**（策略发现）和 **MS-WSTEP**（证书签发和续订）实现的原生 Windows 证书注册 —— 与真实 ADCS 用于 MMC“申请新证书”、\`certreq\` 和无人值守 GPO 自动注册的协议相同。
+
+### 设置清单
+
+该标签页会跟踪手动和无人值守注册路径所需的已配置项与待配置项 —— 证书颁发机构、策略发现 (XCEP)、证书签发 (WSTEP)，以及针对无人值守 GPO 自动注册所需的 Active Directory 连接器、Kerberos/SPNEGO，以及至少一个允许自动注册的模板。
+
+### 策略发现 (XCEP)
+
+- **证书颁发机构** — 公布其模板并通过此配置签发证书的 CA
+- **有效期（天）** — 应用于通过 WSTEP 签发的证书的默认有效期
+
+### Kerberos / SPNEGO
+
+绑定用于静默 GPO 自动注册的、经 Kerberos 身份验证的 XCEP/WSTEP 端点，使计算机和用户通过其 Kerberos 票证进行身份验证，而不是弹出凭据提示：
+- **服务主体名称 (SPN)** — 例如 \`HTTP/ucm.example.com@EXAMPLE.COM\`
+- **Keytab** — 在域控制器上使用 \`ktpass\` 或 \`ktutil\` 为上述 SPN 生成
+
+> ⚠ 如果未安装服务器端 SPNEGO 库，即使在此处启用，Kerberos 身份验证也无法工作 —— 该标签页会显示警告。
+
+### 注册策略 URL
+
+- **用户名/密码** — 需要输入凭据；用于交互式的“申请新证书”注册，不需要 Active Directory
+- **Kerberos** — 无需凭据提示；需要已加入域的客户端和 GPO 配置
+
+### AD 派生主题
+
+证书模板可以选择**从 Active Directory 构建主题**（模板 → 注册）：对于无人值守的 GPO 自动注册，主题和 SAN 通过 AD 连接器从请求者的 AD 对象派生，而不要求客户端提供 —— 与真实 ADCS 模板配置自动注册的方式一致。与此独立，**允许自动注册** 会在证书注册策略中将模板公布为 \`autoEnroll=true\`，使经 GPO/Kerberos 身份验证的客户端在登录时自动请求它。
 `
   }
 }

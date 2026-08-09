@@ -49,20 +49,34 @@ def ssl_context(conf, default_ssl_context_factory):
     which client certificate to offer. We call SSL_CTX_set_client_CA_list()
     via ctypes to fix this.
 
-    Also caps the negotiated protocol at TLS 1.2. When this context offers
-    TLS 1.3 but a client's ClientHello only proposes TLS 1.2 (no
-    supported_versions extension — true of some Windows schannel clients,
-    observed here with MS-WSTEP/CEP enrollment traffic), OpenSSL 3.x sets
-    the RFC 8446 §4.1.3 downgrade-protection sentinel in ServerHello.random.
-    That's spec-compliant, but at least some real-world TLS-1.2-only
-    clients abort the connection on seeing it rather than ignoring it (they
-    never asked for 1.3, so per spec they have no reason to be checking for
-    the sentinel at all, but empirically some do anyway). The sentinel is
-    only ever emitted when the server itself could have negotiated 1.3;
-    capping this context to a max of 1.2 removes the trigger entirely.
+    Also caps the negotiated protocol at TLS 1.2, but *only* when WSTEP is
+    administratively enabled. When this context offers TLS 1.3 but a
+    client's ClientHello only proposes TLS 1.2 (no supported_versions
+    extension — true of some Windows schannel clients, observed here with
+    MS-WSTEP/CEP enrollment traffic), OpenSSL 3.x sets the RFC 8446 §4.1.3
+    downgrade-protection sentinel in ServerHello.random. That's
+    spec-compliant, but at least some real-world TLS-1.2-only clients abort
+    the connection on seeing it rather than ignoring it (they never asked
+    for 1.3, so per spec they have no reason to be checking for the
+    sentinel at all, but empirically some do anyway). The sentinel is only
+    ever emitted when the server itself could have negotiated 1.3; capping
+    this context to a max of 1.2 removes the trigger entirely.
+
+    This same listening socket also serves everything else UCM does
+    (browsers, ACME, SCEP, EST, the admin API) — TLS version negotiation
+    happens before the HTTP path is known, so there's no way to cap only
+    WSTEP traffic without a separate port. Scoping the cap to
+    ``WSTEP_TLS12_CAP_NEEDED`` (read once at worker startup, see
+    ``_wstep_enabled`` below) means installs that never touch Windows
+    autoenrollment keep TLS 1.3 for everything else, instead of every UCM
+    instance silently losing it by default. ``api/v2/wstep.py`` restarts
+    the service whenever ``wstep_enabled`` is toggled, so this stays in
+    sync with the setting rather than only taking effect on the next
+    unrelated restart.
     """
     ctx = default_ssl_context_factory()
-    ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+    if WSTEP_TLS12_CAP_NEEDED:
+        ctx.maximum_version = ssl.TLSVersion.TLSv1_2
     if conf.ca_certs:
         try:
             import ctypes
@@ -92,6 +106,32 @@ def ssl_context(conf, default_ssl_context_factory):
             print(f"mTLS: could not set client CA list (non-fatal): {e}",
                   file=sys.stderr)
     return ctx
+
+
+def _wstep_enabled():
+    """Whether WSTEP is administratively enabled, read directly from the
+    database at worker startup — same raw-sqlite3 approach as
+    _load_mtls_config, to avoid a Flask/SQLAlchemy dependency this early.
+    Determines whether the TLS 1.2 cap in ssl_context() is needed at all.
+    """
+    db_path = os.path.join(data_path, 'ucm.db')
+    if not os.path.exists(db_path):
+        return False
+
+    import sqlite3
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM system_config WHERE key = 'wstep_enabled'")
+        row = cursor.fetchone()
+        conn.close()
+        return bool(row) and row[0] == 'true'
+    except Exception as e:
+        print(f"WSTEP: config load failed, assuming disabled: {e}", file=sys.stderr)
+        return False
+
+
+WSTEP_TLS12_CAP_NEEDED = _wstep_enabled()
 
 
 def _load_mtls_config():

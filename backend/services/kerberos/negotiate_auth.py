@@ -39,6 +39,16 @@ distinct clients negotiating concurrently from behind the same source IP
 closed (the wrong context's crypto just won't verify, forcing a retry),
 not open.
 
+This module relies on the underlying krb5 library's own replay cache
+(enabled by default in both MIT and Heimdal krb5, and not something this
+code disables or configures) to reject a captured/replayed
+AP-REQ -- gss_accept_sec_context() only ever sees a token once per
+legitimate exchange, so there is no additional replay protection at this
+layer, nor in _pending_contexts (which key on source IP for
+handshake-continuation, not on ticket identity). Do not disable the krb5
+replay cache (e.g. via KRB5RCACHETYPE=none) on a host running this
+acceptor.
+
 Lives outside ``services/xcep``/``services/wstep`` because one keytab/SPN
 authenticates both protocols' Kerberos endpoints — they run on the same host
 under the same identity, the same way a single machine's Kerberos identity
@@ -186,6 +196,32 @@ def _ensure_krb5_ktname():
         _ktname_synced_for = target
 
 
+def _is_kerberos_negotiated(server):
+    """Whether `server.negotiated_protocol` is actually ``'kerberos'``.
+
+    Every "authenticated" return point in ``authenticate_negotiate`` treats
+    this acceptor as provably single-mechanism -- "this acceptor only ever
+    holds a Kerberos keytab, no NTLM credential is ever configured" -- to
+    justify skipping SPNEGO's downgrade-detection MIC round in the
+    early-accept branch below. That's only actually true if pyspnego agrees
+    Kerberos is what got negotiated; checking here turns the assumption into
+    an enforced invariant instead of trusting configuration alone. pyspnego
+    resolves `negotiated_protocol` to `'ntlm'`, `'kerberos'`, or `None` (not
+    yet resolved) off the exact same internal state as `client_principal`
+    (confirmed in pyspnego's source: both are gated on `self._context_list`
+    in `_negotiate.py`), so by the time a caller here has a truthy
+    `client_principal` to check, this is never `None` for a real Kerberos
+    exchange -- only a genuine NTLM negotiation would fail it.
+    """
+    if server.negotiated_protocol == 'kerberos':
+        return True
+    logger.warning(
+        "Kerberos/SPNEGO: rejecting authenticated context with unexpected "
+        "negotiated_protocol=%r (expected 'kerberos')", server.negotiated_protocol,
+    )
+    return False
+
+
 @dataclass
 class NegotiateResult:
     status: str  # 'challenge', 'continue', 'authenticated', or 'failed'
@@ -292,7 +328,11 @@ def authenticate_negotiate(auth_header, connection_key):
         # this acceptor only ever holds a Kerberos keytab -- no NTLM
         # credential is ever configured -- so there is no weaker mechanism
         # for a client to have been downgraded *to*, which is what that MIC
-        # exists to detect.
+        # exists to detect. _is_kerberos_negotiated below turns "no weaker
+        # mechanism configured" into a checked invariant rather than an
+        # assumption.
+        if not _is_kerberos_negotiated(server):
+            return NegotiateResult(status='failed', error='Kerberos authentication failed')
         return NegotiateResult(status='authenticated', client_principal=server.client_principal)
 
     if not server.complete:
@@ -304,6 +344,8 @@ def authenticate_negotiate(auth_header, connection_key):
         _pending_contexts[connection_key] = (server, time.monotonic() + _PENDING_CONTEXT_TTL_SECONDS)
         return NegotiateResult(status='continue', response_token_b64=base64.b64encode(out_token).decode('ascii'))
 
+    if not _is_kerberos_negotiated(server):
+        return NegotiateResult(status='failed', error='Kerberos authentication failed')
     response_b64 = base64.b64encode(out_token).decode('ascii') if out_token else None
     return NegotiateResult(
         status='authenticated',

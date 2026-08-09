@@ -62,6 +62,15 @@ def update_wstep_config():
     """Update WSTEP configuration in database"""
     data = request.json or {}
 
+    # gunicorn_config.py reads wstep_enabled once at worker startup to
+    # decide whether the whole server needs the TLS-1.2-only cap some
+    # Windows WSTEP/CEP clients require (see its ssl_context() docstring)
+    # -- a toggle here needs a restart to actually take effect, same as
+    # the HTTPS certificate change below.
+    enabled_changed = 'enabled' in data and (
+        (get_config('wstep_enabled', 'false') == 'true') != bool(data['enabled'])
+    )
+
     if 'enabled' in data:
         set_config('wstep_enabled', 'true' if data['enabled'] else 'false')
     if 'ca_refid' in data:
@@ -103,5 +112,24 @@ def update_wstep_config():
         details='Updated WSTEP configuration',
         success=True
     )
+
+    if enabled_changed:
+        from config.settings import is_docker
+        if is_docker():
+            return success_response(
+                message='WSTEP configuration saved. Restart the container to apply the TLS behavior change.',
+                data={'requires_container_restart': True},
+            )
+
+        from utils.service_manager import restart_service
+        success, msg = restart_service()
+        if not success:
+            logger.warning("WSTEP config saved but service restart failed: %s", msg)
+            return success_response(
+                message='WSTEP configuration saved, but the automatic restart failed -- '
+                        'restart UCM manually for the TLS behavior change to take effect.',
+                data={'restart_failed': True},
+            )
+        return success_response(message='WSTEP configuration saved. Service restarting...')
 
     return success_response(message='WSTEP configuration saved')

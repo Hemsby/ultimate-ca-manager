@@ -132,11 +132,10 @@ def _validate_csr(csr, require_pop=True, allow_naked_subject=False):
     - ``require_pop=False`` skips the self-signature check. Real Windows
       "Full PKCS#7" requests (see ``rst_parser._unwrap_pkcs7_csr``) embed
       a PKCS#10 CertificationRequest whose own self-signature does not
-      reliably verify — proof of possession there is meant to come from
-      the *outer* CMS SignedData's signature instead. Verifying that
-      outer signature against a trusted identity is not implemented here,
-      so CMC-wrapped requests currently have no cryptographic PoP check
-      at all. Flagged clearly rather than silently assumed secure.
+      reliably verify — proof of possession there comes from the *outer*
+      CMS SignedData's signature instead, checked separately by
+      ``_verify_pkcs7_pop`` (only ``issue()`` calls it — see its
+      docstring for why).
     - An empty Subject is accepted when the CSR carries a
       SubjectAlternativeName instead (SAN-only identity is standard
       modern TLS practice).
@@ -174,6 +173,62 @@ def _validate_csr(csr, require_pop=True, allow_naked_subject=False):
     return None
 
 
+def _verify_pkcs7_pop(csr, outer_signed_data):
+    """Proof of possession for a PKCS#7/CMC-wrapped CSR, via the outer
+    envelope's own CMS signature — see ``rst_parser.ParsedRST.outer_signed_data``.
+
+    Confirmed against a real Windows client request captured from the lab
+    (2026-08-09, win11.hagland.domain -> ucm2.vm.hagland.home): real
+    CertEnroll "Full PKCS#7" requests embed no certificate at all (the
+    outer SignedData's ``certificates`` is empty) — the sole SignerInfo
+    identifies itself purely via a ``subjectKeyIdentifier`` that is the
+    RFC 5280 §4.2.1.2 method-1 SKI (SHA-1 of the SubjectPublicKeyInfo) of
+    the *same* key as the inner CSR, and the CMS signature verifies
+    directly against that CSR's own public key. So the outer signature
+    genuinely proves possession of the CSR's private key, just not via a
+    certificate the way SCEP's equivalent check does.
+
+    Without this, ``issue()``'s UsernamePassword/Kerberos-bound paths
+    (the only ones that call this — ``renew()`` doesn't: a renewal RST is
+    already WS-Security-signed by an existing, UCM-trusted certificate)
+    had no cryptographic proof at all that a PKCS#7-wrapped CSR's
+    submitter controlled the CSR's private key. A holder of the shared
+    UsernamePassword credential could submit any public key — one they
+    don't control — and receive a UCM-issued certificate binding it to
+    whatever subject the CSR (or an AD-derived override) requested.
+
+    Returns an error string, or None if the envelope proves possession.
+    """
+    from services.scep.message_parser import verify_cms_signature
+
+    try:
+        signer_infos = outer_signed_data['signer_infos']
+    except Exception:
+        return 'Invalid PKCS#7 envelope'
+    if len(signer_infos) == 0:
+        return 'PKCS#7 envelope has no signature'
+
+    sid = signer_infos[0]['sid']
+    if sid.name != 'subject_key_identifier':
+        return 'PKCS#7 envelope does not identify itself by the request key'
+
+    csr_pubkey = csr.public_key()
+    expected_ski = x509.SubjectKeyIdentifier.from_public_key(csr_pubkey).digest
+    try:
+        actual_ski = sid.chosen.native
+    except Exception:
+        return 'Invalid PKCS#7 envelope'
+    if actual_ski != expected_ski:
+        return 'PKCS#7 envelope signer does not match the CSR public key'
+
+    try:
+        verify_cms_signature(outer_signed_data, csr_pubkey)
+    except Exception:
+        return 'PKCS#7 envelope signature invalid (proof of possession failed)'
+
+    return None
+
+
 def _san_values(cert_or_csr):
     """SAN entries as a set of (type, value) pairs — mirrors EST's
     ``_san_values``, order/criticality irrelevant to identity match."""
@@ -202,14 +257,9 @@ def _load_csr(csr_der):
         return None, 'Invalid CSR encoding'
 
 
-def _match_template_oid(ca, csr):
+def _match_template(ca, csr):
     """Best-effort match of the CSR's requested EKU against the CA's
-    advertised templates (the same set XCEP's GetPolicies exposed), to
-    pick which template's OID to stamp on the issued cert via
-    ``ms_certificate_template_oid`` (see csr_operations_mixin's
-    ``_certificate_template_extension`` — a real Windows client fails
-    CX509Enrollment::Enroll with CERTSRV_E_PROPERTY_EMPTY when the issued
-    cert carries no Certificate Template extension).
+    advertised templates (the same set XCEP's GetPolicies exposed).
 
     There is no explicit "which template did you pick" signal in the RST
     or CSR to key off instead: a real captured Windows request's CMC
@@ -220,14 +270,21 @@ def _match_template_oid(ca, csr):
     This is a real limitation, not a corner case: two templates can
     legitimately want the same EKU (e.g. "Web Server" and "VPN Server"
     both want serverAuth-only), and ties break on lowest template id —
-    arbitrary but deterministic. Returns None (extension omitted
-    entirely) if nothing matches at all.
+    arbitrary but deterministic. Returns the matched ``CertificateTemplate``
+    row, or ``None`` if nothing matches at all.
+
+    Callers use the matched row two ways: its policy OID (via
+    ``policy_builder._policy_oid_for_template``) for the issued cert's
+    ``ms_certificate_template_oid`` — a real Windows client fails
+    CX509Enrollment::Enroll with CERTSRV_E_PROPERTY_EMPTY when the cert
+    carries no Certificate Template extension — and its own configured
+    EKUs (``_template_extra_ekus``) as ``extra_ekus``.
     """
     try:
         import json
 
         from models import CertificateTemplate
-        from services.xcep.policy_builder import _EKU_OIDS, _policy_oid_for_template, _resolve_templates_for_ca
+        from services.xcep.policy_builder import _EKU_OIDS, _resolve_templates_for_ca
     except Exception:
         return None
 
@@ -260,14 +317,45 @@ def _match_template_oid(ca, csr):
 
     if best is None or best_score < 0:
         return None
-    return _policy_oid_for_template(ca, best)
+    return best
+
+
+def _template_extra_ekus(template):
+    """The EKU OIDs (dotted strings) an admin configured on ``template``,
+    for the ``extra_ekus`` kwarg of ``CAService.sign_csr_from_crypto``.
+
+    Upstream's CSR-EKU cap (security audit v2.203 item #3) caps whatever
+    EKU a CSR carries to what the resolved ``cert_type`` permits, and never
+    honours Microsoft Smartcard Logon from a CSR's own EKU extension at
+    all, regardless of cert_type — an operator who wants it has to pass it
+    explicitly. WSTEP has no cert_type granular enough to express "whatever
+    this specific template needs" (a CA can mix serverAuth-only and
+    Smartcard-Logon templates), so it passes the matched template's own
+    configured EKUs here instead: extra_ekus is merged in uncapped, since
+    it's exactly the admin intent the cap is designed to still allow.
+    Returns ``[]`` for ``None``/an unconfigured template.
+    """
+    import json
+
+    from services.xcep.policy_builder import _EKU_OIDS
+
+    if template is None:
+        return []
+    try:
+        parsed = json.loads(template.extensions_template or '{}')
+    except (TypeError, ValueError):
+        return []
+    names = parsed.get('extended_key_usage') if isinstance(parsed, dict) else None
+    if not isinstance(names, list):
+        return []
+    return [_EKU_OIDS[name] for name in names if name in _EKU_OIDS]
 
 
 def _user_ad_derivation_enabled(ca):
     """Whether any template resolvable for ``ca`` has opted into
     AD-derived user subjects (``CertificateTemplate.ad_derived_subject``).
 
-    Deliberately independent of ``_match_template_oid``'s EKU-based
+    Deliberately independent of ``_match_template``'s EKU-based
     scoring above: a naked CSR (the only kind this ever applies to — see
     ``issue()``) carries no EKU extension, so it scores negative against
     any candidate template that declares EKUs at all, meaning EKU-based
@@ -275,7 +363,7 @@ def _user_ad_derivation_enabled(ca):
     silently never fire. This only asks "did an admin opt any template
     into AD-derivation for this CA," mirroring how the machine branch below
     has no template dependency either — MS-WSTEP's wire protocol has no
-    template-selection signal to check instead (see ``_match_template_oid``'s
+    template-selection signal to check instead (see ``_match_template``'s
     docstring).
     """
     try:
@@ -289,13 +377,18 @@ def _user_ad_derivation_enabled(ca):
     return any(getattr(t, 'ad_derived_subject', False) for t in candidates)
 
 
-def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos_principal=None):
-    """UsernamePassword-bound initial enrollment. Returns (cert_pem, error).
+def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos_principal=None,
+          outer_signed_data=None):
+    """UsernamePassword- or Kerberos-bound initial enrollment. Returns
+    (cert_pem, error).
 
     ``require_pop=False`` is passed by ``wstep_protocol.py`` when the CSR
     was unwrapped from a PKCS#7/CMC envelope (``ParsedRST.was_pkcs7_wrapped``)
     — see ``_validate_csr`` for why that inner CSR's self-signature can't
-    be relied on for real Windows clients.
+    be relied on for real Windows clients. ``outer_signed_data`` (also only
+    passed in that case — ``ParsedRST.outer_signed_data``) is verified via
+    ``_verify_pkcs7_pop`` instead, so a PKCS#7-wrapped CSR is never accepted
+    with no proof of possession at all.
 
     ``kerberos_principal``: the authenticated Kerberos principal, e.g.
     ``'WIN11$@HAGLAND.DOMAIN'`` (machine) or ``'roy.hagland@HAGLAND.DOMAIN'``
@@ -311,7 +404,7 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
     - Machine principal: ``CN=<computer's AD dnsHostName>``, no SAN needed
       (the certificate's own CN synthesizes a matching SAN downstream).
       Unconditional on any template -- MS-WSTEP has no template-selection
-      signal to gate it on (see ``_match_template_oid``'s docstring), and
+      signal to gate it on (see ``_match_template``'s docstring), and
       this is the already lab-verified path; it must not gain a new
       failure mode from the toggle below.
     - User principal: the AD user object's own directory-path DN as the
@@ -346,6 +439,19 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
     if kerberos_principal and _is_naked_csr(csr):
         from services.ad_connector import lookup
         parsed = lookup.parse_kerberos_principal(kerberos_principal)
+        if parsed and not lookup.realm_matches_connector(parsed[1]):
+            # Kerberos cross-realm trust means the ticket's realm isn't
+            # necessarily the domain the AD Connector is configured
+            # against; sAMAccountName alone (parsed[0]) isn't globally
+            # unique the way a realm-qualified principal is, so a mismatch
+            # here must not fall through to a same-named account lookup in
+            # the wrong domain -- see lookup.realm_matches_connector.
+            logger.warning(
+                "AD Connector: Kerberos principal %r realm does not match the "
+                "configured connector's domain -- refusing to derive a subject",
+                kerberos_principal,
+            )
+            parsed = None
         if parsed:
             sam_account_name, _realm = parsed
             if lookup.is_machine_principal(kerberos_principal):
@@ -382,13 +488,29 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
     if err:
         return None, err
 
+    if outer_signed_data is not None:
+        err = _verify_pkcs7_pop(csr, outer_signed_data)
+        if err:
+            return None, err
+
+    matched_template = _match_template(ca, csr)
+    template_oid = None
+    if matched_template is not None:
+        from services.xcep.policy_builder import _policy_oid_for_template
+        template_oid = _policy_oid_for_template(ca, matched_template)
+
     try:
         cert_pem, _serial = CAService.sign_csr_from_crypto(
             ca=ca, csr=csr, validity_days=validity_days, source=source,
             require_pop=require_pop,
-            ms_certificate_template_oid=_match_template_oid(ca, csr),
+            ms_certificate_template_oid=template_oid,
             override_subject=override_subject,
             override_san=override_san,
+            # Upstream's CSR-EKU cap (see _template_extra_ekus) never
+            # honours Microsoft Smartcard Logon from a CSR's own EKU
+            # extension, whatever cert_type is — extra_ekus is the only
+            # way a Smartcard Logon template still issues correctly.
+            extra_ekus=_template_extra_ekus(matched_template),
         )
     except Exception as e:
         logger.error('WSTEP issue failed: %s', e)
@@ -397,7 +519,7 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
     return cert_pem, None
 
 
-def renew(ca, csr_der, security_header, validity_days, source='wstep', require_pop=True):
+def renew(ca, csr_der, security_header, csr_element, validity_days, source='wstep', require_pop=True):
     """Certificate-bound renewal: the RST is signed with the client's
     current certificate's private key. Returns (cert_pem, error).
 
@@ -405,11 +527,18 @@ def renew(ca, csr_der, security_header, validity_days, source='wstep', require_p
     wrapped too, and the outer WS-Security signature already authenticates
     the caller here, so the inner CSR's own self-signature matters even
     less than it does for the UsernamePassword-bound issue path.
+
+    ``csr_element``: see ``rst_parser.ParsedRST.csr_element`` and
+    ``ws_security.SignedContent`` for why this must be checked against
+    the verified signature rather than trusting ``csr_der`` alone.
     """
     try:
-        signing_cert_der = ws_security.verify_signed_request(security_header)
+        signing_cert_der, signed_content = ws_security.verify_signed_request(security_header)
     except ws_security.WSSecurityError as e:
         return None, str(e)
+
+    if not signed_content.covers(csr_element):
+        return None, 'CSR is not covered by the request signature'
 
     try:
         signing_cert = x509.load_der_x509_certificate(signing_cert_der)
@@ -443,11 +572,19 @@ def renew(ca, csr_der, security_header, validity_days, source='wstep', require_p
     if not _san_matches(signing_cert, csr):
         return None, 'CSR SubjectAltName does not match signing certificate'
 
+    matched_template = _match_template(ca, csr)
+    template_oid = None
+    if matched_template is not None:
+        from services.xcep.policy_builder import _policy_oid_for_template
+        template_oid = _policy_oid_for_template(ca, matched_template)
+
     try:
         cert_pem, _serial = CAService.sign_csr_from_crypto(
             ca=ca, csr=csr, validity_days=validity_days, source=source,
             renewal_of=signing_cert, require_pop=require_pop,
-            ms_certificate_template_oid=_match_template_oid(ca, csr),
+            ms_certificate_template_oid=template_oid,
+            # See issue()'s matching kwarg for why.
+            extra_ekus=_template_extra_ekus(matched_template),
         )
     except Exception as e:
         logger.error('WSTEP renew failed: %s', e)

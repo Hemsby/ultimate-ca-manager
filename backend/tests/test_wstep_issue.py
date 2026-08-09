@@ -187,6 +187,20 @@ def test_issue_rejects_bad_credentials(client, wstep_config):
         headers={'Authorization': f'Basic {token}'},
     )
     assert r.status_code == 400
+
+
+def test_issue_rejects_non_ascii_credentials_without_crashing(client, wstep_config):
+    """hmac.compare_digest on two `str` operands raises TypeError for
+    non-ASCII input -- a wrong-but-non-ASCII Basic-auth credential must
+    still get the normal SOAP auth-failed fault (400), not an unhandled
+    500."""
+    token = base64.b64encode('wstep-test:wröng-pässwörd'.encode('utf-8')).decode()
+    csr, _key = _make_csr()
+    r = client.post(
+        ISSUE_URL, data=_build_rst(csr),
+        headers={'Authorization': f'Basic {token}'},
+    )
+    assert r.status_code == 400
     assert 'WWW-Authenticate' not in r.headers
 
 

@@ -54,6 +54,56 @@ class TestIsMachinePrincipal:
         assert lookup.is_machine_principal(None) is False
 
 
+class TestRealmMatchesConnector:
+    def test_matches(self, app, monkeypatch):
+        _configure(monkeypatch, app)
+        with app.app_context():
+            assert lookup.realm_matches_connector('HAGLAND.DOMAIN') is True
+
+    def test_case_insensitive(self, app, monkeypatch):
+        _configure(monkeypatch, app)
+        with app.app_context():
+            assert lookup.realm_matches_connector('hagland.domain') is True
+
+    def test_different_realm_rejected(self, app, monkeypatch):
+        """A ticket from a trusted-but-different realm must not be treated
+        as though it named an account in *this* domain -- sAMAccountName
+        alone isn't globally unique the way a realm-qualified principal
+        is."""
+        _configure(monkeypatch, app)
+        with app.app_context():
+            assert lookup.realm_matches_connector('OTHER.DOMAIN') is False
+
+    def test_connector_not_configured(self, app):
+        with app.app_context():
+            ADConnectorConfig.query.delete()
+            db.session.commit()
+            assert lookup.realm_matches_connector('HAGLAND.DOMAIN') is False
+
+    def test_connector_disabled(self, app, monkeypatch):
+        _configure(monkeypatch, app, enabled=False)
+        with app.app_context():
+            assert lookup.realm_matches_connector('HAGLAND.DOMAIN') is False
+
+    def test_empty_realm(self, app, monkeypatch):
+        _configure(monkeypatch, app)
+        with app.app_context():
+            assert lookup.realm_matches_connector('') is False
+            assert lookup.realm_matches_connector(None) is False
+
+    def test_malformed_base_dn_fails_closed(self, app):
+        with app.app_context():
+            ADConnectorConfig.query.delete()
+            config = ADConnectorConfig(
+                server='dc1.hagland.domain', base_dn='not a dn',
+                bind_dn='svc-ucm', enabled=True,
+            )
+            config.bind_password = 'irrelevant'
+            db.session.add(config)
+            db.session.commit()
+            assert lookup.realm_matches_connector('HAGLAND.DOMAIN') is False
+
+
 class _FakeAttr:
     def __init__(self, value):
         self.value = value

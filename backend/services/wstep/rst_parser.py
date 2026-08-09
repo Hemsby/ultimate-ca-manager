@@ -103,13 +103,15 @@ class ParsedRST:
     # Certificate-bound renewal path sends one. None for a plain
     # UsernamePassword-bound issuance request.
     security_header: object
+    # The lxml wsse:BinarySecurityToken element csr_der was read from —
+    # see ws_security.SignedContent.covers for why the renewal path
+    # checks this specific element rather than trusting csr_der alone.
+    csr_element: object
     # True when csr_der was unwrapped from a PKCS#7/CMC envelope rather
     # than submitted as bare PKCS#10. The inner CertificationRequest in
     # that format is not reliably self-signed by real Windows clients —
     # proof of possession is established by the outer CMS signature
-    # instead (see wstep_service._validate_csr for how this is handled;
-    # verifying that outer signature is a known gap, not yet implemented
-    # — see the module note there).
+    # instead (see wstep_service._verify_pkcs7_pop).
     was_pkcs7_wrapped: bool
     # The client's CMC TaggedCertificationRequest bodyPartID, when
     # was_pkcs7_wrapped — the CMC full PKI response (see
@@ -117,6 +119,11 @@ class ParsedRST:
     # CMCStatusInfoV2 bodyList to identify which request it's responding
     # to. None when not PKCS#7/CMC-wrapped.
     cmc_body_part_id: int | None
+    # The outer PKCS#7 envelope's parsed ``asn1crypto.cms.SignedData``,
+    # when was_pkcs7_wrapped — see wstep_service._verify_pkcs7_pop, which
+    # verifies this proves possession of the inner CSR's own private key.
+    # None when not PKCS#7/CMC-wrapped (nothing to verify).
+    outer_signed_data: object | None
 
 
 def _text(element):
@@ -129,11 +136,14 @@ def _unwrap_pkcs7_csr(der_bytes):
     Windows clients use. Handles both the CMC PKIData wrapping observed
     from real client interop and a plain bare-CSR-as-content fallback.
 
-    Returns ``(csr_der, body_part_id)`` — ``body_part_id`` is the CMC
-    TaggedCertificationRequest's own ID (None for the plain-data
+    Returns ``(csr_der, body_part_id, signed_data)`` — ``body_part_id`` is
+    the CMC TaggedCertificationRequest's own ID (None for the plain-data
     fallback, which carries no CMC structure at all), needed to build a
-    CMC full PKI response that references the right request. Raises
-    RSTParseError if the envelope doesn't match either recognized shape.
+    CMC full PKI response that references the right request.
+    ``signed_data`` is the outer envelope's parsed ``cms.SignedData``, for
+    ``wstep_service._verify_pkcs7_pop`` to check the CSR submitter actually
+    holds the CSR's private key. Raises RSTParseError if the envelope
+    doesn't match either recognized shape.
     """
     try:
         content_info = cms.ContentInfo.load(der_bytes)
@@ -153,12 +163,13 @@ def _unwrap_pkcs7_csr(der_bytes):
             if tagged_request.name != 'tcr':
                 raise ValueError(f'unsupported TaggedRequest choice: {tagged_request.name}')
             tcr = tagged_request.chosen
-            return tcr['certification_request'].dump(), tcr['body_part_id'].native
+            csr_der = tcr['certification_request'].dump()
+            return csr_der, tcr['body_part_id'].native, signed_data
         except (IndexError, KeyError, ValueError) as e:
             raise RSTParseError(f'Invalid CMC PKIData content: {e}')
 
     if inner_content_type in (_DATA_CONTENT_TYPE, 'data'):
-        return inner_bytes, None
+        return inner_bytes, None, signed_data
 
     raise RSTParseError(f'Unsupported PKCS#7 encapsulated content type: {inner_content_type}')
 
@@ -200,9 +211,9 @@ def parse_rst(envelope_bytes):
     value_type = bst_el.get('ValueType') or ''
     was_pkcs7_wrapped = value_type.endswith(_PKCS7_VALUE_TYPE_SUFFIX)
     if was_pkcs7_wrapped:
-        csr_der, cmc_body_part_id = _unwrap_pkcs7_csr(raw_der)
+        csr_der, cmc_body_part_id, outer_signed_data = _unwrap_pkcs7_csr(raw_der)
     else:
-        csr_der, cmc_body_part_id = raw_der, None
+        csr_der, cmc_body_part_id, outer_signed_data = raw_der, None, None
 
     return ParsedRST(
         csr_der=csr_der,
@@ -211,5 +222,7 @@ def parse_rst(envelope_bytes):
         request_type=request_type,
         message_id=message_id,
         security_header=security_header,
+        csr_element=bst_el,
         was_pkcs7_wrapped=was_pkcs7_wrapped,
+        outer_signed_data=outer_signed_data,
     )

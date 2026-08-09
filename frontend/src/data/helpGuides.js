@@ -1797,6 +1797,52 @@ Settings › Backup enables automatic backups.
 - **Daily / weekly / monthly** cadence
 - **Retention**: keep the N most recent, prune older ones
 - Backups are **encrypted** with the backup password
+
+## Active Directory Connector
+
+UCM's own LDAP connection to Active Directory, independent of any LDAP provider configured under SSO. That one is for logging into UCM; this one is used for certificate-related AD lookups and works whether or not SSO is configured at all.
+
+- **Purpose** — Resolves a Kerberos machine or user principal to its AD object, so UCM can derive a certificate subject/SAN the same way a real Windows CA would
+- **Server** — Hostname/IP and port of a domain controller
+- **LDAPS** — Toggle to use LDAP over SSL/TLS; **Verify SSL Certificate** validates the DC's certificate (optionally against a custom CA bundle when it isn't publicly trusted)
+- **Base DN** and **Bind DN / Password** — Service account credentials used for lookups
+- **Test Connection** — Verify connectivity and credentials before saving
+
+### GPO Enrollment Policy URLs
+
+Once configured, register one of the displayed URLs as a Certificate Enrollment Policy server in Group Policy (Public Key Policies → Certificate Services Client – Certificate Enrollment Policy), alongside Certificate Services Client – Auto-Enrollment:
+- **Kerberos** — No credential prompt; requires a domain-joined client and the GPO's authentication type set to Kerberos
+- **Username/Password** — Prompts for credentials; for interactive "Request New Certificate" enrollment only
+
+## Windows Autoenrollment (XCEP/WSTEP)
+
+Native Windows certificate enrollment via **MS-XCEP** (policy discovery) and **MS-WSTEP** (certificate issuance and renewal) — the same protocols real ADCS uses for MMC "Request New Certificate", \`certreq\`, and unattended GPO autoenrollment.
+
+### Setup Checklist
+
+The tab tracks what's configured versus what's still needed, for both manual and unattended enrollment paths — a Certificate Authority, Policy Discovery (XCEP), Certificate Issuance (WSTEP), and, for unattended GPO autoenrollment, an Active Directory Connector, Kerberos/SPNEGO, and at least one template with autoenrollment allowed.
+
+### Policy Discovery (XCEP)
+
+- **Certificate Authority** — The CA whose templates are advertised and that issues certificates through this configuration
+- **Validity (days)** — Default validity applied to certificates issued via WSTEP
+
+### Kerberos / SPNEGO
+
+Binds the Kerberos-authenticated XCEP/WSTEP endpoints used for silent GPO autoenrollment, so machines and users are authenticated by their Kerberos ticket instead of a credential prompt:
+- **Service Principal Name (SPN)** — e.g. \`HTTP/ucm.example.com@EXAMPLE.COM\`
+- **Keytab** — Generated with \`ktpass\` or \`ktutil\` on the domain controller for the SPN above
+
+> ⚠ If the server-side SPNEGO library isn't installed, Kerberos authentication won't work even when enabled here — a warning is shown on the tab.
+
+### Enrollment Policy URLs
+
+- **Username/Password** — Prompts for credentials; for interactive "Request New Certificate" enrollment, doesn't require Active Directory
+- **Kerberos** — No credential prompt; requires a domain-joined client and GPO configuration
+
+### AD-Derived Subjects
+
+A certificate template can opt into **Build subject from Active Directory** (Templates → Enrollment): for unattended GPO autoenrollment, the subject and SAN are derived from the requester's AD object via the AD Connector instead of requiring the client to supply one — matching how a real ADCS template is configured for autoenrollment. Independently, **Allow autoenrollment** advertises the template as \`autoEnroll=true\` in Certificate Enrollment Policy so GPO/Kerberos-authenticated clients request it automatically at logon.
 `
   },
 

@@ -128,6 +128,69 @@ def _renewal_csr(subject, key):
     return x509.CertificateSigningRequestBuilder().subject_name(subject).sign(key, hashes.SHA256())
 
 
+def _build_signature_wrapping_attack_rst(signing_cert, signing_key, legit_csr, decoy_csr, message_id='urn:uuid:renew-attack'):
+    """A signature-wrapping / key-substitution attack RST: the genuinely
+    signed Body carries the victim's own ``legit_csr``, but a second,
+    unsigned ``wst:RequestSecurityToken`` carrying ``decoy_csr`` (same
+    subject, attacker's key) is spliced in as a sibling of Body — outside
+    the signed subtree, so it doesn't touch the Body's content and the
+    signature over it still verifies. Before the signature-wrapping fix,
+    ``rst_parser.parse_rst``'s document-order-first search for the CSR
+    BinarySecurityToken would resolve to this decoy instead of the
+    element the signature actually covers, letting the attacker's key
+    ride in under the victim's valid signature."""
+    NSMAP = {'s': SOAP_NS, 'a': ADDRESSING_NS, 'wst': WST_NS, 'wsse': WSSE_NS, 'wsu': WSU_NS}
+    envelope = etree.Element('{%s}Envelope' % SOAP_NS, nsmap=NSMAP)
+    header = etree.SubElement(envelope, '{%s}Header' % SOAP_NS)
+    etree.SubElement(header, '{%s}MessageID' % ADDRESSING_NS).text = message_id
+    security = etree.SubElement(header, '{%s}Security' % WSSE_NS)
+    sec_bst = etree.SubElement(
+        security, '{%s}BinarySecurityToken' % WSSE_NS,
+        ValueType='http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3',
+        EncodingType='base64',
+    )
+    sec_bst.text = base64.b64encode(
+        signing_cert.public_bytes(serialization.Encoding.DER)
+    ).decode()
+
+    # Decoy RST, sibling of Body, placed before it and never referenced
+    # by the signature.
+    decoy_rst = etree.SubElement(envelope, '{%s}RequestSecurityToken' % WST_NS)
+    decoy_bst = etree.SubElement(
+        decoy_rst, '{%s}BinarySecurityToken' % WSSE_NS,
+        ValueType='http://schemas.microsoft.com/windows/pki/2009/01/enrollment#PKCS10',
+        EncodingType='base64',
+    )
+    decoy_bst.text = base64.b64encode(decoy_csr.public_bytes(serialization.Encoding.DER)).decode()
+
+    body = etree.SubElement(envelope, '{%s}Body' % SOAP_NS)
+    body.set('{%s}Id' % WSU_NS, 'body-1')
+    rst = etree.SubElement(body, '{%s}RequestSecurityToken' % WST_NS)
+    bst = etree.SubElement(
+        rst, '{%s}BinarySecurityToken' % WSSE_NS,
+        ValueType='http://schemas.microsoft.com/windows/pki/2009/01/enrollment#PKCS10',
+        EncodingType='base64',
+    )
+    bst.text = base64.b64encode(legit_csr.public_bytes(serialization.Encoding.DER)).decode()
+
+    sig_node = xmlsec.template.create(
+        security, xmlsec.constants.TransformExclC14N, xmlsec.constants.TransformRsaSha256
+    )
+    security.append(sig_node)
+    ref = xmlsec.template.add_reference(sig_node, xmlsec.constants.TransformSha256, uri='#body-1')
+    xmlsec.template.add_transform(ref, xmlsec.constants.TransformExclC14N)
+
+    ctx = xmlsec.SignatureContext()
+    ctx.register_id(body, id_attr='Id', id_ns=WSU_NS)
+    key_pem = signing_key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    )
+    ctx.key = xmlsec.Key.from_memory(key_pem, xmlsec.constants.KeyDataFormatPem)
+    ctx.sign(sig_node)
+
+    return etree.tostring(envelope, xml_declaration=True, encoding='UTF-8')
+
+
 def test_renew_disabled_returns_503(client, app):
     with app.app_context():
         row = SystemConfig.query.filter_by(key='wstep_enabled').first()
@@ -197,6 +260,29 @@ def test_renew_rejects_subject_mismatch(client, app, wstep_renew_config):
     signed = _build_signed_rst(cert, key, mismatched_csr)
     r = client.post(RENEW_URL, data=signed)
     assert r.status_code == 400
+
+
+def test_renew_rejects_signature_wrapping_attack(client, app, wstep_renew_config):
+    """A decoy, unsigned CSR spliced in alongside a genuinely victim-signed
+    Body must not be able to ride in under that valid signature — the
+    attacker's key must never end up bound to the victim's identity.
+    Regression test for the ws_security.SignedContent.covers() fix."""
+    cert, key = _issue_test_cert(app, wstep_renew_config, common_name='wrapping-victim.example.test')
+    legit_csr = _renewal_csr(cert.subject, key)
+    attacker_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    decoy_csr = _renewal_csr(cert.subject, attacker_key)
+
+    with app.app_context():
+        serials_before = {row.serial_number for row in Certificate.query.all()}
+
+    attack = _build_signature_wrapping_attack_rst(cert, key, legit_csr, decoy_csr)
+    r = client.post(RENEW_URL, data=attack)
+    assert r.status_code == 400
+    assert b'not covered by the request signature' in r.data
+
+    with app.app_context():
+        serials_after = {row.serial_number for row in Certificate.query.all()}
+        assert serials_after == serials_before, 'no certificate must be issued for the rejected attack request'
 
 
 def test_renew_succeeds_and_reissues(client, app, wstep_renew_config):

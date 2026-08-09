@@ -833,6 +833,8 @@ export const helpContent = {
           { label: 'HTTPS', text: 'TLS certificate for the UCM web interface' },
           { label: 'Updates', text: 'Check for new versions, view changelog, auto-update (DEB/RPM)' },
           { label: 'Webhooks', text: 'HTTP webhooks for certificate events (issue, revoke, expire) — internal LAN URLs allowed; cloud-metadata IPs blocked. Optional outbound auth: Bearer, Basic, API key, or custom header' },
+          { label: 'Active Directory', text: "UCM's own AD/LDAP connection for certificate-related lookups (Kerberos principal resolution, AD-derived subjects)" },
+          { label: 'Windows Autoenrollment', text: 'MS-XCEP/MS-WSTEP native Windows enrollment: policy discovery, certificate issuance, and Kerberos/SPNEGO binding' },
         ]
       },
       {
@@ -844,6 +846,29 @@ export const helpContent = {
           { label: 'Microsoft 365 / Outlook.com', text: 'Register an Azure AD app with SMTP.Send delegated permission' },
           { label: 'Refresh tokens', text: 'UCM stores the refresh token and renews access tokens automatically before each send' },
           { label: 'Fallback', text: 'Password auth is still supported when OAuth2 is not configured' },
+        ]
+      },
+      {
+        title: 'Active Directory Connector',
+        icon: UsersFour,
+        content: "UCM's own LDAP connection to Active Directory, independent of any LDAP provider configured under SSO — that one is for logging into UCM, this one is for certificate-related AD lookups.",
+        items: [
+          { label: 'Purpose', text: 'Resolves a Kerberos machine or user principal to its AD object so UCM can derive a certificate subject/SAN, the same way a real Windows CA would' },
+          { label: 'Fields', text: 'Server, port, LDAPS with optional CA verification, Base DN, Bind DN/password' },
+          { label: 'Test Connection', text: 'Verify connectivity and credentials before saving' },
+          { label: 'GPO enrollment URLs', text: 'Kerberos and Username/Password Certificate Enrollment Policy URLs to register in Group Policy' },
+        ]
+      },
+      {
+        title: 'Windows Autoenrollment (XCEP/WSTEP)',
+        icon: WindowsLogo,
+        content: 'Native Windows certificate enrollment via MS-XCEP policy discovery and MS-WSTEP issuance — supports MMC/certreq manual enrollment and unattended GPO autoenrollment.',
+        items: [
+          { label: 'XCEP', text: 'Lets Windows clients discover available certificate templates before enrolling' },
+          { label: 'WSTEP', text: 'Handles certificate request and renewal once policy has been discovered' },
+          { label: 'Kerberos/SPNEGO', text: 'Binds the Kerberos-authenticated endpoints used for silent GPO autoenrollment (requires an SPN and a keytab from the domain controller)' },
+          { label: 'Setup checklist', text: 'The tab shows a live checklist of what is configured versus still needed, for both manual and unattended enrollment' },
+          { label: 'AD-derived subjects', text: 'Templates can opt into deriving their subject/SAN from Active Directory (via the AD Connector) for unattended enrollment' },
         ]
       },
     ],

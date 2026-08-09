@@ -46,6 +46,8 @@ class CASigningMixin:
         ms_certificate_template_oid: str = None,
         override_subject: x509.Name = None,
         override_san: list = None,
+        cert_type: str = 'server_cert',
+        extra_ekus: list = None,
     ) -> Tuple[str, str]:
         """
         Sign a CSR (x509 object) using a CA.
@@ -64,6 +66,13 @@ class CASigningMixin:
                 its docstring. Only WSTEP's Kerberos binding passes this.
             override_san: forwarded to TrustStoreService.sign_csr — see its
                 docstring. Only WSTEP's Kerberos binding passes this.
+            cert_type: forwarded to TrustStoreService.sign_csr — see its
+                docstring. Only WSTEP overrides this default; every other
+                caller's protocol issues one kind of cert (server_cert).
+            extra_ekus: forwarded to TrustStoreService.sign_csr — see its
+                docstring. Only WSTEP passes this, for a matched template's
+                own configured EKUs (e.g. Smartcard Logon) that a CSR-EKU
+                cap keyed off cert_type could otherwise never let through.
 
         Returns:
             Tuple of (cert_pem_string, serial_number_string)
@@ -104,6 +113,8 @@ class CASigningMixin:
             ms_certificate_template_oid=ms_certificate_template_oid,
             override_subject=override_subject,
             override_san=override_san,
+            cert_type=cert_type,
+            extra_ekus=extra_ekus,
         )
 
         # Extract serial number

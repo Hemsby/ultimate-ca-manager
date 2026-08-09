@@ -50,6 +50,8 @@ CSRF_EXEMPT_PATHS = [
     '/ca/',                     # AIA CA Issuers
     '/tsa',                     # TSA timestamping (RFC 3161)
     '/ssh/setup/',              # Public SSH CA setup scripts
+    '/ADPolicyProvider_CEP_',   # XCEP policy (Windows SOAP client, no session/token)
+    '/ADCertificateService_CES_',  # WSTEP enrollment (Windows SOAP client, no session/token)
     '/api/health',              # Health checks
     '/api/v2/health',           # Health checks (v2)
 ]
