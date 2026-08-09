@@ -178,6 +178,30 @@ def sync_keytab_file(raw_bytes):
         raise
 
 
+def inspect_keytab(path=None):
+    """Parse the keytab at ``path`` (default ``KEYTAB_PATH``) via GSSAPI's
+    own keytab-loading code, the same mechanism the real acceptor uses at
+    request time -- so a "valid" result here means the keytab will actually
+    work, not just that a hand-rolled parser accepted the bytes.
+
+    Returns ``{'valid': bool, 'principal': str | None, 'error': str | None}``.
+    ``principal`` is the krb5 principal name (``service/host@REALM``) GSSAPI
+    resolved from the keytab -- compare against ``get_spn()`` to catch a
+    keytab uploaded for the wrong SPN before it fails at request time
+    instead. Never raises; a missing/unreadable/malformed keytab comes back
+    as ``valid: False`` with ``error`` set.
+    """
+    target = str(path) if path is not None else str(KEYTAB_PATH)
+    if not os.path.exists(target):
+        return {'valid': False, 'principal': None, 'error': 'No keytab uploaded'}
+    try:
+        import gssapi
+        creds = gssapi.Credentials(usage='accept', store={'keytab': target})
+        return {'valid': True, 'principal': str(creds.name), 'error': None}
+    except Exception as e:
+        return {'valid': False, 'principal': None, 'error': str(e)}
+
+
 def _ensure_krb5_ktname():
     """Point GSSAPI's keytab lookup at ``KEYTAB_PATH`` for this process.
 

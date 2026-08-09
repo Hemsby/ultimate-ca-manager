@@ -25,14 +25,14 @@ export default function AdConnectorSection({ adConnectorConfig, adConnectorLoadi
         <p className="mb-3">{t('adConnector.gpoUrlsDescription')}</p>
         <div className="space-y-3">
           <CopyableUrl
-            label={t('adConnector.gpoKerberosUrl')}
-            value={`${baseUrl}/ADPolicyProvider_CEP_Kerberos/service.svc`}
-            description={t('adConnector.gpoKerberosUrlDesc')}
-          />
-          <CopyableUrl
             label={t('adConnector.gpoUsernamePasswordUrl')}
             value={`${baseUrl}/ADPolicyProvider_CEP_UsernamePassword/service.svc`}
             description={t('adConnector.gpoUsernamePasswordUrlDesc')}
+          />
+          <CopyableUrl
+            label={t('adConnector.gpoKerberosUrl')}
+            value={`${baseUrl}/ADPolicyProvider_CEP_Kerberos/service.svc`}
+            description={t('adConnector.gpoKerberosUrlDesc')}
           />
         </div>
       </HelpCard>

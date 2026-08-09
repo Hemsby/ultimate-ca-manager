@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
-import { WindowsLogo, Globe, Certificate, ArrowsClockwise, FloppyDisk, CheckCircle, WarningCircle, ListChecks, Key } from '@phosphor-icons/react'
-import { Button, Input, Select, DetailHeader, DetailSection, DetailContent, HelpCard } from '../../components'
+import { WindowsLogo, Globe, Certificate, ArrowsClockwise, FloppyDisk, CheckCircle, WarningCircle, XCircle, ListChecks, Key } from '@phosphor-icons/react'
+import { Badge, Button, Input, Select, DetailHeader, DetailSection, DetailContent, HelpCard } from '../../components'
 import { FileUpload } from '../../components/FileUpload'
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch'
 import { xcepWstepService, casService, adConnectorService, kerberosService, templatesService } from '../../services'
@@ -11,6 +11,29 @@ import CopyableUrl from './CopyableUrl'
 
 const EMPTY_XCEP = { enabled: false, ca_id: null, username: '', password_set: false }
 const EMPTY_WSTEP = { enabled: false, ca_id: null, username: '', password_set: false, validity_days: 365 }
+
+function KeytabStatusBadge({ kerberos, t }) {
+  if (!kerberos.keytab_set) return null
+  if (!kerberos.keytab_valid) {
+    return (
+      <Badge variant="danger" icon={XCircle}>
+        {t('xcepWstep.keytabInvalid', { error: kerberos.keytab_error })}
+      </Badge>
+    )
+  }
+  if (!kerberos.keytab_spn_matches) {
+    return (
+      <Badge variant="warning" icon={WarningCircle}>
+        {t('xcepWstep.keytabSpnMismatch', { principal: kerberos.keytab_principal })}
+      </Badge>
+    )
+  }
+  return (
+    <Badge variant="success" icon={CheckCircle}>
+      {t('xcepWstep.keytabValid', { principal: kerberos.keytab_principal })}
+    </Badge>
+  )
+}
 
 function StatusRow({ ok, label, actionLabel, onAction }) {
   return (
@@ -47,7 +70,10 @@ export default function XcepWstepSection() {
   const [wstepPassword, setWstepPassword] = useState('')
   const [wstepSaving, setWstepSaving] = useState(false)
 
-  const [kerberos, setKerberos] = useState({ enabled: false, spn: '', keytab_set: false, library_available: true })
+  const [kerberos, setKerberos] = useState({
+    enabled: false, spn: '', keytab_set: false, library_available: true,
+    keytab_valid: false, keytab_principal: null, keytab_error: null, keytab_spn_matches: false,
+  })
   const [kerberosSpnInput, setKerberosSpnInput] = useState('')
   const [kerberosKeytabFile, setKerberosKeytabFile] = useState(null)
   const [kerberosSaving, setKerberosSaving] = useState(false)
@@ -279,6 +305,11 @@ export default function XcepWstepSection() {
               {t('xcepWstep.kerberosLibraryWarningDesc')}
             </HelpCard>
           )}
+          {!adConnectorConfigured && (
+            <HelpCard variant="warning" title={t('xcepWstep.kerberosAdConnectorWarningTitle')}>
+              {t('xcepWstep.kerberosAdConnectorWarningDesc')}
+            </HelpCard>
+          )}
 
           <ToggleSwitch
             label={t('common.enabled')}
@@ -299,6 +330,7 @@ export default function XcepWstepSection() {
             helperText={kerberosKeytabFile ? t('xcepWstep.keytabSelected', { name: kerberosKeytabFile.name }) : t('xcepWstep.keytabHelp')}
             onFileSelect={(file) => setKerberosKeytabFile(file)}
           />
+          <KeytabStatusBadge kerberos={kerberos} t={t} />
           <div className="flex justify-end pt-4 border-t border-border">
             <Button type="button" onClick={handleKerberosSave} disabled={kerberosSaving}>
               {kerberosSaving ? <ArrowsClockwise size={14} className="animate-spin" /> : <FloppyDisk size={14} />}

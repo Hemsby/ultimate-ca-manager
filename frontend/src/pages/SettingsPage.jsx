@@ -131,7 +131,16 @@ export default function SettingsPage() {
   const [selectedCategory, setSelectedCategory] = useState(
     searchParams.get('tab') || 'general'
   )
-  
+
+  // Re-sync when the URL's ?tab= changes from outside this component (e.g.
+  // navigate('/settings?tab=adConnector') from another page's "Configure"
+  // link) -- the state above only captures the URL at mount, and React
+  // Router doesn't remount this component for an in-place query-param
+  // change, so without this the tab never visibly switches.
+  useEffect(() => {
+    setSelectedCategory(searchParams.get('tab') || 'general')
+  }, [searchParams])
+
   // Update URL when category changes
   const handleCategoryChange = (categoryId) => {
     setSelectedCategory(categoryId)
