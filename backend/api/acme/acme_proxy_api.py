@@ -19,7 +19,11 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from models import AcmeClientOrder, Certificate
 from services.acme.acme_client_service import AcmeClientService
-from services.acme.acme_proxy_service import AcmeProxyService, ProxyDns01OnlyError
+from services.acme.acme_proxy_service import (
+    AcmeProxyService,
+    ProxyDns01OnlyError,
+    ProxyResourceNotFoundError,
+)
 from services.cert_service import CertificateService
 from services.acme.acme_proxy_account import (
     ProxyEndpointNotConfiguredError,
@@ -158,39 +162,30 @@ def _kid_account_thumbprint(protected):
         return None
 
 
-def _extract_requester_identity(jwk=None):
-    """Extract requester identity from the verified JWS.
+def _requester_identity(jwk=None):
+    """(account_id, thumbprint) of the verified requester, for ownership checks.
 
-    Returns (requester_account_id, requester_thumbprint).
-
-    SECURITY: This identity is used for ownership checks on proxy resources
-    (authz, challenge, order, cert). The JWS signature has already been
-    verified by verify_proxy_jws(), so the kid and jwk are authentic.
-
-    For kid-signed requests (RFC-compliant): derive account_id from kid and
-    thumbprint from the account's stored JWK.
-    For jwk-signed requests (new-account, key rollover): compute thumbprint
-    directly from the JWK.
-
-    Patch sponsored by PMGA Tech LLP
+    Only meaningful after verify_proxy_jws() succeeded: the kid (or jwk) has
+    been validated against the account's key, so deriving identity from it is
+    sound. kid-signed requests (the RFC 8555 §6.2 norm for these endpoints)
+    resolve through the account's stored thumbprint; a jwk-signed request
+    hashes the header JWK directly. Returns (None, None) when nothing can be
+    derived — owner-bound resources then fail closed in the service layer.
     """
     protected = _request_protected_header()
-    requester_account_id = _kid_account_id(protected)
-
-    requester_thumbprint = None
+    account_id = _kid_account_id(protected)
+    thumbprint = None
     if jwk:
         try:
             jwk_canonical = json.dumps(jwk, separators=(',', ':'), sort_keys=True)
-            requester_thumbprint = base64.urlsafe_b64encode(
+            thumbprint = base64.urlsafe_b64encode(
                 hashlib.sha256(jwk_canonical.encode()).digest()
             ).rstrip(b'=').decode()
         except Exception:
             pass
-
-    if not requester_thumbprint:
-        requester_thumbprint = _kid_account_thumbprint(protected)
-
-    return requester_account_id, requester_thumbprint
+    if not thumbprint:
+        thumbprint = _kid_account_thumbprint(protected)
+    return account_id, thumbprint
 
 
 def _decode_b64url(value):
@@ -542,11 +537,7 @@ def authz(authz_id, slug=None):
     if err_resp:
         return err_resp
 
-    # SECURITY: Extract requester identity for ownership verification.
-    # Without this check, any authenticated ACME client could fetch any
-    # other client's authorization and trigger DNS automation on their behalf.
-    # This Security patch has been sponsored by PMGA Tech LLP
-    requester_account_id, requester_thumbprint = _extract_requester_identity(jwk)
+    requester_account_id, requester_thumbprint = _requester_identity(jwk)
 
     try:
         svc = get_proxy_service(slug)
@@ -560,6 +551,10 @@ def authz(authz_id, slug=None):
 
         data, _ = result
         return proxy_response(data)
+    except PermissionError as e:
+        return proxy_error("unauthorized", str(e), 403)
+    except ProxyResourceNotFoundError as e:
+        return proxy_error("malformed", str(e), 404)
     except ProxyDns01OnlyError as e:
         return proxy_error('malformed', str(e), 400)
     except PermissionError as e:
@@ -583,11 +578,7 @@ def challenge(chall_id, slug=None):
     if not is_valid:
         return proxy_error("malformed", err)
 
-    # SECURITY: Extract requester identity for ownership verification.
-    # Without this check, any authenticated ACME client could respond to
-    # any other client's challenge, interfering with their certificate issuance.
-    # This Security patch has been sponsored by PMGA Tech LLP
-    requester_account_id, requester_thumbprint = _extract_requester_identity(jwk)
+    requester_account_id, requester_thumbprint = _requester_identity(jwk)
 
     try:
         svc = get_proxy_service(slug)
@@ -600,6 +591,10 @@ def challenge(chall_id, slug=None):
         if link_header:
             resp.headers['Link'] = link_header
         return resp
+    except PermissionError as e:
+        return proxy_error("unauthorized", str(e), 403)
+    except ProxyResourceNotFoundError as e:
+        return proxy_error("malformed", str(e), 404)
     except ProxyDns01OnlyError as e:
         return proxy_error('malformed', str(e), 400)
     except PermissionError as e:
@@ -627,11 +622,7 @@ def get_order(order_id, slug=None):
     if err_resp:
         return err_resp
 
-    # SECURITY: Extract requester identity for ownership verification.
-    # Without this check, any authenticated ACME client could view any
-    # other client's order status, including domain names and certificate URLs.
-    # This Security patch has been sponsored by PMGA Tech LLP
-    requester_account_id, requester_thumbprint = _extract_requester_identity(jwk)
+    requester_account_id, requester_thumbprint = _requester_identity(jwk)
 
     try:
         svc = get_proxy_service(slug)
@@ -646,6 +637,8 @@ def get_order(order_id, slug=None):
         return resp
     except PermissionError as e:
         return proxy_error("unauthorized", str(e), 403)
+    except ProxyResourceNotFoundError as e:
+        return proxy_error("malformed", str(e), 404)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except ProxyEndpointNotConfiguredError as e:
@@ -662,19 +655,10 @@ def finalize(order_id, slug=None):
     if not is_valid:
         return proxy_error("malformed", err)
 
-    # Ownership binding — mirrors new-order. The helpers never raise (they
-    # return {}/None on undecodable input); finalize_order() fails closed when
-    # the order carries owner info but no requester identity could be derived.
-    protected = _request_protected_header()
-    requester_account_id = _kid_account_id(protected)
-    if jwk:
-        jwk_canonical = json.dumps(jwk, separators=(',', ':'), sort_keys=True)
-        requester_thumbprint = base64.urlsafe_b64encode(
-            hashlib.sha256(jwk_canonical.encode()).digest()
-        ).rstrip(b'=').decode()
-    else:
-        # kid-signed (RFC-compliant path): mirror new-order's binding.
-        requester_thumbprint = _kid_account_thumbprint(protected)
+    # Ownership binding — mirrors new-order. The helper never raises;
+    # finalize_order() fails closed when the order carries owner info but no
+    # requester identity could be derived.
+    requester_account_id, requester_thumbprint = _requester_identity(jwk)
     if not requester_account_id and not requester_thumbprint:
         logger.warning("ACME proxy finalize: no requester identity from verified JWS")
 
@@ -702,6 +686,8 @@ def finalize(order_id, slug=None):
         return resp
     except PermissionError as e:
         return proxy_error("unauthorized", str(e), 403)
+    except ProxyResourceNotFoundError as e:
+        return proxy_error("malformed", str(e), 404)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except Exception as e:
@@ -720,11 +706,7 @@ def cert(cert_id, slug=None):
     if err_resp:
         return err_resp
 
-    # SECURITY: Extract requester identity for ownership verification.
-    # Without this check, any authenticated ACME client could download
-    # any certificate issued through the proxy by guessing/enumerating
-    # the base64-encoded upstream certificate URLs.
-    requester_account_id, requester_thumbprint = _extract_requester_identity(jwk)
+    requester_account_id, requester_thumbprint = _requester_identity(jwk)
 
     try:
         svc = get_proxy_service(slug)
@@ -743,6 +725,8 @@ def cert(cert_id, slug=None):
         return resp
     except PermissionError as e:
         return proxy_error("unauthorized", str(e), 403)
+    except ProxyResourceNotFoundError as e:
+        return proxy_error("malformed", str(e), 404)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except ProxyEndpointNotConfiguredError as e:

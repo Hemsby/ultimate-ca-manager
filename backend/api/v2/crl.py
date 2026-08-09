@@ -292,8 +292,11 @@ def configure_crl(ca_id):
     try:
         if 'validity_days' in data:
             validity = int(data['validity_days'])
-            if validity < 1 or validity > 365:
-                return error_response('validity_days must be between 1 and 365', 400)
+            # Cap raised to 5 years for offline root CAs (#236): an offline
+            # root may be unable or unwilling to re-sign CRLs yearly. Online
+            # CAs should stay well below 365.
+            if validity < 1 or validity > 1825:
+                return error_response('validity_days must be between 1 and 1825', 400)
             ca.crl_validity_days = validity
 
         if 'publish_interval_hours' in data:
