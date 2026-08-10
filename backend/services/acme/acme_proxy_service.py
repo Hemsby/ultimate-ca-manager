@@ -846,7 +846,8 @@ class AcmeProxyService:
         ``/acme/authz-v3/``), so the owning order is resolved through the
         authz URL upstream itself returns in the Link rel="up" header
         (mandatory per RFC 8555 §7.5.1) and matched exactly against the
-        order's recorded authz URLs.
+        order's recorded authz URLs.  If upstream omits the Link header or
+        the authz URL is not tracked, the request fails closed.
         """
         from api.v2.acme_domains import find_provider_for_domain
         from models import AcmeClientOrder
@@ -863,17 +864,22 @@ class AcmeProxyService:
         challenge_type = challenge_data.get('type')
         status = challenge_data.get('status')
 
-        # Resolve the owning order from the authoritative authz URL; fall back
-        # to the legacy host-based match only when upstream sent no Link header.
-        order = None
+        # Resolve the owning order from the authoritative authz URL returned
+        # in the upstream Link rel="up" header (RFC 8555 §7.5.1).  The
+        # previous _find_order_for_challenge fallback used
+        # chall_url.startswith(authz_url) which never matched on LE/Pebble
+        # because challenge and authz path namespaces are disjoint
+        # (chall-v3/ vs authz-v3/).  Fail closed when no Link header or
+        # no tracked order matches.
         authz_url = self._upstream_authz_url_from_link(resp.headers.get('Link'))
-        if authz_url:
-            order = AcmeClientOrder.query.filter(
-                AcmeClientOrder.is_proxy_order == True,
-                AcmeClientOrder.upstream_authz_urls.contains(authz_url)
-            ).first()
-        if order is None:
-            order = self._find_order_for_challenge(chall_url, AcmeClientOrder)
+        if not authz_url:
+            raise ProxyResourceNotFoundError(
+                "Challenge not found: upstream returned no Link rel=\"up\" header"
+            )
+        order = AcmeClientOrder.query.filter(
+            AcmeClientOrder.is_proxy_order == True,
+            AcmeClientOrder.upstream_authz_urls.contains(authz_url)
+        ).first()
         if order is None:
             raise ProxyResourceNotFoundError("Challenge not found")
         self._verify_order_ownership(
@@ -1069,42 +1075,6 @@ class AcmeProxyService:
                         logger.warning(f"[ACME Proxy] Failed to cleanup DNS record: {e}")
             finally:
                 db.session.remove()
-
-    def _find_order_for_challenge(self, chall_url, AcmeClientOrder):
-        """Find the proxy order associated with a challenge URL.
-
-        SECURITY: This method matches challenges to orders by checking if the
-        challenge URL's host matches the CA host of any authz URL stored on a
-        pending proxy order. The previous implementation fell back to returning
-        the most recent pending order when no match was found, which could
-        cause DNS automation to be triggered for the wrong order/domain. This
-        fallback has been removed — only exact host+path matches are accepted.
-        This patch has been sponsored by PMGA Tech LLP
-        """
-        pending_orders = AcmeClientOrder.query.filter(
-            AcmeClientOrder.is_proxy_order == True,
-            AcmeClientOrder.status == 'pending'
-        ).order_by(AcmeClientOrder.created_at.desc()).all()
-
-        for order in pending_orders:
-            if order.upstream_authz_urls:
-                try:
-                    authz_urls = json.loads(order.upstream_authz_urls)
-                    # Challenge URLs are under the authz URL path on most CAs
-                    for authz_url in authz_urls:
-                        # Match by URL prefix: the challenge URL should start
-                        # with the authz URL (same CA host + path prefix).
-                        # Hostname-only matching can match the wrong order when
-                        # multiple pending orders share the same CA host.
-                        if chall_url.startswith(authz_url):
-                            return order
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-        # SECURITY: No fallback to "most recent pending order" — returning the
-        # wrong order could trigger DNS record creation for a domain the
-        # requester does not own.
-        return None
 
     def _persist_certificate_url(self, order_url: str, cert_url: str):
         """Persist the upstream certificate URL on the local proxy order row.
