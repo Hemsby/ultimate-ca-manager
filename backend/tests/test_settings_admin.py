@@ -139,8 +139,8 @@ class TestGeneralSettingsAdminPermission:
         op_client = _create_operator(app, auth_client, create_user, 'op_mixed')
 
         # Capture original admin setting values
-        r_before = get_json(auth_client, '/api/v2/settings/general')
-        before = r_before.get_json()
+        r_before = auth_client.get('/api/v2/settings/general')
+        before = get_json(r_before)
         orig_2fa = before.get('enforce_2fa')
         orig_attempts = before.get('max_login_attempts')
 
@@ -153,8 +153,8 @@ class TestGeneralSettingsAdminPermission:
             f'Operator should succeed with mixed keys (admin stripped): {r.data}'
 
         # Verify non-admin key was saved and admin keys were NOT changed
-        r_after = get_json(auth_client, '/api/v2/settings/general')
-        after = r_after.get_json()
+        r_after = auth_client.get('/api/v2/settings/general')
+        after = get_json(r_after)
         assert after.get('site_name') == 'Mixed Test', \
             f'Non-admin key site_name should be saved: {after}'
         assert after.get('enforce_2fa') == orig_2fa, \
