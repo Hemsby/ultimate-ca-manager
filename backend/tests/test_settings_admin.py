@@ -134,17 +134,33 @@ class TestGeneralSettingsAdminPermission:
         # Restore
         patch_json(auth_client, '/api/v2/settings/general', {'enforce_2fa': False})
 
-    def test_operator_blocked_on_multiple_admin_keys(self, app, auth_client, create_user):
-        """Operator blocked even when mixing admin and non-admin keys."""
+    def test_operator_mixed_keys_strips_admin_saves_non_admin(self, app, auth_client, create_user):
+        """Operator sending mixed admin + non-admin keys: admin keys silently stripped, non-admin saved (200)."""
         op_client = _create_operator(app, auth_client, create_user, 'op_mixed')
+
+        # Capture original admin setting values
+        r_before = get_json(auth_client, '/api/v2/settings/general')
+        before = r_before.get_json()
+        orig_2fa = before.get('enforce_2fa')
+        orig_attempts = before.get('max_login_attempts')
 
         r = patch_json(op_client, '/api/v2/settings/general', {
             'site_name': 'Mixed Test',
             'enforce_2fa': False,
             'max_login_attempts': 999,
         })
-        assert r.status_code == 403, \
-            f'Operator should be blocked when admin keys present: {r.data}'
+        assert r.status_code == 200, \
+            f'Operator should succeed with mixed keys (admin stripped): {r.data}'
+
+        # Verify non-admin key was saved and admin keys were NOT changed
+        r_after = get_json(auth_client, '/api/v2/settings/general')
+        after = r_after.get_json()
+        assert after.get('site_name') == 'Mixed Test', \
+            f'Non-admin key site_name should be saved: {after}'
+        assert after.get('enforce_2fa') == orig_2fa, \
+            f'Admin key enforce_2fa should not be modified: {after}'
+        assert after.get('max_login_attempts') == orig_attempts, \
+            f'Admin key max_login_attempts should not be modified: {after}'
 
     def test_operator_can_modify_only_non_admin_keys(self, app, auth_client, create_user):
         """Operator succeeds when only non-admin keys are in the request."""
