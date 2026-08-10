@@ -207,6 +207,7 @@ def _issue_and_respond(ca, parsed, username, action='certificate.issued', kerber
         kerberos_principal=kerberos_principal, outer_signed_data=parsed.outer_signed_data,
     )
     if error:
+        logger.warning("WSTEP issuance rejected for %r: %s", username, error)
         return _fault_response(error, status=400, relates_to=parsed.message_id)
 
     try:
@@ -355,6 +356,7 @@ def renew_certificate_bound():
         require_pop=not parsed.was_pkcs7_wrapped,
     )
     if error:
+        logger.warning("WSTEP renewal rejected: %s", error)
         return _fault_response(error, status=400, relates_to=parsed.message_id)
 
     try:
