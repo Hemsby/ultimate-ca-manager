@@ -712,7 +712,7 @@ class AcmeProxyService:
         Raises PermissionError when ownership cannot be established.
         """
         if local_order is None:
-            return
+            raise PermissionError(f"{resource} does not belong to this account")
         if not (local_order.account_id or local_order.client_jwk_thumbprint):
             return
         denied = None
