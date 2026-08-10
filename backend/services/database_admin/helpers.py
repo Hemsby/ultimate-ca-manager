@@ -1,6 +1,7 @@
 """
 Database Admin — shared helpers and constants.
 Used by status.py, persistence.py, and migration.py.
+
 """
 
 import os
@@ -9,11 +10,18 @@ import json
 import shutil
 import logging
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
-from sqlalchemy import text
+from sqlalchemy import (
+    column as sa_column,
+    func,
+    select,
+    table as sa_table,
+    text,
+)
+from sqlalchemy.engine import make_url
 
 from config.settings import Config, DATA_DIR
 
@@ -22,42 +30,90 @@ logger = logging.getLogger(__name__)
 UCM_ENV_PATH = Path("/etc/ucm/ucm.env")
 BACKUP_DIR = DATA_DIR / "backups" / "db_migration"
 
-# Pre-migration DB snapshots are raw safety copies taken before every migration
-# run. They are never pruned by the user-facing backup retention, so without a
-# cap they accumulate unbounded and can fill the disk. Keep only the N most
-# recent (override with UCM_DB_MIGRATION_KEEP).
+# Pre-migration snapshots are never pruned by user-facing backup retention;
+# without a cap they accumulate unbounded. Keep the N most recent
+# (override with UCM_DB_MIGRATION_KEEP).
 try:
     DB_MIGRATION_KEEP = max(1, int(os.environ.get("UCM_DB_MIGRATION_KEEP", "5")))
 except ValueError:
     DB_MIGRATION_KEEP = 5
 
-# Strict regex for safe SQL identifiers — prevents SQL injection when
-# interpolating table/column/sequence names into dynamic SQL.
-# Patch sponsired by PMGA Tech LLP
-_SAFE_IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+# Shared empty set for the row-normalisation hot path: avoids allocating a new
+# set per row when a table has no JSON/BOOLEAN columns.
+_EMPTY_COLS = frozenset()
+
+# DB URI credentials. Greedy match to the LAST '@' in the authority so an
+# un-encoded '@' inside a password cannot leave a fragment behind.
+_URI_CRED_RE = re.compile(r"://([^:/?#@]+):[^/?#\s]*@")
+
+# setval()'s regclass argument as a constant. The cast is spelled out rather
+# than imported from sqlalchemy.dialects.postgresql so this module stays
+# backend-neutral at import time (loads on every startup, including SQLite).
+_SEQ_REGCLASS_ARG = text("CAST(:seq AS regclass)")
+
+# Serial columns + owning sequence in one round trip. Sequence name resolved
+# server-side; table/schema quoted by quote_ident() so no metadata is
+# concatenated into SQL on the Python side. pg_get_serial_sequence() lower-cases
+# its first argument (SQL identifier rules) but treats the column name literally.
+_PG_SERIAL_COLUMNS_SQL = text(
+    "SELECT table_schema, table_name, column_name, "
+    "       pg_get_serial_sequence("
+    "           quote_ident(CAST(table_schema AS text)) || '.' || "
+    "           quote_ident(CAST(table_name AS text)), "
+    "           CAST(column_name AS text)"
+    "       ) AS sequence_name "
+    "FROM information_schema.columns "
+    "WHERE table_schema = 'public' AND column_default LIKE 'nextval%'"
+)
 
 
-def _safe_ident(name: str) -> str:
-    """Return *name* if it is a safe SQL identifier, else raise ValueError.
+def _restrict(path: Path) -> None:
+    """Best-effort owner-only permissions on a raw DB copy."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
 
-    This prevents SQL injection when database metadata (table names, column
-    names, sequence names) are interpolated into dynamic SQL queries.
+
+def _discard(path: Path) -> None:
+    """Remove a failed/partial backup artefact.
+
+    A truncated dump that looks like a valid restore point is worse than no
+    dump at all, and it still counts against the retention cap.
     """
-    if not isinstance(name, str) or not _SAFE_IDENT_RE.match(name):
-        raise ValueError(f"Unsafe SQL identifier: {name!r}")
-    return name
+    try:
+        path.unlink()
+    except OSError:
+        pass
+
+
+def _set_env_or_remove(env: dict, key: str, value) -> None:
+    """Set an environment variable when *value* is non-empty; otherwise remove it."""
+    if isinstance(value, (tuple, list)):
+        value = value[-1] if value else None
+
+    if value is not None and str(value) != "":
+        env[key] = str(value)
+    else:
+        env.pop(key, None)
 
 
 def _prune_db_migration_snapshots(keep: int = DB_MIGRATION_KEEP) -> int:
     """Keep only the ``keep`` most recent pre-migration snapshots. Returns count removed."""
+    keep = max(1, keep)  # a keep<=0 caller must never wipe every safety copy
     try:
         snaps = sorted(
-            (p for p in BACKUP_DIR.glob("ucm-*") if p.suffix in (".db", ".dump")),
+            (
+                p
+                for p in BACKUP_DIR.glob("ucm-*")
+                if p.suffix in (".db", ".dump") and p.is_file()
+            ),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
     except OSError:
         return 0
+
     removed = 0
     for path in snaps[keep:]:
         try:
@@ -65,18 +121,29 @@ def _prune_db_migration_snapshots(keep: int = DB_MIGRATION_KEEP) -> int:
             removed += 1
         except OSError:
             continue
+
     if removed:
-        logger.info(f"Pruned {removed} old pre-migration DB snapshot(s), kept {keep}")
+        logger.info(
+            "Pruned %d old pre-migration DB snapshot(s), kept %d",
+            removed,
+            keep,
+        )
     return removed
 
 
 def _redact_uri(uri: str) -> str:
-    """Hide password in DB URI for display."""
-    return re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", uri)
+    """Hide the password in a DB URI (or in any text that embeds one)."""
+    return _URI_CRED_RE.sub(r"://\1:***@", uri)
 
 
 def _short_err(msg: str, limit: int = 200) -> str:
-    msg = msg.replace("\n", " ").strip()
+    """Collapse an error to one short line with any embedded DB password removed.
+
+    These strings are surfaced to API callers, and driver/engine errors happily
+    echo the connection URI they failed on. Redaction runs before truncation so
+    a password cannot survive as a partial fragment.
+    """
+    msg = _redact_uri(msg.replace("\n", " ").strip())
     return msg[:limit] + "..." if len(msg) > limit else msg
 
 
@@ -88,131 +155,255 @@ def _human_size(n: int) -> str:
     return f"{n:.1f} PB"
 
 
+def _snapshot_sqlite(src: Path, dst: Path) -> None:
+    """Copy a live SQLite database consistently.
+
+    ``shutil.copy2`` is not atomic and this runs while the app is still
+    serving requests, so a commit landing mid-copy leaves a snapshot with
+    torn pages and no ``-journal`` beside it to recover from — useless as the
+    rollback artefact for a migration. sqlite3's online backup API takes a
+    proper read lock instead. A raw copy stays as the fallback so a backup is
+    never skipped outright.
+
+    The import is local by design: a PostgreSQL deployment never reaches this
+    branch and must not need ``sqlite3`` merely to import this module.
+    ImportError is an Exception, so that case degrades to the raw copy too.
+    """
+    try:
+        import sqlite3
+
+        source = sqlite3.connect(str(src))
+        try:
+            target = sqlite3.connect(str(dst))
+            try:
+                source.backup(target)
+                return
+            finally:
+                target.close()
+        finally:
+            source.close()
+    except Exception as e:
+        logger.warning(
+            "SQLite online backup failed (%s); falling back to a raw file copy.",
+            _short_err(str(e)),
+        )
+        _discard(dst)
+
+    shutil.copy2(src, dst)
+
+
 def _backup_current_db() -> Optional[Path]:
     """Backup current DB before migration. Returns backup path or None."""
-    from urllib.parse import urlparse
-
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    # Raw DB copies hold password hashes and config — owner-only access
+
+    # Raw DB copies hold password hashes and config — owner-only access.
     try:
         os.chmod(BACKUP_DIR, 0o700)
     except OSError:
         pass
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    db_uri = Config.SQLALCHEMY_DATABASE_URI
 
-    if db_uri.startswith("sqlite:///"):
-        src = Path(db_uri.replace("sqlite:///", ""))
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+    # make_url() percent-decodes credentials; urlparse() does not, so p%40ss
+    # would reach pg_dump verbatim and fail auth.
+    try:
+        url = make_url(Config.SQLALCHEMY_DATABASE_URI)
+    except Exception as e:
+        logger.error("Unusable database URI: %s", _short_err(str(e)))
+        return None
+
+    # get_backend_name() strips the driver suffix, so sqlite+pysqlite:// and
+    # postgresql+psycopg2:// are classified correctly (unlike startswith()).
+    backend = url.get_backend_name()
+
+    if backend == "sqlite":
+        if not url.database or url.database == ":memory:":
+            return None  # nothing on disk to snapshot
+
+        src = Path(url.database)
         if not src.exists():
+            logger.error("SQLite database file does not exist: %s", src)
             return None
+
         dst = BACKUP_DIR / f"ucm-sqlite-{timestamp}.db"
-        shutil.copy2(src, dst)
         try:
-            os.chmod(dst, 0o600)
-        except OSError:
-            pass
-        _prune_db_migration_snapshots()
-        return dst
-    else:
-        # PostgreSQL: use pg_dump
-        try:
-            parsed = urlparse(db_uri)
-            db_config = {
-                'host': parsed.hostname or 'localhost',
-                'port': str(parsed.port or 5432),
-                'user': parsed.username or '',
-                'password': parsed.password or '',
-                'dbname': parsed.path[1:] if parsed.path else parsed.netloc.split('/')[-1]
-            }
-
-            output = BACKUP_DIR / f"ucm-pg-{timestamp}.dump"
-
-            cmd = [
-                'pg_dump',
-                '-h', db_config['host'],
-                '-p', db_config['port'],
-                '-U', db_config['user'],
-                '-d', db_config['dbname'],
-                '-F', 'c',  # custom format (compressed)
-                '-f', str(output),
-                '--no-password'
-            ]
-
-            env = os.environ.copy()
-            env['PGPASSWORD'] = db_config['password']
-
-            result = subprocess.run(
-                cmd,
-                env=env,
-                capture_output=True,
-                timeout=300,
-                check=False
-            )
-
-            if result.returncode != 0:
-                logger.error(f"pg_dump failed: {result.stderr.decode() if result.stderr else 'Unknown error'}")
-                return None
-
-            try:
-                os.chmod(output, 0o600)
-            except OSError:
-                pass
-            logger.info(f"PostgreSQL backup created: {output}")
-            _prune_db_migration_snapshots()
-            return output
-
-        except FileNotFoundError:
-            logger.error("pg_dump not found. Install postgresql-client.")
+            _snapshot_sqlite(src, dst)
+            _restrict(dst)
+        except OSError as e:
+            _discard(dst)
+            logger.error("SQLite backup failed: %s", _short_err(str(e)))
             return None
         except Exception as e:
-            logger.error(f"PostgreSQL backup failed: {e}")
+            _discard(dst)
+            logger.error(
+                "Unexpected SQLite backup failure: %s",
+                _short_err(str(e)),
+            )
             return None
 
+        logger.info("SQLite backup created: %s", dst)
+        _prune_db_migration_snapshots()
+        return dst
 
-def _reset_pg_sequences(engine):
+    if backend != "postgresql":
+        logger.error("No backup strategy for database backend '%s'", backend)
+        return None
+
+    output = BACKUP_DIR / f"ucm-pg-{timestamp}.dump"
+
+    # Connection details in libpq env vars, not argv: prevents argument injection
+    # from values starting with '-'. Empty values are removed (not blanked) so
+    # stale PGUSER/PGPASSWORD from the service env cannot silently take effect.
+    env = os.environ.copy()
+
+    # Do not default an omitted host to localhost. Leaving PGHOST absent lets
+    # libpq use its normal platform default, including Unix sockets.
+    for key, value in (
+        ("PGHOST", url.host),
+        ("PGPORT", url.port),
+        ("PGUSER", url.username),
+        ("PGDATABASE", url.database),
+        ("PGPASSWORD", url.password),
+    ):
+        _set_env_or_remove(env, key, value)
+
+    # Preserve common libpq options encoded in the SQLAlchemy URI query string.
+    libpq_query_options = {
+        "sslmode": "PGSSLMODE",
+        "sslrootcert": "PGSSLROOTCERT",
+        "sslcert": "PGSSLCERT",
+        "sslkey": "PGSSLKEY",
+        "sslcrl": "PGSSLCRL",
+        "sslpassword": "PGSSLPASSWORD",
+        "connect_timeout": "PGCONNECT_TIMEOUT",
+        "application_name": "PGAPPNAME",
+        "options": "PGOPTIONS",
+        "target_session_attrs": "PGTARGETSESSIONATTRS",
+        "gssencmode": "PGGSSENCMODE",
+        "krbsrvname": "PGKRBSRVNAME",
+        "service": "PGSERVICE",
+    }
+
+    for query_key, env_key in libpq_query_options.items():
+        _set_env_or_remove(env, env_key, url.query.get(query_key))
+
+    cmd = [
+        "pg_dump",
+        "-F", "c",  # custom format (compressed)
+        "-f",
+        str(output),
+        "--no-password",
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            env=env,
+            capture_output=True,
+            timeout=300,
+            check=False,
+        )
+    except FileNotFoundError:
+        logger.error("pg_dump not found. Install postgresql-client.")
+        return None
+    except subprocess.TimeoutExpired:
+        logger.error("pg_dump timed out after 300s")
+        _discard(output)
+        return None
+    except Exception as e:
+        logger.error("PostgreSQL backup failed: %s", _short_err(str(e)))
+        _discard(output)
+        return None
+
+    if result.returncode != 0:
+        stderr = (
+            result.stderr.decode(errors="replace")
+            if result.stderr
+            else "Unknown error"
+        )
+        logger.error("pg_dump failed: %s", _short_err(stderr))
+        _discard(output)
+        return None
+
+    _restrict(output)
+    logger.info("PostgreSQL backup created: %s", output)
+    _prune_db_migration_snapshots()
+    return output
+
+
+def _pg_setval_stmt(schema_name: str, table_name: str, column_name: str):
+    """Build a safe setval() statement for one serial column.
+
+    Identifiers go to SQLAlchemy as identifiers (not string interpolation), so
+    the compiler handles dialect quoting and paramstyle escaping. The table is
+    schema-qualified to prevent search_path redirection of MAX().
+
+    For empty tables, ``is_called=False`` makes nextval() return 1 instead of
+    incorrectly returning 2.
+    """
+    col = sa_column(column_name)
+    tbl = sa_table(table_name, col, schema=schema_name)
+
+    max_value = select(func.max(col)).select_from(tbl).scalar_subquery()
+    sequence_value = func.coalesce(max_value, 1)
+    has_existing_rows = max_value.is_not(None)
+
+    # setval()'s regclass arg arrives as a bound parameter (data, not SQL).
+    # The explicit CAST keeps it safe for drivers that send str as a typed
+    # text parameter. This is a constant fragment — nothing is interpolated.
+    return select(
+        func.setval(
+            _SEQ_REGCLASS_ARG,
+            sequence_value,
+            has_existing_rows,
+        )
+    )
+
+
+def _reset_pg_sequences(engine) -> None:
     """Reset PG sequences after data load so new inserts don't collide.
 
-    SECURITY: All identifiers (table_name, column_name, seq_name) are
-    validated with _safe_ident before being interpolated into SQL to
-    prevent SQL injection via compromised database metadata.
-    Patch Sponsored by PMGA Tech LLP
+    SECURITY: no metadata is concatenated into SQL — see
+    ``_PG_SERIAL_COLUMNS_SQL`` (server-side quote_ident) and
+    ``_pg_setval_stmt`` (compiler-rendered identifiers + bound sequence name).
+
+    No ``^[A-Za-z_]\\w*$`` allowlist: legal PG identifiers need not match it,
+    and pg_get_serial_sequence() returns already-quoted names (e.g.
+    ``public."My Table_id_seq"``) that fail the regex and would be corrupted
+    by splitting on '.', leaving sequences unreset → duplicate-key errors.
+
+    Each reset runs in its own SAVEPOINT: a single failed PG statement aborts
+    the whole transaction, so without isolation one failure cascades to all.
     """
     with engine.begin() as conn:
-        rows = conn.execute(text(
-            "SELECT table_name, column_name "
-            "FROM information_schema.columns "
-            "WHERE column_default LIKE 'nextval%' AND table_schema = 'public'"
-        )).fetchall()
-        for table_name, column_name in rows:
+        rows = conn.execute(_PG_SERIAL_COLUMNS_SQL).fetchall()
+
+        for schema_name, table_name, column_name, sequence_name in rows:
+            if not sequence_name:
+                continue  # nextval() default but no sequence owned by the column
+
             try:
-                seq_row = conn.execute(text(
-                    "SELECT pg_get_serial_sequence(:t, :c)"
-                ), {"t": table_name, "c": column_name}).fetchone()
-                if not seq_row or not seq_row[0]:
-                    continue  # column has nextval() default but no resolvable seq
-                seq_name = seq_row[0]
-
-                # SECURITY: Validate all identifiers before interpolating
-                # into SQL. pg_get_serial_sequence returns a qualified name
-                # like 'public.users_id_seq' — split and validate each part.
-                safe_table = _safe_ident(table_name)
-                safe_column = _safe_ident(column_name)
-                # seq_name may be schema-qualified (e.g. "public.users_id_seq")
-                seq_parts = seq_name.split('.')
-                safe_seq_parts = [_safe_ident(p) for p in seq_parts]
-                safe_seq = '.'.join(safe_seq_parts)
-
-                conn.execute(text(
-                    f"SELECT setval('{safe_seq}', "
-                    f"COALESCE((SELECT MAX(\"{safe_column}\") FROM \"{safe_table}\"), 1))"
-                ))
-            except ValueError as e:
-                logger.warning(
-                    f"Skipping unsafe identifier in sequence reset for "
-                    f"{table_name}.{column_name}: {e}"
-                )
+                with conn.begin_nested():
+                    conn.execute(
+                        _pg_setval_stmt(schema_name, table_name, column_name),
+                        {"seq": sequence_name},
+                    )
             except Exception as e:
-                logger.warning(f"Failed to reset sequence for {table_name}.{column_name}: {e}")
+                logger.warning(
+                    "Failed to reset sequence for %s.%s: %s",
+                    table_name,
+                    column_name,
+                    _short_err(str(e)),
+                )
+
+
+def _is_json_text(value: str) -> bool:
+    """True if *value* is already a JSON document/scalar."""
+    try:
+        json.loads(value)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def _normalize_row(
@@ -224,34 +415,40 @@ def _normalize_row(
 ) -> dict:
     """Normalize values for cross-backend insert.
 
-    - PG → SQLite: dict/list become JSON strings; memoryview → bytes; booleans
-      become int (SQLite has no real bool type but accepts ints fine).
-    - SQLite → PG: when the target column is JSON/JSONB, JSON-string values
-      are parsed back to dict/list so psycopg2's JSON adapter serializes
-      them correctly (otherwise PG rejects "raw text into json column").
-      When the target column is BOOLEAN, integer 0/1 (or strings "0"/"1"/
-      "true"/"false") are coerced to real bool — SQLite stores booleans as
-      INTEGER and psycopg2 refuses to insert int into BOOLEAN.
+    - PG → SQLite: dict/list → JSON strings; memoryview → bytes; bools → int.
+    - SQLite → PG: JSON/JSONB columns get parsed values (not raw text, which PG
+      rejects). BOOLEAN columns get real bools (SQLite stores 0/1 ints, and
+      psycopg2 refuses int into BOOLEAN).
     """
-    target_json_cols = target_json_cols or set()
-    target_bool_cols = target_bool_cols or set()
+    json_cols = target_json_cols or _EMPTY_COLS
+    bool_cols = target_bool_cols or _EMPTY_COLS
+    # Hoist row-invariant checks out of the per-column loop (hot path:
+    # every row of every table in a migration).
+    coerce_bools = target_is_pg and not source_is_pg and bool(bool_cols)
+    encode_json = target_is_pg and bool(json_cols)
+
     out = {}
     for k, v in row.items():
         if v is None:
             out[k] = None
+
         elif isinstance(v, memoryview):
             out[k] = bytes(v)
+
         elif isinstance(v, (dict, list)) and not target_is_pg:
             out[k] = json.dumps(v)
-        elif (
-            target_is_pg
-            and not source_is_pg
-            and k in target_bool_cols
-            and not isinstance(v, bool)
-        ):
-            # SQLite stored bools as INTEGER (0/1). Coerce to real bool.
+
+        elif coerce_bools and k in bool_cols and not isinstance(v, bool):
+            # SQLite stores bools as INTEGER 0/1. Coerce only 0→False, 1→True;
+            # leave invalid values (2, -1, 0.5) for DB validation.
             if isinstance(v, (int, float)):
-                out[k] = bool(v)
+                if v in (0, 0.0):
+                    out[k] = False
+                elif v in (1, 1.0):
+                    out[k] = True
+                else:
+                    out[k] = v
+
             elif isinstance(v, str):
                 s = v.strip().lower()
                 if s in ("1", "true", "t", "yes", "y"):
@@ -260,45 +457,66 @@ def _normalize_row(
                     out[k] = False
                 else:
                     out[k] = v
+
             else:
                 out[k] = v
-        elif target_is_pg and k in target_json_cols:
-            # PG json/jsonb columns: always send as JSON-encoded text.
-            # - dict/list (SQLAlchemy auto-deserialized SQLite JSON) → encode
-            #   so psycopg2 doesn't send a Python list as PostgreSQL ARRAY.
-            # - str: keep as-is if already valid JSON, otherwise wrap.
-            # PG parses the text into json/jsonb on INSERT.
+
+        elif encode_json and k in json_cols:
+            # PG json/jsonb: always send JSON-encoded text.
+            # - dict/list → encode (psycopg2 would send a list as PG ARRAY).
+            # - str → pass if valid JSON, else wrap (bare text in a JSON column
+            #   is rejected by PG and aborts the entire migration).
             if isinstance(v, (dict, list)):
                 out[k] = json.dumps(v)
             elif isinstance(v, str):
                 if v == "":
                     out[k] = None
+                elif _is_json_text(v):
+                    out[k] = v
                 else:
-                    out[k] = v  # assume already JSON text
+                    out[k] = json.dumps(v)
             else:
                 out[k] = json.dumps(v)
+
         else:
             out[k] = v
+
     return out
 
 
 def _force_register_all_models() -> None:
     """Import every model module so db.metadata.create_all sees all tables.
 
-    Some modules are registered lazily (only when their feature runs) which
-    means create_all on a fresh target would silently miss their tables.
+    Some modules register lazily (only when their feature runs), so create_all
+    on a fresh target would silently miss their tables.
     """
     try:
-        # Core model packages — importing the package triggers SQLAlchemy
-        # registration via class definitions.
+        # Importing triggers SQLAlchemy registration via class definitions.
         import models  # noqa: F401
         from models import (  # noqa: F401
-            acme_models, api_key, auth_certificate, certificate_template,
-            crl, discovered_certificate, email_notification, group, hsm,
-            msca, ocsp, policy, rbac, ssh, sso, truststore, webauthn,
+            acme_models,
+            api_key,
+            auth_certificate,
+            certificate_template,
+            crl,
+            discovered_certificate,
+            email_notification,
+            group,
+            hsm,
+            msca,
+            ocsp,
+            policy,
+            rbac,
+            ssh,
+            sso,
+            truststore,
+            webauthn,
         )
     except Exception as e:
-        logger.warning(f"Some core models failed to import: {e}")
+        logger.warning(
+            "Some core models failed to import: %s",
+            _short_err(str(e)),
+        )
 
     # Service-owned tables (lazy-registered)
     for mod in (
@@ -308,81 +526,173 @@ def _force_register_all_models() -> None:
         try:
             __import__(mod)
         except Exception as e:
-            logger.debug(f"Optional model module {mod} not loaded: {e}")
+            logger.debug(
+                "Optional model module %s not loaded: %s",
+                mod,
+                _short_err(str(e)),
+            )
+
+
+def _detect_columns_by_type(
+    insp, table_names, matches: Callable[[str], bool]
+) -> dict:
+    """Return {table: {col_name, ...}} for columns whose rendered type matches.
+
+    A table whose reflection fails is skipped rather than failing the caller.
+    """
+    out = {}
+
+    for t in table_names:
+        try:
+            cols = {
+                col["name"]
+                for col in insp.get_columns(t)
+                if matches(str(col.get("type", "")).upper())
+            }
+        except Exception:
+            continue
+
+        if cols:
+            out[t] = cols
+
+    return out
 
 
 def _detect_json_columns(insp, table_names) -> dict:
     """Return {table: {col_name, ...}} for columns whose SQL type is JSON/JSONB."""
-    out = {}
-    for t in table_names:
-        json_cols = set()
-        try:
-            for col in insp.get_columns(t):
-                type_str = str(col.get("type", "")).upper()
-                if "JSON" in type_str:  # matches JSON and JSONB
-                    json_cols.add(col["name"])
-        except Exception:
-            continue
-        if json_cols:
-            out[t] = json_cols
-    return out
+    # "JSON" as a substring matches both JSON and JSONB.
+    return _detect_columns_by_type(insp, table_names, lambda t: "JSON" in t)
 
 
 def _detect_boolean_columns(insp, table_names) -> dict:
-    """Return {table: {col_name, ...}} for columns whose SQL type is BOOLEAN.
+    """Return {table: {col_name, ...}} for BOOLEAN/BOOL columns.
 
-    Needed when migrating SQLite → PostgreSQL: SQLite stores booleans as
-    INTEGER (0/1), but psycopg2 refuses to insert int into a real BOOLEAN
-    column. We detect them up-front and coerce in _normalize_row.
+    Needed for SQLite → PG: SQLite stores bools as INTEGER, but psycopg2
+    refuses int into BOOLEAN. Detected up-front, coerced in _normalize_row.
     """
-    out = {}
-    for t in table_names:
-        bool_cols = set()
-        try:
-            for col in insp.get_columns(t):
-                type_str = str(col.get("type", "")).upper()
-                # Match BOOLEAN, BOOL — but NOT TINYINT/SMALLINT (they are
-                # integers in SQLite even when SQLAlchemy maps to Boolean).
-                if type_str in ("BOOLEAN", "BOOL"):
-                    bool_cols.add(col["name"])
-        except Exception:
-            continue
-        if bool_cols:
-            out[t] = bool_cols
-    return out
+    # Exact match only — TINYINT/SMALLINT are integers in SQLite even when
+    # SQLAlchemy maps them to Boolean.
+    return _detect_columns_by_type(
+        insp,
+        table_names,
+        lambda t: t in ("BOOLEAN", "BOOL"),
+    )
+
+
+def _sqlite_dbapi_connection(conn):
+    """Return the underlying sqlite3 connection for a SQLAlchemy Connection."""
+    connection_fairy = conn.connection
+    return (
+        getattr(connection_fairy, "driver_connection", None)
+        or connection_fairy.connection
+    )
 
 
 def _try_disable_fks(conn, target_is_pg: bool) -> bool:
     """Disable FK checks for bulk load. Returns True if successful.
 
-    On PostgreSQL `SET session_replication_role` requires SUPERUSER. When the
-    DBA followed best practice and gave UCM a non-superuser role, the call
-    fails — we catch it and rely on the topological insert order instead.
+    PostgreSQL: ``SET LOCAL session_replication_role`` requires SUPERUSER; a
+    non-superuser role fails and falls back to topological insert order.
+    ``SET LOCAL`` (not ``SET``) scopes to the current transaction, preventing
+    leakage into pooled connections after commit.
+
+    SQLite: ``PRAGMA foreign_keys`` cannot be changed inside an active
+    transaction — call this before opening the data-load transaction.
     """
     try:
         if target_is_pg:
-            conn.execute(text("SET session_replication_role = 'replica'"))
-        else:
-            conn.execute(text("PRAGMA foreign_keys = OFF"))
+            conn.execute(text("SET LOCAL session_replication_role = 'replica'"))
+            return True
+
+        dbapi_conn = _sqlite_dbapi_connection(conn)
+
+        if dbapi_conn.in_transaction:
+            logger.warning(
+                "Could not disable SQLite FK checks: an SQLite transaction is "
+                "already active. Disable FKs before starting the bulk-load "
+                "transaction."
+            )
+            return False
+
+        cursor = dbapi_conn.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys = OFF")
+            cursor.execute("PRAGMA foreign_keys")
+            enabled = cursor.fetchone()[0]
+        finally:
+            cursor.close()
+
+        if enabled:
+            logger.warning(
+                "Could not disable SQLite FK checks; PRAGMA remained enabled."
+            )
+            return False
+
         return True
+
     except Exception as e:
         logger.warning(
-            f"Could not disable FK checks ({_short_err(str(e))}); "
-            "falling back to topological insert order."
+            "Could not disable FK checks (%s); "
+            "falling back to topological insert order.",
+            _short_err(str(e)),
         )
         return False
 
 
 def _try_reenable_fks(conn, target_is_pg: bool, was_disabled: bool) -> None:
+    """Restore FK enforcement after bulk load.
+
+    For SQLite, call after committing/rolling back the bulk-load transaction.
+    Also runs ``foreign_key_check`` once FKs are re-enabled.
+    """
     if not was_disabled:
         return
+
     try:
         if target_is_pg:
-            conn.execute(text("SET session_replication_role = 'origin'"))
-        else:
-            conn.execute(text("PRAGMA foreign_keys = ON"))
+            # SET LOCAL resets at transaction end; this restores FK triggers
+            # for the remaining transaction.
+            conn.execute(text("SET LOCAL session_replication_role = 'origin'"))
+            return
+
+        dbapi_conn = _sqlite_dbapi_connection(conn)
+
+        if dbapi_conn.in_transaction:
+            logger.warning(
+                "Could not re-enable SQLite FK checks: an SQLite transaction "
+                "is still active. Re-enable FKs after committing the bulk-load "
+                "transaction."
+            )
+            return
+
+        cursor = dbapi_conn.cursor()
+        try:
+            cursor.execute("PRAGMA foreign_keys = ON")
+            cursor.execute("PRAGMA foreign_keys")
+            enabled = cursor.fetchone()[0]
+
+            if not enabled:
+                logger.warning(
+                    "Could not re-enable SQLite FK checks; PRAGMA remained disabled."
+                )
+                return
+
+            cursor.execute("PRAGMA foreign_key_check")
+            violations = cursor.fetchall()
+        finally:
+            cursor.close()
+
+        if violations:
+            logger.error(
+                "SQLite foreign_key_check found %d FK violation(s) after migration.",
+                len(violations),
+            )
+
     except Exception as e:
-        logger.warning(f"Could not re-enable FK checks: {_short_err(str(e))}")
+        logger.warning(
+            "Could not re-enable FK checks: %s",
+            _short_err(str(e)),
+        )
 
 
 def _topo_sort_tables(insp) -> list:
@@ -394,6 +704,7 @@ def _topo_sort_tables(insp) -> list:
     try:
         all_tables = insp.get_table_names()
         deps = {t: set() for t in all_tables}
+
         for t in all_tables:
             for fk in insp.get_foreign_keys(t):
                 ref = fk.get("referred_table")
@@ -402,18 +713,30 @@ def _topo_sort_tables(insp) -> list:
 
         ordered = []
         remaining = dict(deps)
+
         while remaining:
             ready = sorted(t for t, d in remaining.items() if not d)
+
             if not ready:
-                # Cycle detected — append the rest in alpha order
+                # Cycle detected — append the rest in alpha order.
                 ordered.extend(sorted(remaining.keys()))
                 break
+
+            ready_set = set(ready)  # built once, not once per remaining table
+            ordered.extend(ready)
+
             for t in ready:
-                ordered.append(t)
                 remaining.pop(t)
-            for t in remaining:
-                remaining[t] -= set(ready)
+
+            for pending_deps in remaining.values():
+                pending_deps -= ready_set
+
         return ordered
+
     except Exception as e:
-        logger.warning(f"Topo sort failed ({e}); using alphabetical order.")
+        logger.warning(
+            "Topo sort failed (%s); using alphabetical order.",
+            _short_err(str(e)),
+        )
         return sorted(insp.get_table_names())
+

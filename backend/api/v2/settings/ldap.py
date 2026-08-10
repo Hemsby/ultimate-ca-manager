@@ -7,6 +7,7 @@ from auth.unified import require_auth
 from utils.response import success_response, error_response
 from models import db, SystemConfig
 from services.audit_service import AuditService
+from utils.encryption import encrypt_if_needed
 import logging
 
 from . import bp
@@ -59,7 +60,6 @@ def update_ldap_settings():
 
         # Encrypt the bind password at rest instead of storing as plaintext
         if key == 'bind_password' and value:
-            from utils.encryption import encrypt_if_needed
             value = encrypt_if_needed(str(value))
 
         config = SystemConfig.query.filter_by(key=f'ldap_{key}').first()

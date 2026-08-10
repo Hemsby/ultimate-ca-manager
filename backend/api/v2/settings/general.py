@@ -21,6 +21,12 @@ logger = logging.getLogger(__name__)
 # Settings that affect system-wide security posture. Modifying these requires
 # admin:settings (not just write:settings) to prevent a user with write:settings
 # from weakening authentication, lockout, or session controls.
+# Includes:    
+# 1. Disabling HSTS, dropping includeSubDomains, or shortening max-age
+# 2. Advertised endpoints: These URLs are baked into notification emails and
+#    into the ACME directory that clients enrol against; repointing them at an
+#    attacker-controlled host redirects that traffic away from this server.
+# 1. Backup encryption password
 _ADMIN_ONLY_SETTINGS = frozenset({
     'enforce_2fa',
     'session_timeout',
@@ -35,6 +41,15 @@ _ADMIN_ONLY_SETTINGS = frozenset({
     'password_require_lowercase',
     'password_require_numbers',
     'password_require_special',
+    'hsts_enabled',
+    'hsts_include_subdomains',
+    'hsts_max_age',
+    'base_url',
+    'protocol_base_url',
+    'acme_public_vhost',
+    'acme_public_port',
+    'acme_public_tls_cert_id',
+    'backup_password',
 })
 
 
