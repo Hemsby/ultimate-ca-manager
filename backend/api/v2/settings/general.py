@@ -120,16 +120,31 @@ def update_general_settings():
     """Update general settings in database"""
     data = request.json or {}
 
-    # Security-sensitive settings require admin:settings permission
+    # Security-sensitive settings require admin:settings permission.
+    # An operator (write:settings but not admin:settings) may legitimately
+    # save a card that mixes admin-only and non-admin fields (e.g. the
+    # "Session & Timezone" card sends session_timeout + timezone together).
+    # Instead of 403-ing the whole request, silently strip the admin-only
+    # keys the requester isn't allowed to modify, and only reject when the
+    # payload contains *only* admin-only keys (nothing would be saved).
     provided_keys = set(data.keys())
     admin_keys_requested = provided_keys & _ADMIN_ONLY_SETTINGS
     if admin_keys_requested:
         user_perms = getattr(g, 'permissions', [])
         if not has_permission('admin:settings', user_perms):
-            return error_response(
-                f'Admin settings permission required to modify: {", ".join(sorted(admin_keys_requested))}',
-                403
+            non_admin_keys = provided_keys - _ADMIN_ONLY_SETTINGS
+            if not non_admin_keys:
+                return error_response(
+                    f'Admin settings permission required to modify: {", ".join(sorted(admin_keys_requested))}',
+                    403
+                )
+            logger.info(
+                "update_general_settings: stripping admin-only keys %s "
+                "for non-admin requester; saving non-admin keys %s",
+                sorted(admin_keys_requested), sorted(non_admin_keys),
             )
+            for key in list(admin_keys_requested):
+                data.pop(key, None)
 
     # List of allowed settings
     allowed_keys = [
