@@ -140,7 +140,7 @@ class TestGeneralSettingsAdminPermission:
 
         # Capture original admin setting values
         r_before = auth_client.get('/api/v2/settings/general')
-        before = get_json(r_before)
+        before = get_json(r_before).get('data', get_json(r_before))
         orig_2fa = before.get('enforce_2fa')
         orig_attempts = before.get('max_login_attempts')
 
@@ -154,7 +154,7 @@ class TestGeneralSettingsAdminPermission:
 
         # Verify non-admin key was saved and admin keys were NOT changed
         r_after = auth_client.get('/api/v2/settings/general')
-        after = get_json(r_after)
+        after = get_json(r_after).get('data', get_json(r_after))
         assert after.get('site_name') == 'Mixed Test', \
             f'Non-admin key site_name should be saved: {after}'
         assert after.get('enforce_2fa') == orig_2fa, \
