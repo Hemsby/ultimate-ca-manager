@@ -269,3 +269,49 @@ class TestScepProfileTemplateIssuance:
         eku = cert.extensions.get_extension_for_oid(
             ExtensionOID.EXTENDED_KEY_USAGE).value
         assert {oid.dotted_string for oid in eku} == {'1.3.6.1.5.5.7.3.1'}
+
+    def test_all_ekus_refused_falls_back_not_unrestricted(self, app, auth_client, create_ca):
+        # A CSR asking only for disallowed EKUs (e.g. anyExtendedKeyUsage) must
+        # not yield a certificate with the EKU extension omitted entirely — that
+        # would leave the leaf unrestricted for every purpose (RFC 5280
+        # §4.2.1.12). It falls back to a serverAuth+clientAuth device profile.
+        ca = create_ca(cn='Profile AnyEKU CA')
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.x509.oid import NameOID
+        from services.scep.scep_service import SCEPService
+        from models import SCEPRequest, Certificate
+
+        with app.app_context():
+            ca_obj = db.session.get(CA, ca['id'])
+            svc = SCEPService(ca_refid=ca_obj.refid, auto_approve=True)
+            key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            csr = (x509.CertificateSigningRequestBuilder()
+                   .subject_name(x509.Name(
+                       [x509.NameAttribute(NameOID.COMMON_NAME, 'device3.test')]))
+                   .add_extension(x509.ExtendedKeyUsage(
+                       [x509.ExtendedKeyUsageOID.ANY_EXTENDED_KEY_USAGE]),
+                       critical=False)
+                   .sign(key, hashes.SHA256()))
+            scep_req = SCEPRequest(
+                transaction_id='profile-anyeku-txn',
+                ca_refid=ca_obj.refid,
+                csr=base64.b64encode(
+                    csr.public_bytes(serialization.Encoding.DER)).decode(),
+                status='pending',
+                subject='CN=device3.test',
+            )
+            db.session.add(scep_req)
+            db.session.flush()
+            cert_refid = svc._auto_approve_request(scep_req, csr)
+            db.session.commit()
+            row = Certificate.query.filter_by(refid=cert_refid).first()
+            pem = base64.b64decode(row.crt)
+        cert = x509.load_pem_x509_certificate(pem, default_backend())
+        eku = cert.extensions.get_extension_for_oid(
+            ExtensionOID.EXTENDED_KEY_USAGE).value
+        oids = {oid.dotted_string for oid in eku}
+        # serverAuth + clientAuth, and crucially NOT anyExtendedKeyUsage / absent
+        assert oids == {'1.3.6.1.5.5.7.3.1', '1.3.6.1.5.5.7.3.2'}
+        assert '2.5.29.37.0' not in oids

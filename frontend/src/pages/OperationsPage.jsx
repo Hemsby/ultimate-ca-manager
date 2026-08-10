@@ -277,7 +277,10 @@ export default function OperationsPage() {
   const [opnsensePort, setOpnsensePort] = useState('443')
   const [opnsenseApiKey, setOpnsenseApiKey] = useState('')
   const [opnsenseApiSecret, setOpnsenseApiSecret] = useState('')
-  const [opnsenseVerifySsl, setOpnsenseVerifySsl] = useState(false)
+  // Verify TLS by default — matches the backend default (#248). The UI used
+  // to start with verification OFF, which silently overrode the backend's
+  // secure default because the request body always carries the key.
+  const [opnsenseVerifySsl, setOpnsenseVerifySsl] = useState(true)
   const [testResult, setTestResult] = useState(null)
   const [testItems, setTestItems] = useState([])
 
@@ -308,7 +311,10 @@ export default function OperationsPage() {
         setOpnsensePort(config.port || '443')
         setOpnsenseApiKey(config.api_key || '')
         setOpnsenseApiSecret(config.api_secret || '')
-        setOpnsenseVerifySsl(config.verify_ssl || false)
+        // Only an explicitly saved `false` opts out of verification; a saved
+        // config from before the key existed must not re-disable it
+        // (`config.verify_ssl || false` did exactly that).
+        setOpnsenseVerifySsl(config.verify_ssl !== false)
       }
     } catch { /* non-critical */ }
     loadCAs()
@@ -652,6 +658,9 @@ export default function OperationsPage() {
             <input type="checkbox" checked={!opnsenseVerifySsl} onChange={(e) => setOpnsenseVerifySsl(!e.target.checked)} className="w-4 h-4 rounded border-border text-accent-primary" />
             <span className="text-sm text-text-secondary">{t('importExport.opnsense.ignoreCert')}</span>
           </label>
+          {!opnsenseVerifySsl && (
+            <p className="text-xs text-amber-500">{t('importExport.opnsense.sslWarning')}</p>
+          )}
 
           {testResult && (
             <>

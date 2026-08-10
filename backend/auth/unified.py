@@ -108,7 +108,44 @@ class AuthManager:
             permissions = json.loads(api_key.permissions)
         except Exception:
             permissions = []
-        
+
+        # Re-bind the key's scopes to the owner's CURRENT effective permissions.
+        # The stored list is a snapshot from mint time, so without this a key
+        # minted while its owner was an admin/operator keeps those scopes after
+        # the owner is demoted (e.g. to viewer) — privilege that outlives the
+        # role change. A key may narrow what its owner can do, never widen it.
+        from auth.permissions import get_effective_permissions
+        owner_permissions = get_effective_permissions(linked_user)
+        if '*' not in owner_permissions:
+            if '*' in permissions:
+                # A wildcard key is worth exactly its owner's current scopes.
+                permissions = list(owner_permissions)
+            else:
+                # Category wildcards ('read:*', 'write:*' — the shapes the UI's
+                # scope presets mint) expand to the owner's current scopes in
+                # that category, symmetric with the bare-'*' branch above.
+                # Filtering them through has_permission() alone would drop them
+                # entirely, because named roles hold only concrete scopes: a
+                # demoted admin's ['read:*'] key would authenticate with NO
+                # permissions even though the owner legitimately retains
+                # read:cas, read:certificates, etc.
+                rebound = []
+                for perm in permissions:
+                    if ':' in perm and perm.endswith(':*'):
+                        category = perm.split(':', 1)[0]
+                        matched = [
+                            p for p in owner_permissions
+                            if p == perm or p.split(':', 1)[0] == category
+                        ]
+                    elif has_permission(perm, owner_permissions):
+                        matched = [perm]
+                    else:
+                        matched = []
+                    for p in matched:
+                        if p not in rebound:
+                            rebound.append(p)
+                permissions = rebound
+
         return {
             'user_id': api_key.user_id,
             'user': api_key.user,

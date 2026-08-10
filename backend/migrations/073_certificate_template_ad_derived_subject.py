@@ -1,4 +1,4 @@
-"""Migration 070: add ad_derived_subject column to certificate_templates.
+"""Migration 073: add ad_derived_subject column to certificate_templates.
 
 Per-template opt-in for MS-WSTEP to build the certificate's subject/SAN
 from the requester's Active Directory object (via the AD Connector) rather
@@ -23,20 +23,20 @@ def _upgrade_sqlite(conn):
         "SELECT name FROM sqlite_master WHERE type='table' AND name='certificate_templates'"
     )
     if not cur.fetchone():
-        logger.info("070: certificate_templates table absent, skipping")
+        logger.info("073: certificate_templates table absent, skipping")
         return
 
     cur = conn.execute("PRAGMA table_info(certificate_templates)")
     cols = {row[1] for row in cur.fetchall()}
     if 'ad_derived_subject' in cols:
-        logger.info("070: ad_derived_subject column already present, skipping")
+        logger.info("073: ad_derived_subject column already present, skipping")
         return
 
     conn.execute(
         "ALTER TABLE certificate_templates ADD COLUMN ad_derived_subject BOOLEAN DEFAULT 0"
     )
     conn.commit()
-    logger.info("070: added ad_derived_subject column to certificate_templates (SQLite)")
+    logger.info("073: added ad_derived_subject column to certificate_templates (SQLite)")
 
 
 def _upgrade_pg(conn):
@@ -44,18 +44,18 @@ def _upgrade_pg(conn):
 
     insp = inspect(conn)
     if 'certificate_templates' not in set(insp.get_table_names()):
-        logger.info("070: certificate_templates table absent, skipping")
+        logger.info("073: certificate_templates table absent, skipping")
         return
 
     cols = {c['name'] for c in insp.get_columns('certificate_templates')}
     if 'ad_derived_subject' in cols:
-        logger.info("070: ad_derived_subject column already present, skipping")
+        logger.info("073: ad_derived_subject column already present, skipping")
         return
 
     conn.execute(
         text("ALTER TABLE certificate_templates ADD COLUMN ad_derived_subject BOOLEAN DEFAULT FALSE")
     )
-    logger.info("070: added ad_derived_subject column to certificate_templates (PostgreSQL)")
+    logger.info("073: added ad_derived_subject column to certificate_templates (PostgreSQL)")
 
 
 def upgrade(conn):

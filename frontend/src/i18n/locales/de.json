@@ -797,7 +797,12 @@
       "maxReached": "Maximum von {{max}} EKUs erreicht",
       "helper": "Es können {{remaining}} weitere EKUs hinzugefügt werden (RFC 5280 §4.2.1.12).",
       "defaultLocked": "Standard für diesen Zertifikatstyp"
-    }
+    },
+    "template": "Vorlage",
+    "allTemplates": "Alle Vorlagen",
+    "modifiedFromTemplate": "Von Vorlage abweichend",
+    "issuedFromTemplate": "Ausgestellt aus Vorlage: {{name}}",
+    "templateOverridesHint": "Weicht von Vorlage '{{name}}' ab in: {{fields}}"
   },
   "cas": {
     "parentCA": "Übergeordnete CA",
@@ -1154,6 +1159,9 @@
     "editGroup": "Gruppe bearbeiten",
     "deleteGroup": "Gruppe löschen",
     "groupName": "Gruppenname",
+    "permissions": "Berechtigungen",
+    "permissionsHelp": "Berechtigungen, die jedem Mitglied dieser Gruppe zusätzlich zu seiner eigenen Rolle gewährt werden.",
+    "noPermissions": "Keine Berechtigungen gewährt",
     "members": "Mitglieder",
     "noGroups": "Keine Gruppen gefunden",
     "noMembers": "Keine Mitglieder gefunden",
@@ -1358,6 +1366,7 @@
     "autoApproveDesc": "ACME-Challenge-Prüfung für diese Domain überspringen. Zertifikate werden sofort ohne Domain-Control-Verifizierung ausgestellt.",
     "issuingCA": "Ausstellende CA",
     "useDefaultCA": "Standard-CA verwenden",
+    "issuingCAProxyHelper": "Gilt nur, wenn UCM das Zertifikat über seinen eigenen ACME-Server ausstellt; ohne Wirkung, wenn die Domain an Let's Encrypt weitergeleitet wird (das Zertifikat stammt dann von der Upstream-CA).",
     "defaultCA": "Standard-CA",
     "testDnsAccess": "DNS-Zugang testen",
     "domainCreatedSuccess": "Domain erfolgreich registriert",
@@ -1437,6 +1446,8 @@
     "proxyUpstreamCAAccount": "Upstream-CA-Konto",
     "proxyUpstreamCAAccountHelper": "Wählen Sie ein registriertes externes ACME-CA-Konto. EAB und Zugangsdaten werden unten unter Externe CA-Konten verwaltet.",
     "proxySelectCaAccount": "CA-Konto auswählen…",
+    "proxyPruneReplacedCertificates": "Ersetzte Zertifikate bereinigen",
+    "proxyPruneReplacedCertificatesDesc": "Vom Proxy importierte Zertifikate automatisch löschen, sobald eine Erneuerung für dieselben Domains erfolgreich war. Widerrufene Zertifikate werden immer behalten.",
     "proxyNoCaAccounts": "Keine externen CA-Konten konfiguriert. Fügen Sie unten unter Externe CA-Konten eines hinzu.",
     "proxyManageCaAccountsHint": "EAB und CA-spezifische Einstellungen werden unten unter Externe CA-Konten verwaltet.",
     "proxyEnabled": "Über ACME-Proxy bereitstellen",
@@ -1519,7 +1530,15 @@
       "deleteTitle": "EAB-Credential löschen",
       "delete": "Löschen",
       "deletedSuccess": "EAB-Credential gelöscht",
-      "deleteFailed": "EAB-Credential konnte nicht gelöscht werden"
+      "deleteFailed": "EAB-Credential konnte nicht gelöscht werden",
+      "allowedDomains": "Erlaubte Domains",
+      "allowedDomainsHelp": "Ein Muster pro Zeile oder kommagetrennt (z.B. *.mydomain.com, host.mydomain.com). Leer lassen, um alle Zertifikatsausstellungen für diese Credentials zu blockieren.",
+      "allDomainsLabel": "Alle Domains (fügt * zur erlaubten Liste hinzu)",
+      "allDomains": "Alle Domains",
+      "noDomains": "Keine (Ausstellung blockiert)",
+      "editDomainsTitle": "Erlaubte Domains bearbeiten",
+      "domainsSaved": "Erlaubte Domains aktualisiert",
+      "domainsSaveFailed": "Fehler beim Aktualisieren der erlaubten Domains"
     },
     "termsOfServiceTitlePlaceholder": "Nutzungsbedingungen (leer lassen zum Ausblenden)",
     "termsOfServiceBodyPlaceholder": "Schreiben Sie hier Ihre Bedingungen...\n\nUnterstützt: **Fett**, *Kursiv*, [Links](url), - Listen\n\nLeerzeilen für Absätze verwenden.",
@@ -1574,7 +1593,12 @@
     "caaEnforceWarning": "In isolierten Netzwerken schlägt jede ACME-Ausstellung fehl, wenn der Resolver CAA-Anfragen nicht beantworten kann.",
     "tlsAlpn01Desc": "Validierung über TLS auf Port 443 (RFC 8737)",
     "tlsAlpnPort": "TLS-ALPN-01-Port",
-    "tlsAlpnPortHelper": "Lokaler Port, auf dem der TLS-ALPN-01-Responder während der Validierung lauscht (Standard 443)."
+    "tlsAlpnPortHelper": "Lokaler Port, auf dem der TLS-ALPN-01-Responder während der Validierung lauscht (Standard 443).",
+    "dnsPersistSection": "Persistente DNS-Validierung (dns-persist-01)",
+    "dnsPersistEnabled": "dns-persist-01-Challenge anbieten (draft-ietf-acme-dns-persist)",
+    "dnsPersistEnabledDesc": "Validierung über einen persistenten TXT-Eintrag unter _validation-persist.<Domain>, an das ACME-Konto gebunden. Erneuerungen ohne DNS-Schreibzugriff.",
+    "dnsPersistWarning": "Risiko: Kompromittierter ACME-Kontoschlüssel erlaubt Ausstellung für die Domain, bis der TXT-Eintrag entfernt wird (draft §7.2). Nur für kontrollierte Konten/Zonen aktivieren.",
+    "dnsPersistIssuerNote": "Issuer-Domains für den TXT-Eintrag: {{domains}} (aus den CAA-Identifiern, sonst ACME-Hostname)."
   },
   "scep": {
     "title": "SCEP-Protokoll",
@@ -1738,6 +1762,7 @@
     "crlScheduleUpdated": "CRL Zeitplan aktualisiert",
     "crlScheduleFailed": "CRL Zeitplan konnte nicht aktualisiert werden",
     "crlValidity": "Gültigkeit",
+    "crlValidityOfflineWarning": "Lange Gültigkeit ist für Offline-CAs gedacht; Vertrauensparteien können für das gesamte Fenster veraltete Sperrdaten beibehalten.",
     "crlPublishInterval": "Veröffentlichen alle",
     "crlPublishAuto": "Auto (vor Ablauf)",
     "crlDigest": "Signatur Digest",
@@ -1827,7 +1852,8 @@
       "importSelected": "{{count}} ausgewählte importieren",
       "importSuccess": "{{count}} Elemente erfolgreich importiert ({{skipped}} übersprungen)",
       "noItemsSelected": "Bitte wählen Sie mindestens ein Element zum Importieren aus",
-      "ignoreCert": "SSL-Zertifikat ignorieren (selbstsigniert)"
+      "ignoreCert": "SSL-Zertifikat ignorieren (selbstsigniert)",
+      "sslWarning": "⚠ SSL-Überprüfung ist deaktiviert. Verbindungen sind anfällig für Man-in-the-Middle-Angriffe."
     },
     "export": {
       "allCertsTitle": "Alle Zertifikate exportieren",
@@ -4450,6 +4476,8 @@
     "selectCA": "CA für Zeitstempelsignierung auswählen",
     "policyOid": "Richtlinien-OID",
     "policyOidHelp": "OID zur Identifizierung der TSA-Richtlinie, unter der Zeitstempel ausgestellt werden",
+    "requireDedicatedCert": "Dediziertes TSA-Zertifikat erforderlich",
+    "requireDedicatedCertDesc": "Das Signieren von Zeitstempeln mit dem CA-Zertifikat selbst ablehnen. Erfordert ein dediziertes End-Entity-Signaturzertifikat mit kritischer timeStamping-EKU (RFC 3161).",
     "endpoint": "TSA-Endpunkt",
     "endpointDesc": "Verwenden Sie diese URL in Ihrer TSA-Client-Konfiguration",
     "timestampRequest": "Zeitstempelanfrage",

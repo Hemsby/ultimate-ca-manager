@@ -986,6 +986,24 @@ The signed certificate contains an **iPAddress** SubjectAltName entry for each v
 
 > 💡 Internal addresses (RFC1918, loopback) validate out of the box — UCM's primary deployment model. Cloud-metadata IPs remain blocked.
 
+## Persistent DNS Validation (dns-persist-01)
+
+The local ACME server supports **dns-persist-01** (draft-ietf-acme-dns-persist): validation through a **persistent** TXT record bound to the ACME account — renewals need no DNS writes.
+
+### Setup
+1. Enable it under **ACME → Configuration → Persistent DNS Validation** (off by default).
+2. Create the record once:
+\`\`\`
+_validation-persist.app.example.com. IN TXT "ca.example.com; accounturi=https://ca.example.com/acme/acct/<id>"
+\`\`\`
+The challenge object advertises the expected \`accounturi\` and \`issuer-domain-names\`.
+
+### Options
+- \`policy=wildcard\` — also authorizes wildcard certificates and subdomains of the validated name (a record on a parent domain covers its children)
+- \`persistUntil=<unix-timestamp>\` — stops new validation attempts after that time
+
+> ⚠️ The record grants issuance capability to the ACME account key for as long as it exists — delete the TXT record to revoke it.
+
 ## Using certbot
 
 \`\`\`
@@ -1390,7 +1408,7 @@ Each user can have multiple API keys for programmatic access. API keys inherit t
 ### Creating a Group
 1. Click **Create Group**
 2. Enter a **name** and optional description
-3. Assign a **role** (group members inherit this role)
+3. Select the **permissions** the group grants (members receive them on top of their own role)
 4. Click **Create**
 
 ### Managing Members
@@ -1398,10 +1416,10 @@ Each user can have multiple API keys for programmatic access. API keys inherit t
 - Use the **transfer panel** to add/remove users
 - Users can belong to multiple groups
 
-### Role Inheritance
+### Group Permissions
 A user's effective permissions are the **union** of:
-- Their directly assigned role
-- All roles from groups they belong to
+- Their directly assigned role's permissions
+- The permissions granted by every group they belong to
 
 ## Roles
 
@@ -1477,13 +1495,13 @@ A percentage badge shows how much of the total permission set the role covers. 1
 
 Roles are assigned:
 - **Directly** — On the Users page, edit a user and select a role
-- **Via Groups** — Assign a role to a group; all members inherit it
+- **Via Groups** — A group grants a permission set; every member receives it in addition to their own role
 
 ## Effective Permissions
 
 A user's effective permissions are computed as the union of:
 1. Their directly assigned role's permissions
-2. All roles from groups they belong to
+2. The permissions granted by groups they belong to
 
 The most permissive rule wins (additive model, no deny rules).
 
@@ -2523,6 +2541,44 @@ Use the status filter bar at the top to show:
 - **write:approvals** — Approve or reject requests
 
 > 💡 Set up email notifications in policies so approvers are alerted when new requests arrive.
+`
+  },
+
+  keyRecovery: {
+    title: 'Key Recovery',
+    content: `
+## Overview
+
+Key Recovery retrieves the **archived private key** of a previously issued certificate through an approval-gated, fully audited workflow. It is meant for keys that were **not exported at issuance time** — the preset did not allow export, or it was simply skipped — and are needed later, with an approval trail attached to the retrieval.
+
+Recovery only works when the private key was archived (stored in the database) at issuance. It cannot reconstruct a key that was never kept.
+
+## Workflow
+
+### 1. Request
+A user opens a recovery request for a specific certificate and provides a reason. The request is recorded and enters the pending state.
+
+### 2. Approve (four-eyes)
+A second authorised operator reviews the request and approves it. The requester **cannot approve their own request** — request and approval are separate actions by different people (dual control).
+
+### 3. Download
+Once approved, the archived key is released as a **password-protected PKCS#12** bundle. The download is recorded in the audit trail.
+
+## Requirements
+
+- **Archived key** — the certificate's private key must be present in the database. Certificates whose key was never archived cannot be recovered.
+- **Dual control** — the request and the approval are distinct steps performed by different users.
+
+## Permissions
+
+- **read:key_recovery** — Request a recovery and view requests
+- **admin** — Approve or deny a pending recovery request
+
+## What it is (and isn't)
+
+Key Recovery adds an **approval trail** to retrieving an archived key after issuance. It is not a substitute for restricting private-key export on presets — if a role can already export keys directly, that is a separate access path to control on its own.
+
+> 💡 Every request, approval and download is written to the audit trail for compliance.
 `
   },
 

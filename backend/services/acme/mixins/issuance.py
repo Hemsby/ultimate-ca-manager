@@ -92,7 +92,33 @@ class IssuanceMixin:
         order_ips_norm = {ip for ip in order_ips}
         if csr_ips_norm != order_ips_norm:
             return False, f"CSR IPs {sorted(csr_ips_norm)} don't match order IPs {sorted(order_ips_norm)}"
-        
+
+        # Reject any SAN entry that is not one of the validated identifiers.
+        # The per-type extractors above only look at DNSName/IPAddress, so an
+        # rfc822Name, otherName/UPN, URI or dirName would otherwise sail past
+        # validation and be copied verbatim into the signed certificate by
+        # sign_csr — letting a client that only proved control of a DNS name
+        # obtain a cert asserting an email address or a Windows UPN it never
+        # proved. ACME only ever proves DNS/IP control, so anything else is
+        # unauthorized by construction.
+        san_ok, san_err = self._validate_csr_san_types(
+            csr, order_domains_norm, order_ips_norm
+        )
+        if not san_ok:
+            return False, san_err
+
+        # The SAN check above does not cover the subject, but two subject
+        # attributes still reach the issued certificate: sign_csr SYNTHESIZES a
+        # SAN from the CN/emailAddress when the CSR carries no SAN extension, and
+        # the whole subject is copied verbatim onto the leaf while finalize only
+        # ever validated the FIRST CN. Require every CN to be a validated order
+        # identifier and forbid any emailAddress RDN.
+        subject_ok, subject_err = self._validate_csr_subject(
+            csr, order_domains_norm, order_ips_norm
+        )
+        if not subject_ok:
+            return False, subject_err
+
         # CAA record check (RFC 6844 + RFC 8555 §8.1) - only for DNS identifiers
         if order_domains:
             caa_enforce = False
@@ -245,6 +271,123 @@ class IssuanceMixin:
         except Exception as e:
             logger.warning(f"Auto-supersede check failed: {e}")
     
+    @staticmethod
+    def _validate_csr_san_types(
+        csr, allowed_domains: set, allowed_ips: set
+    ) -> Tuple[bool, Optional[str]]:
+        """Reject SAN entries the ACME order never authorized.
+
+        ``allowed_domains`` / ``allowed_ips`` are the already-validated,
+        normalized order identifiers. Every general name in the CSR's SAN must
+        be a DNSName or IPAddress drawn from those sets; any other general-name
+        type (rfc822Name, otherName/UPN, URI, dirName, registeredID, ...) is
+        rejected outright because no ACME challenge can prove control of it.
+
+        Returns (True, None) when the SAN is acceptable, else (False, reason).
+        """
+        from cryptography import x509
+
+        try:
+            san_ext = csr.extensions.get_extension_for_oid(
+                x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+            )
+        except x509.ExtensionNotFound:
+            return True, None
+        except Exception as exc:
+            return False, f"Unable to parse CSR SubjectAlternativeName: {exc}"
+
+        for name in san_ext.value:
+            if isinstance(name, x509.DNSName):
+                if name.value.lower().rstrip('.') not in allowed_domains:
+                    return False, (
+                        f"CSR SAN dNSName {name.value!r} is not an authorized "
+                        "order identifier"
+                    )
+            elif isinstance(name, x509.IPAddress):
+                if str(name.value) not in allowed_ips:
+                    return False, (
+                        f"CSR SAN iPAddress {name.value} is not an authorized "
+                        "order identifier"
+                    )
+            else:
+                # otherName (incl. UPN), rfc822Name, URI, dirName, ...
+                type_name = type(name).__name__
+                detail = ''
+                if isinstance(name, x509.OtherName):
+                    detail = f" (type-id {name.type_id.dotted_string})"
+                return False, (
+                    f"CSR SAN contains unauthorized general name type "
+                    f"{type_name}{detail}; ACME may only certify the DNS and IP "
+                    "identifiers validated by the order"
+                )
+
+        return True, None
+
+    @staticmethod
+    def _validate_csr_subject(
+        csr, allowed_domains: set, allowed_ips: set
+    ) -> Tuple[bool, Optional[str]]:
+        """Reject subject Distinguished-Name identities the order never proved.
+
+        ``_validate_csr_san_types`` guards the SAN extension, but two subject
+        attributes leak into the issued certificate independently of it:
+
+        * ``sign_csr`` SYNTHESIZES a SAN from the subject when the CSR carries no
+          SAN extension — a DNSName/IPAddress/RFC822Name from the CN, plus an
+          rfc822Name for every ``emailAddress`` RDN — so a CSR with no SAN and
+          ``emailAddress=ceo@victim.com`` still yields a leaf asserting that
+          address, which email-based client-certificate identity mapping
+          (mTLS, EAP-TLS, VPN) keys on.
+        * The subject is copied VERBATIM onto the leaf, and finalize only ever
+          compared the FIRST CN to the order, so a second ``CN=admin.victim.com``
+          rode along unvalidated — and because the stored ``subject_cn`` is the
+          first CN of the RFC 4514 (reversed) DN, it even became the
+          certificate's displayed identity.
+
+        CN and emailAddress are the only two subject attribute types ``sign_csr``
+        turns into SAN general names, so the check is scoped to them: every CN
+        must be a validated order identifier and no ``emailAddress`` may appear.
+        Other DN attributes (O, OU, L, ST, C, ...) are never synthesized into
+        SANs and are not treated as validated identities, so they are left
+        untouched to avoid breaking legitimate OV-style subjects.
+
+        Returns (True, None) when the subject is acceptable, else (False, reason).
+        """
+        from cryptography import x509
+
+        subject = csr.subject
+
+        # No ACME challenge proves control of an e-mail address; an emailAddress
+        # RDN is synthesized into an rfc822Name SAN on a no-SAN CSR and is copied
+        # onto the leaf subject regardless.
+        email_attrs = subject.get_attributes_for_oid(
+            x509.oid.NameOID.EMAIL_ADDRESS
+        )
+        if email_attrs:
+            return False, (
+                f"CSR subject contains an emailAddress attribute "
+                f"({str(email_attrs[0].value)!r}); ACME may only certify the DNS "
+                "and IP identifiers validated by the order"
+            )
+
+        # Every commonName — not just the first — must be a validated order
+        # identifier (a DNS name or, for RFC 8738 orders, an IP).
+        for attr in subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME):
+            cn = str(attr.value)
+            cn_norm = cn.lower().rstrip('.')
+            if (
+                cn_norm in allowed_domains
+                or cn_norm in allowed_ips
+                or cn in allowed_ips
+            ):
+                continue
+            return False, (
+                f"CSR subject commonName {cn!r} is not an authorized order "
+                "identifier"
+            )
+
+        return True, None
+
     def _extract_ips_from_csr(self, csr) -> List[str]:
         """Extract IP addresses from CSR Subject Alternative Names (RFC 8738)
         

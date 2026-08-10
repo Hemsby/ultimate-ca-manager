@@ -11,7 +11,7 @@ class OPNsenseImportService(ConnectionMixin, ParserMixin, ImportMixin):
 
     def __init__(self, base_url: str, username: str = None, password: str = None,
                  api_key: str = None, api_secret: str = None,
-                 verify_ssl: bool = False):
+                 verify_ssl: bool = True):
         """
         Initialize OPNsense import service.
 

@@ -395,13 +395,13 @@ def _trusted_client_cert():
     if request.environ.get('peercert'):
         return request.environ['peercert']
 
-    from utils.trusted_proxy import is_request_from_trusted_proxy
+    from utils.trusted_proxy import immediate_peer_addr, is_request_from_trusted_proxy
     if not is_request_from_trusted_proxy():
         # Untrusted peer is sending SSL_CLIENT_CERT — likely a spoof.
         if request.environ.get('SSL_CLIENT_CERT') or request.headers.get('X-SSL-Client-Cert'):
             logger.warning(
                 "EST: ignoring SSL_CLIENT_CERT from untrusted peer %s",
-                request.remote_addr,
+                immediate_peer_addr(),
             )
         return None
 
@@ -410,14 +410,34 @@ def _trusted_client_cert():
         or request.headers.get('X-SSL-Client-Verify')
         or ''
     ).upper()
-    if verify and verify != 'SUCCESS':
-        logger.warning("EST: SSL_CLIENT_VERIFY=%s — refusing client cert", verify)
-        return None
-
-    return (
+    presented = (
         request.environ.get('SSL_CLIENT_CERT')
         or request.headers.get('X-SSL-Client-Cert')
     )
+    # Fail closed: a missing SSL_CLIENT_VERIFY is not evidence of a verified
+    # peer. Treating absent-as-OK meant a trusted proxy that forwarded the
+    # certificate but not the verify result would have its client certs
+    # accepted unvalidated. Only WARN when a certificate was actually
+    # presented, though — an ordinary Basic-auth request through a trusted
+    # proxy that forwards no SSL_CLIENT_* variables (e.g. the sample nginx
+    # config in docs/installation/docker.md) carries no client cert, and
+    # logging "refusing client cert" on its success path is a false alarm
+    # on every request (twice per serverkeygen).
+    if verify != 'SUCCESS':
+        if presented:
+            logger.warning(
+                "EST: SSL_CLIENT_VERIFY=%r — refusing client cert",
+                verify or '<missing>',
+            )
+        else:
+            logger.debug(
+                "EST: no client certificate presented (SSL_CLIENT_VERIFY=%r); "
+                "falling through to other authentication",
+                verify or '<missing>',
+            )
+        return None
+
+    return presented
 
 
 def _authenticate_est_client():
@@ -625,7 +645,8 @@ def simple_enroll(label=None):
             ca=ca,
             csr=csr,
             validity_days=days,
-            source='est'
+            source='est',
+            cert_type='device_cert',
         )
         
         # Create audit log
@@ -720,7 +741,7 @@ def simple_reenroll(label=None):
         
         cert_pem, serial = CAService.sign_csr_from_crypto(
             ca=ca, csr=csr, validity_days=days, source='est',
-            renewal_of=client_cert_obj,
+            renewal_of=client_cert_obj, cert_type='device_cert',
         )
 
         from models import AuditLog
@@ -914,7 +935,8 @@ def server_keygen(label=None):
         days = int(validity_days.value) if validity_days else 365
         
         cert_pem, serial = CAService.sign_csr_from_crypto(
-            ca=ca, csr=new_csr, validity_days=days, source='est'
+            ca=ca, csr=new_csr, validity_days=days, source='est',
+            cert_type='device_cert',
         )
         
         cert = x509.load_pem_x509_certificate(cert_pem.encode(), default_backend())

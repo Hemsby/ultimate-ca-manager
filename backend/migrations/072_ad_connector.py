@@ -1,4 +1,4 @@
-"""Migration 069: ad_connector_config table.
+"""Migration 072: ad_connector_config table.
 
 Single-row Active Directory connector configuration -- lets UCM query AD
 directly (independent of SSO's own, unrelated LDAP provider config) to
@@ -57,13 +57,13 @@ CREATE TABLE IF NOT EXISTS ad_connector_config (
 def _upgrade_sqlite(conn):
     conn.execute(_SQLITE_DDL)
     conn.commit()
-    logger.info("[069] created ad_connector_config (SQLite)")
+    logger.info("[072] created ad_connector_config (SQLite)")
 
 
 def _upgrade_pg(conn):
     from sqlalchemy import text
     conn.execute(text(_PG_DDL))
-    logger.info("[069] created ad_connector_config (PostgreSQL)")
+    logger.info("[072] created ad_connector_config (PostgreSQL)")
 
 
 def upgrade(conn):

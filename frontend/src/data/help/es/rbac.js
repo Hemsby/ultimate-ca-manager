@@ -79,13 +79,13 @@ Una insignia de porcentaje muestra cuánto del conjunto total de permisos cubre 
 
 Los roles se asignan:
 - **Directamente** — En la página de Usuarios, edite un usuario y seleccione un rol
-- **Mediante grupos** — Asigne un rol a un grupo; todos los miembros lo heredan
+- **Mediante grupos** — Un grupo otorga un conjunto de permisos; cada miembro lo recibe además de su propio rol
 
 ## Permisos efectivos
 
 Los permisos efectivos de un usuario se calculan como la unión de:
 1. Los permisos del rol asignado directamente
-2. Todos los roles de los grupos a los que pertenece
+2. Los permisos otorgados por los grupos a los que pertenece
 
 La regla más permisiva prevalece (modelo aditivo, sin reglas de denegación).
 

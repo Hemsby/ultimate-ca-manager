@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Certificate, X, Plus, CaretDown, CaretUp, PushPin } from '@phosphor-icons/react'
 import { Button, Select, Input, DatePicker, EkuMultiSelect } from '../../components'
 import { templatesService, ekuService } from '../../services'
@@ -12,6 +12,11 @@ export function IssueCertificateForm({ cas, initialData, onSubmit, onCancel, t }
   const [selectedTemplate, setSelectedTemplate] = useState('')
   const [showSubject, setShowSubject] = useState(false)
   const [validityMode, setValidityMode] = useState('days') // 'days' or 'date'
+  // #269: guard against double submits (crypto work makes double-clicks easy).
+  // A ref, not state: React hasn't re-rendered yet when a fast second click
+  // lands, so a state-closure guard would see the stale value.
+  const [issuing, setIssuing] = useState(false)
+  const issuingRef = useRef(false)
   const [showAllTemplates, setShowAllTemplates] = useState(false)
 
   const [formData, setFormData] = useState({
@@ -236,8 +241,9 @@ export function IssueCertificateForm({ cas, initialData, onSubmit, onCancel, t }
     setSans(prev => [...prev, { type: 'dns', value: wildcardSuggestion }])
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
+    if (issuingRef.current) return
 
     const sanError = [...autoSans, ...sans]
       .map((s) => getSanValidationError(s.type, s.value, { i18nNs: 'certificates' }))
@@ -292,7 +298,14 @@ export function IssueCertificateForm({ cas, initialData, onSubmit, onCancel, t }
       ...(formData.ocsp_must_staple && { ocsp_must_staple: true }),
       ...(formData.extra_ekus?.length && { extra_ekus: formData.extra_ekus }),
     }
-    onSubmit(payload)
+    setIssuing(true)
+    issuingRef.current = true
+    try {
+      await onSubmit(payload)
+    } finally {
+      issuingRef.current = false
+      setIssuing(false)
+    }
   }
 
   const update = (field, val) => setFormData(prev => ({ ...prev, [field]: val }))
@@ -633,9 +646,9 @@ export function IssueCertificateForm({ cas, initialData, onSubmit, onCancel, t }
         <Button type="button" variant="secondary" onClick={onCancel}>
           {t('common.cancel')}
         </Button>
-        <Button type="submit">
+        <Button type="submit" disabled={issuing}>
           <Certificate size={16} />
-          {t('certificates.issueCertificate')}
+          {issuing ? t('common.creating') : t('certificates.issueCertificate')}
         </Button>
       </div>
     </form>

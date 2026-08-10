@@ -586,6 +586,18 @@ export const helpContent = {
           { label: 'Internal IPs', text: 'RFC1918 and loopback addresses validate out of the box — UCM\'s primary deployment model' },
         ]
       },
+      {
+        title: 'Persistent DNS Validation (dns-persist-01)',
+        icon: ArrowClockwise,
+        content: 'The local ACME server can validate domains through a persistent TXT record bound to the ACME account (draft-ietf-acme-dns-persist) — clients renew without writing DNS records. Opt-in, off by default.',
+        items: [
+          { label: 'Record', text: 'Create _validation-persist.<domain> TXT "<issuer-domain>; accounturi=<account URL>" — the challenge object advertises both expected values' },
+          { label: 'Enable', text: 'ACME → Configuration → Persistent DNS Validation (dns-persist-01)' },
+          { label: 'Wildcard / subdomains', text: 'Append policy=wildcard to also authorize wildcard certificates and subdomains of the validated name' },
+          { label: 'persistUntil', text: 'Optional persistUntil=<unix timestamp> stops new validations after that time' },
+          { label: 'Security', text: 'The record grants the account key issuance capability for as long as it exists — delete the TXT record to revoke' },
+        ]
+      },
     ],
     tips: [
       'ACME directory URL: https://your-server:port/acme/directory',
@@ -666,7 +678,7 @@ export const helpContent = {
         icon: UsersFour,
         items: [
           { label: 'Create Group', text: 'Define a group and assign members' },
-          { label: 'Role Inheritance', text: 'Groups can inherit roles — all members get group permissions' },
+          { label: 'Group Permissions', text: 'A group grants a set of permissions — every member receives them on top of their own role' },
           { label: 'Member Management', text: 'Add or remove users from groups' },
         ]
       },
@@ -1277,6 +1289,40 @@ export const helpContent = {
       'Approval comments are logged in the audit trail for compliance.',
     ],
     related: ['Policies', 'Certificates', 'Audit Logs']
+  },
+
+  // ===== KEY RECOVERY =====
+  keyRecovery: {
+    title: 'Key Recovery',
+    subtitle: 'Recover archived private keys under dual control',
+    overview: 'Key Recovery retrieves the archived private key of a previously issued certificate through an approval-gated, fully audited workflow. It exists for keys that were not exported at issuance time (the preset did not allow it, or export was skipped) and are needed later — with an approval trail attached to the retrieval.',
+    sections: [
+      {
+        title: 'Workflow',
+        icon: ClockCounterClockwise,
+        items: [
+          { label: 'Request', text: 'A user requests recovery of a specific certificate\'s archived key, with a reason' },
+          { label: 'Approve (four-eyes)', text: 'A second authorised operator reviews and approves — the requester cannot approve their own request' },
+          { label: 'Download', text: 'Once approved, the key is released as a password-protected PKCS#12 bundle' },
+        ]
+      },
+      {
+        title: 'Requirements',
+        icon: Key,
+        items: [
+          { label: 'Archived key', text: 'The certificate\'s private key must be stored in the database — recovery cannot reconstruct a key that was never archived' },
+          { label: 'Dual control', text: 'Request and approval are separate actions by different people; every step is written to the audit trail' },
+        ]
+      },
+    ],
+    tips: [
+      'Key Recovery is for keys that were not exported when the certificate was issued; it is not a replacement for restricting key export at issuance time.',
+      'Every request, approval and download is recorded in the audit trail for compliance.',
+    ],
+    warnings: [
+      'A certificate whose private key was never archived cannot be recovered — there is nothing to release.',
+    ],
+    related: ['Certificates', 'Approvals', 'Audit Logs']
   },
 
   // ===== REPORTS =====

@@ -68,6 +68,226 @@ _LEAF_FORBIDDEN_EKU_OIDS = frozenset({
     x509.ExtendedKeyUsageOID.TIME_STAMPING,
 })
 
+# anyExtendedKeyUsage defeats EKU chaining entirely: a leaf carrying it is
+# usable for every purpose, which makes any per-type EKU policy meaningless.
+# Never honoured from a CSR on any protocol path (ACME/EST/renewal). NB: the
+# admin Sign-CSR endpoints pass allow_sensitive_ekus=True and are deliberately
+# uncapped (explicit operator intent), so this block-list does not apply there.
+_ANY_EKU_OID = x509.ObjectIdentifier('2.5.29.37.0')
+
+# Microsoft Smartcard Logon — grants Active Directory interactive logon when
+# paired with a UPN SAN. Never honoured from CSR-supplied EKU on a protocol
+# path (same admin-path caveat as above); an operator who genuinely wants it
+# passes it explicitly via ``extra_ekus``.
+_SMARTCARD_LOGON_OID = x509.ObjectIdentifier('1.3.6.1.4.1.311.20.2.2')
+
+# Per-certificate-type EKU ceiling for CSR-supplied Extended Key Usage.
+#
+# Without this, whatever EKU a CSR carries is copied onto the leaf, so a client
+# that only proved DNS control (ACME finalize signs with cert_type
+# 'server_cert') could mint a codeSigning or emailProtection certificate. The
+# resolved certificate type — not the requester's CSR — decides what the leaf
+# may be used for. Operator-supplied ``extra_ekus`` are deliberate admin intent
+# and are merged in separately, so they are not capped here.
+_TLS_EKUS = frozenset({
+    x509.ExtendedKeyUsageOID.SERVER_AUTH,
+    x509.ExtendedKeyUsageOID.CLIENT_AUTH,
+})
+_CERT_TYPE_ALLOWED_EKUS = {
+    'server_cert': _TLS_EKUS,
+    'server': _TLS_EKUS,
+    'host': _TLS_EKUS,
+    'client_cert': _TLS_EKUS,
+    'usr_cert': _TLS_EKUS,
+    'user': _TLS_EKUS,
+    'combined_cert': _TLS_EKUS,
+    'combined_server_client': _TLS_EKUS,
+    'code_signing': frozenset({x509.ExtendedKeyUsageOID.CODE_SIGNING}),
+    'email_cert': frozenset({
+        x509.ExtendedKeyUsageOID.EMAIL_PROTECTION,
+        x509.ExtendedKeyUsageOID.CLIENT_AUTH,
+    }),
+    # EST device enrollment — same reviewed allow-list SCEP applies to its
+    # protocol enrollees (scep_service._ALLOWED_EKU_OIDS): both protocols
+    # enroll the same kinds of devices, and a narrower EST ceiling silently
+    # strips EKUs (e.g. ipsecIKE on a VPN gateway) that the equivalent SCEP
+    # enrollment would keep.
+    'device_cert': frozenset({
+        x509.ExtendedKeyUsageOID.SERVER_AUTH,
+        x509.ExtendedKeyUsageOID.CLIENT_AUTH,
+        x509.ExtendedKeyUsageOID.EMAIL_PROTECTION,
+        x509.ExtendedKeyUsageOID.CODE_SIGNING,
+        x509.ExtendedKeyUsageOID.IPSEC_IKE,
+    }),
+}
+
+
+def _default_ekus_for_cert_type(cert_type):
+    """The EKU profile a leaf of *cert_type* carries when its CSR supplies no
+    usable EKU.
+
+    Shared by the no-EKU-in-CSR default and the every-EKU-refused fallback in
+    ``_filter_csr_ekus`` so both shapes resolve to the same profile: a CSR
+    that requests nothing and a CSR whose every request is refused must not
+    end up with different key purposes. Types without a profile (e.g. the
+    deliberate ``custom`` type) return an empty list.
+    """
+    if cert_type in ('server_cert', 'server', 'host'):
+        return [x509.ExtendedKeyUsageOID.SERVER_AUTH]
+    if cert_type in ('usr_cert', 'client_cert', 'user'):
+        return [x509.ExtendedKeyUsageOID.CLIENT_AUTH]
+    if cert_type in ('combined_server_client', 'combined_cert', 'device_cert'):
+        return [
+            x509.ExtendedKeyUsageOID.SERVER_AUTH,
+            x509.ExtendedKeyUsageOID.CLIENT_AUTH,
+        ]
+    if cert_type == 'code_signing':
+        return [x509.ExtendedKeyUsageOID.CODE_SIGNING]
+    if cert_type == 'email_cert':
+        return [x509.ExtendedKeyUsageOID.EMAIL_PROTECTION]
+    return []
+
+
+def _prior_ekus(renewal_of):
+    """EKUs the certificate being renewed already carries ([] if none)."""
+    if renewal_of is None:
+        return []
+    try:
+        return list(renewal_of.extensions.get_extension_for_oid(
+            ExtensionOID.EXTENDED_KEY_USAGE
+        ).value)
+    except x509.ExtensionNotFound:
+        return []
+
+
+def _filter_csr_ekus(eku_oids, cert_type, allow_sensitive_ekus, renewal_of=None):
+    """Cap CSR-supplied EKUs for a leaf to what *cert_type* permits.
+
+    Returns (kept, dropped).
+
+    ``allow_sensitive_ekus`` marks the admin Sign-CSR path — an operator with
+    full CA control deliberately signing a CSR (e.g. a delegated OCSP responder
+    or TSA). That is explicit human intent, so no ceiling is applied and the
+    path behaves exactly as before. Every protocol path (ACME finalize, EST,
+    SCEP, auto-renewal) leaves it False and gets the full cap: an enrollee that
+    only proved domain control cannot widen its own leaf's key purposes.
+
+    ``renewal_of`` is the certificate this signing renews. EKUs it already
+    carries stay allowed (renewal at par): silently stripping them — e.g.
+    ipsecIKE on a VPN device renewing over EST — breaks the service downstream
+    with no error anywhere, which is the same reason SCEP preserves them
+    (scep_service). The block-list above still applies, so OCSPSigning,
+    timeStamping, anyExtendedKeyUsage and Smartcard Logon are never
+    resurrected from a prior certificate.
+
+    When every requested EKU is refused, the certificate type's own profile is
+    issued instead: omitting the ExtendedKeyUsage extension entirely would
+    make the leaf unrestricted for every purpose (RFC 5280 §4.2.1.12) —
+    strictly weaker than the cap, and weaker than the same CSR with no EKU at
+    all. A type with no profile to fall back to refuses outright.
+    """
+    if allow_sensitive_ekus:
+        return list(eku_oids), []
+
+    allowed = _CERT_TYPE_ALLOWED_EKUS.get(cert_type)
+    if allowed is not None and renewal_of is not None:
+        try:
+            prior = set(renewal_of.extensions.get_extension_for_oid(
+                ExtensionOID.EXTENDED_KEY_USAGE
+            ).value)
+        except x509.ExtensionNotFound:
+            prior = set()
+        extra = {
+            oid for oid in prior - allowed
+            if oid not in _LEAF_FORBIDDEN_EKU_OIDS
+            and oid not in (_ANY_EKU_OID, _SMARTCARD_LOGON_OID)
+        }
+        if extra:
+            logger.info(
+                "sign_csr: renewal at par — keeping prior EKU(s) %s beyond "
+                "the %r profile",
+                sorted(o.dotted_string for o in extra), cert_type,
+            )
+            allowed = allowed | extra
+
+    kept, dropped = [], []
+    for oid in eku_oids:
+        if oid in _LEAF_FORBIDDEN_EKU_OIDS or oid in (_ANY_EKU_OID, _SMARTCARD_LOGON_OID):
+            dropped.append(oid)
+            continue
+        # Unknown/custom certificate types keep their historical behaviour:
+        # no per-type ceiling, only the block-list above applies.
+        if allowed is not None and oid not in allowed:
+            dropped.append(oid)
+            continue
+        kept.append(oid)
+
+    if not kept:
+        # Every requested EKU was refused. Emitting no ExtendedKeyUsage
+        # extension would hand back an unrestricted certificate — and create
+        # the perverse incentive that a CSR requesting a forbidden EKU gets
+        # MORE than a CSR requesting nothing. Fall back to the type's profile.
+        kept = _default_ekus_for_cert_type(cert_type)
+        if not kept:
+            raise ValueError(
+                "CSR requests only Extended Key Usages that are not permitted "
+                f"for certificate type {cert_type!r}"
+            )
+    return kept, dropped
+
+
+def _capped_basic_constraints(csr_constraints, ca_cert):
+    """Clamp a sub-CA's pathLenConstraint to what the parent CA permits.
+
+    RFC 5280 §4.2.1.9: a CA with pathLenConstraint N may be followed by at most
+    N further CAs in the chain, so a child issued by it may assert at most N-1;
+    a parent with pathLen 0 may not issue a sub-CA at all. The value otherwise
+    comes straight from the requester's CSR, so without this clamp a signed
+    intermediate could claim a deeper (or unlimited) path than its issuer.
+    """
+    requested = csr_constraints.path_length
+
+    try:
+        parent_bc = ca_cert.extensions.get_extension_for_oid(
+            ExtensionOID.BASIC_CONSTRAINTS
+        ).value
+        parent_limit = parent_bc.path_length
+    except x509.ExtensionNotFound:
+        parent_limit = None
+
+    if parent_limit is None:
+        # Unconstrained parent — the child's own request stands.
+        return csr_constraints
+
+    if parent_limit <= 0:
+        raise ValueError(
+            "Issuing CA has pathLenConstraint 0 and may not issue a subordinate CA"
+        )
+
+    max_allowed = parent_limit - 1
+    if requested is None or requested > max_allowed:
+        if requested is not None:
+            logger.warning(
+                "clamping requested sub-CA pathLenConstraint %s to %s "
+                "(issuing CA permits %s)", requested, max_allowed, parent_limit,
+            )
+        return x509.BasicConstraints(ca=True, path_length=max_allowed)
+
+    return csr_constraints
+
+
+def capped_path_length(requested, parent_cert):
+    """Clamp a sub-CA pathLenConstraint to what *parent_cert* permits.
+
+    Public entry point for the create-CA path (POST /api/v2/cas), so both
+    routes that mint a sub-CA at the same permission level enforce the same
+    RFC 5280 §4.2.1.9 rule with the same error string. Returns the clamped
+    value; raises ValueError when the parent may not issue a sub-CA at all.
+    """
+    return _capped_basic_constraints(
+        x509.BasicConstraints(ca=True, path_length=requested), parent_cert
+    ).path_length
+
 
 def _key_usage_with_ca_signing(usage, enabled):
     """Return a KeyUsage with CA signing bits forced to the policy value."""
@@ -235,6 +455,14 @@ class CSROperationsMixin:
         if require_pop and not csr.is_signature_valid:
             raise ValueError("CSR has invalid signature")
 
+        # Key-strength floor. Enforced here rather than at each caller so every
+        # issuance path (admin sign-CSR, ACME finalize, EST/SCEP, renewal)
+        # inherits it from the one place that actually applies a CA signature.
+        from utils.key_type import validate_enrollment_public_key
+        key_err = validate_enrollment_public_key(csr.public_key())
+        if key_err:
+            raise ValueError(f"CSR public key rejected: {key_err}")
+
         # Effective subject: an override (if any) wins outright; otherwise
         # fall back to populating CN from the CSR's own first SAN DNS name
         # if the CSR's subject is empty.
@@ -314,11 +542,12 @@ class CSROperationsMixin:
             if not issuing_ca and extension.oid in _LEAF_CA_ONLY_EXTENSION_OIDS:
                 continue
             if extension.oid == ExtensionOID.BASIC_CONSTRAINTS:
-                constraints = (
-                    extension.value
-                    if issuing_ca
-                    else x509.BasicConstraints(ca=False, path_length=None)
-                )
+                if issuing_ca:
+                    constraints = _capped_basic_constraints(
+                        extension.value, ca_cert
+                    )
+                else:
+                    constraints = x509.BasicConstraints(ca=False, path_length=None)
                 builder = builder.add_extension(constraints, critical=True)
                 continue
             if extension.oid == ExtensionOID.KEY_USAGE:
@@ -331,23 +560,17 @@ class CSROperationsMixin:
                 )
                 continue
             if extension.oid == ExtensionOID.EXTENDED_KEY_USAGE and not issuing_ca:
-                if allow_sensitive_ekus:
-                    safe_ekus = list(extension.value)
-                else:
-                    safe_ekus = [
-                        oid for oid in extension.value
-                        if oid not in _LEAF_FORBIDDEN_EKU_OIDS
-                    ]
-                    dropped = [
-                        oid.dotted_string for oid in extension.value
-                        if oid in _LEAF_FORBIDDEN_EKU_OIDS
-                    ]
-                    if dropped:
-                        logger.warning(
-                            "sign_csr: dropped sensitive EKU(s) %s from CSR "
-                            "(protocol enrollees may not request delegated "
-                            "OCSP/timestamping authority)", dropped,
-                        )
+                safe_ekus, dropped_oids = _filter_csr_ekus(
+                    extension.value, cert_type, allow_sensitive_ekus,
+                    renewal_of=renewal_of,
+                )
+                if dropped_oids:
+                    logger.warning(
+                        "sign_csr: dropped EKU(s) %s from CSR — not permitted "
+                        "for certificate type %r (the resolved certificate "
+                        "type, not the CSR, decides leaf key purposes)",
+                        [oid.dotted_string for oid in dropped_oids], cert_type,
+                    )
                 if safe_ekus:
                     builder = builder.add_extension(
                         x509.ExtendedKeyUsage(safe_ekus), extension.critical
@@ -370,8 +593,16 @@ class CSROperationsMixin:
             csr.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
         except x509.ExtensionNotFound:
             if cert_type == 'intermediate_ca':
+                # Route the default through the same clamp as a CSR-supplied
+                # BasicConstraints: UCM's own generate_csr emits no
+                # BasicConstraints at all, so without this the pathLen-0
+                # refusal above never fired on the default API path (the
+                # clamp itself is a no-op for any parent that may issue a
+                # sub-CA, since the requested 0 is always within budget).
                 builder = builder.add_extension(
-                    x509.BasicConstraints(ca=True, path_length=0),
+                    _capped_basic_constraints(
+                        x509.BasicConstraints(ca=True, path_length=0), ca_cert
+                    ),
                     critical=True,
                 )
             else:
@@ -394,7 +625,12 @@ class CSROperationsMixin:
                     ),
                     critical=True,
                 )
-            elif cert_type == 'server_cert':
+            elif cert_type in ('server_cert', 'device_cert'):
+                # device_cert is the EST profile: before it existed, EST signed
+                # under server_cert and its no-KeyUsage CSRs (the plain
+                # `openssl req -new` shape) got this TLS pair. The profile
+                # split must not silently drop the extension — a leaf with no
+                # KeyUsage is unrestricted (RFC 5280 §4.2.1.3).
                 builder = builder.add_extension(
                     x509.KeyUsage(
                         digital_signature=True, key_encipherment=True,
@@ -419,16 +655,26 @@ class CSROperationsMixin:
             csr_has_eku = False
 
         if not csr_has_eku:
-            base_eku = []
-            if cert_type == 'server_cert':
-                base_eku = [x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]
-            elif cert_type in ('usr_cert', 'client_cert'):
-                base_eku = [x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]
-            elif cert_type in ('combined_server_client', 'combined_cert'):
-                base_eku = [
-                    x509.oid.ExtendedKeyUsageOID.SERVER_AUTH,
-                    x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH
-                ]
+            base_eku = _default_ekus_for_cert_type(cert_type)
+            # Renewal at par applies to a CSR that requests nothing as well:
+            # the type's default profile is not necessarily what the
+            # certificate being renewed carries (an EST device_cert enrolment
+            # gets serverAuth+clientAuth; scheduled auto-renewal re-signs the
+            # stored no-EKU CSR under the default server_cert). Without this,
+            # renewal silently narrows the leaf — the exact failure
+            # renewal_of exists to prevent. The hard block-list still wins:
+            # OCSPSigning, timeStamping, anyEKU and Smartcard Logon are never
+            # resurrected from a prior certificate. Deliberately NOT routed
+            # through _filter_csr_ekus: an all-blocked prior set on an
+            # unprofiled type would hit its empty-kept fallback and raise,
+            # turning a renewal into a hard failure.
+            prior_kept = [
+                oid for oid in _prior_ekus(renewal_of)
+                if oid not in _LEAF_FORBIDDEN_EKU_OIDS
+                and oid not in (_ANY_EKU_OID, _SMARTCARD_LOGON_OID)
+            ]
+            if prior_kept:
+                base_eku = merge_eku_lists(base_eku, prior_kept)
             merged = merge_eku_lists(base_eku, extra_oids)
             if merged:
                 builder = builder.add_extension(
@@ -438,12 +684,10 @@ class CSROperationsMixin:
         elif extra_oids:
             # Re-merging the CSR's original EKUs must not resurrect the
             # sensitive ones the copy loop above just dropped
-            csr_ekus = list(existing_eku.value)
-            if not allow_sensitive_ekus:
-                csr_ekus = [
-                    oid for oid in csr_ekus
-                    if oid not in _LEAF_FORBIDDEN_EKU_OIDS
-                ]
+            csr_ekus, _dropped = _filter_csr_ekus(
+                existing_eku.value, cert_type, allow_sensitive_ekus,
+                renewal_of=renewal_of,
+            )
             merged = merge_eku_lists(csr_ekus, extra_oids)
             new_builder = x509.CertificateBuilder()
             new_builder = new_builder.subject_name(builder._subject_name)

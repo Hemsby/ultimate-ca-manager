@@ -70,7 +70,9 @@ jobs:
         continue-on-error: true
       
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
+        # Pinned to a release SHA: @master is a mutable ref, so a compromise of
+        # the action's repo would execute attacker code in this workflow.
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'

@@ -79,13 +79,13 @@ Um badge percentual mostra quanto do conjunto total de permissões a função co
 
 Funções são atribuídas:
 - **Diretamente** — Na página de Usuários, edite um usuário e selecione uma função
-- **Via Grupos** — Atribua uma função a um grupo; todos os membros herdam
+- **Via Grupos** — Um grupo concede um conjunto de permissões; cada membro o recebe além de sua própria função
 
 ## Permissões Efetivas
 
 As permissões efetivas de um usuário são calculadas como a união de:
 1. As permissões da função atribuída diretamente
-2. Todas as funções dos grupos aos quais pertence
+2. As permissões concedidas pelos grupos aos quais pertence
 
 A regra mais permissiva prevalece (modelo aditivo, sem regras de negação).
 

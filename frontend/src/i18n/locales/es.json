@@ -797,7 +797,12 @@
       "maxReached": "Se alcanzó el máximo de {{max}} EKU",
       "helper": "Se pueden añadir {{remaining}} EKU más (RFC 5280 §4.2.1.12).",
       "defaultLocked": "Predeterminado para este tipo de certificado"
-    }
+    },
+    "template": "Plantilla",
+    "allTemplates": "Todas las plantillas",
+    "modifiedFromTemplate": "Modificado respecto a la plantilla",
+    "issuedFromTemplate": "Emitido desde la plantilla: {{name}}",
+    "templateOverridesHint": "Difiere de la plantilla '{{name}}' en: {{fields}}"
   },
   "cas": {
     "parentCA": "CA padre",
@@ -1154,6 +1159,9 @@
     "editGroup": "Editar grupo",
     "deleteGroup": "Eliminar grupo",
     "groupName": "Nombre del grupo",
+    "permissions": "Permisos",
+    "permissionsHelp": "Permisos concedidos a cada miembro de este grupo, además de su propio rol.",
+    "noPermissions": "Sin permisos concedidos",
     "members": "Miembros",
     "noGroups": "No se encontraron grupos",
     "noMembers": "No se encontraron miembros",
@@ -1358,6 +1366,7 @@
     "autoApproveDesc": "Omitir la validación de challenge ACME para este dominio. Los certificados se emiten inmediatamente sin verificar el control del dominio.",
     "issuingCA": "CA emisora",
     "useDefaultCA": "Usar CA predeterminada",
+    "issuingCAProxyHelper": "Solo se aplica cuando UCM emite el certificado a través de su propio servidor ACME; no tiene efecto cuando el dominio se reenvía a Let's Encrypt (el certificado proviene de la CA de origen).",
     "defaultCA": "CA predeterminada",
     "testDnsAccess": "Probar DNS Access",
     "domainCreatedSuccess": "Domain registered éxitofully",
@@ -1437,6 +1446,8 @@
     "proxyUpstreamCAAccount": "Cuenta CA de origen",
     "proxyUpstreamCAAccountHelper": "Seleccione una cuenta ACME externa registrada. El EAB y las credenciales se gestionan en Cuentas CA externas abajo.",
     "proxySelectCaAccount": "Seleccionar cuenta CA…",
+    "proxyPruneReplacedCertificates": "Eliminar certificados reemplazados",
+    "proxyPruneReplacedCertificatesDesc": "Eliminar automáticamente los certificados importados por el proxy cuando una renovación para los mismos dominios se completa. Los certificados revocados siempre se conservan.",
     "proxyNoCaAccounts": "No hay cuentas CA externas configuradas. Añada una en Cuentas CA externas abajo.",
     "proxyManageCaAccountsHint": "El EAB y la configuración por CA se gestionan en Cuentas CA externas abajo.",
     "proxyEnabled": "Exponer vía proxy ACME",
@@ -1519,7 +1530,15 @@
       "deleteTitle": "Eliminar credencial EAB",
       "delete": "Eliminar",
       "deletedSuccess": "Credencial EAB eliminada",
-      "deleteFailed": "Error al eliminar la credencial EAB"
+      "deleteFailed": "Error al eliminar la credencial EAB",
+      "allowedDomains": "Dominios permitidos",
+      "allowedDomainsHelp": "Un patrón por línea o separado por comas (ej. *.mydomain.com, host.mydomain.com). Dejar vacío para bloquear toda emisión para esta credencial.",
+      "allDomainsLabel": "Todos los dominios (añade * a la lista permitida)",
+      "allDomains": "Todos los dominios",
+      "noDomains": "Ninguno (emisión bloqueada)",
+      "editDomainsTitle": "Editar dominios permitidos",
+      "domainsSaved": "Dominios permitidos actualizados",
+      "domainsSaveFailed": "Error al actualizar dominios permitidos"
     },
     "termsOfServiceTitlePlaceholder": "Términos de Servicio (dejar vacío para ocultar)",
     "termsOfServiceBodyPlaceholder": "Escribe tus términos aquí...\n\nSoporta: **negrita**, *cursiva*, [enlaces](url), - listas\n\nUsa líneas vacías para párrafos.",
@@ -1574,7 +1593,12 @@
     "caaEnforceWarning": "En redes aisladas toda emisión ACME fallará si el resolutor no puede responder consultas CAA.",
     "tlsAlpn01Desc": "validación vía TLS en el puerto 443 (RFC 8737)",
     "tlsAlpnPort": "Puerto TLS-ALPN-01",
-    "tlsAlpnPortHelper": "Puerto local en el que escucha el respondedor TLS-ALPN-01 durante la validación (443 por defecto)."
+    "tlsAlpnPortHelper": "Puerto local en el que escucha el respondedor TLS-ALPN-01 durante la validación (443 por defecto).",
+    "dnsPersistSection": "Validación DNS persistente (dns-persist-01)",
+    "dnsPersistEnabled": "Ofrecer reto dns-persist-01 (draft-ietf-acme-dns-persist)",
+    "dnsPersistEnabledDesc": "Validación mediante un registro TXT persistente en _validation-persist.<dominio> vinculado a la cuenta ACME. Renovaciones sin escribir registros DNS.",
+    "dnsPersistWarning": "Riesgo: una clave de cuenta ACME comprometida permite emitir para el dominio hasta que se elimine el TXT (draft §7.2). Activar solo para cuentas y zonas controladas.",
+    "dnsPersistIssuerNote": "Dominios de emisor para el registro TXT: {{domains}} (de los identificadores CAA, o el hostname público ACME si está vacío)."
   },
   "scep": {
     "title": "Protocolo SCEP",
@@ -1738,6 +1762,7 @@
     "crlScheduleUpdated": "Programación de CRL actualizada",
     "crlScheduleFailed": "Error al actualizar la programación de CRL",
     "crlValidity": "Validez",
+    "crlValidityOfflineWarning": "La validez prolongada está pensada para CA offline; las partes dependientes pueden mantener datos de revocación obsoletos durante toda la ventana.",
     "crlPublishInterval": "Publicar cada",
     "crlPublishAuto": "Auto (antes de expirar)",
     "crlDigest": "Resumen de firma",
@@ -1827,7 +1852,8 @@
       "importSelected": "Importar {{count}} seleccionados",
       "importSuccess": "{{count}} elementos importados con éxito ({{skipped}} omitidos)",
       "noItemsSelected": "Seleccione al menos un elemento para importar",
-      "ignoreCert": "Ignorar certificado SSL (autofirmado)"
+      "ignoreCert": "Ignorar certificado SSL (autofirmado)",
+      "sslWarning": "⚠ La verificación SSL está desactivada. Las conexiones son vulnerables a ataques man-in-the-middle."
     },
     "export": {
       "allCertsTitle": "Exportar All Certificados",
@@ -4450,6 +4476,8 @@
     "selectCA": "Seleccione una CA para la firma de marcas de tiempo",
     "policyOid": "OID de política",
     "policyOidHelp": "OID que identifica la política TSA bajo la cual se emiten las marcas de tiempo",
+    "requireDedicatedCert": "Requerir un certificado TSA dedicado",
+    "requireDedicatedCertDesc": "Rechazar la firma de marcas de tiempo con el propio certificado de la CA. Requiere un certificado de firma dedicado (entidad final) con una EKU timeStamping crítica (RFC 3161).",
     "endpoint": "Punto de acceso TSA",
     "endpointDesc": "Use esta URL en la configuración de su cliente TSA",
     "timestampRequest": "Solicitud de marca de tiempo",

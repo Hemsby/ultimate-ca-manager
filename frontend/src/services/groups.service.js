@@ -68,6 +68,13 @@ export const groupsService = {
    */
   getStats: async () => {
     return api.get('/groups/stats')
+  },
+
+  /**
+   * List the permissions a group may grant (source of truth for the picker)
+   */
+  getAvailablePermissions: async () => {
+    return api.get('/groups/available-permissions')
   }
 }
 

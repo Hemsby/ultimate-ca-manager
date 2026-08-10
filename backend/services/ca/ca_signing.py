@@ -58,6 +58,9 @@ class CASigningMixin:
             csr: x509 CertificateSigningRequest object
             validity_days: Certificate validity in days
             source: Origin of the request (est, auto-renewal, etc.)
+            renewal_of: Certificate being renewed, if any — its names and
+                EKUs are graced (renewal at par must not silently narrow
+                what the device already has)
             require_pop: forwarded to TrustStoreService.sign_csr — see its
                 docstring. Only WSTEP passes False.
             ms_certificate_template_oid: forwarded to TrustStoreService.sign_csr
@@ -66,9 +69,10 @@ class CASigningMixin:
                 its docstring. Only WSTEP's Kerberos binding passes this.
             override_san: forwarded to TrustStoreService.sign_csr — see its
                 docstring. Only WSTEP's Kerberos binding passes this.
-            cert_type: forwarded to TrustStoreService.sign_csr — see its
-                docstring. Only WSTEP overrides this default; every other
-                caller's protocol issues one kind of cert (server_cert).
+            cert_type: Signing profile for TrustStoreService.sign_csr —
+                decides the EKU ceiling. EST passes 'device_cert'; WSTEP
+                overrides this too for its own matched-template flow; the
+                default keeps every other caller on the TLS profile.
             extra_ekus: forwarded to TrustStoreService.sign_csr — see its
                 docstring. Only WSTEP passes this, for a matched template's
                 own configured EKUs (e.g. Smartcard Logon) that a CSR-EKU
@@ -103,6 +107,7 @@ class CASigningMixin:
             ca_private_key=ca_private_key,
             validity_days=validity_days,
             digest='sha256',
+            cert_type=cert_type,
             cdp_urls=cdp_urls,
             ocsp_urls=ocsp_urls,
             aia_ca_issuers_urls=aia_ca_issuers_urls,
@@ -113,7 +118,6 @@ class CASigningMixin:
             ms_certificate_template_oid=ms_certificate_template_oid,
             override_subject=override_subject,
             override_san=override_san,
-            cert_type=cert_type,
             extra_ekus=extra_ekus,
         )
 

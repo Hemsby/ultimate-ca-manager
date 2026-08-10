@@ -4,19 +4,62 @@ import { FloppyDisk, Globe, ArrowsClockwise, Lightning, FileText, PencilSimple, 
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch'
 import { Select, Button, HelpCard, CompactSection, CompactGrid, CompactField, Input, Modal } from '../../components'
 import { useState, useMemo } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkBreaks from 'remark-breaks'
+import remarkGfm from 'remark-gfm'
+import { MARKDOWN_ELEMENT_CLASSES } from '../../lib/ui'
 import ProfilesEditor from './ProfilesEditor'
 
-/** Render markdown-like preview: paragraphs, bold, italic, auto-links */
-function renderTosPreview(body) {
+/** Render a markdown ToS preview.
+ *
+ * This used to be a hand-rolled regex sanitizer feeding dangerouslySetInnerHTML.
+ * It escaped < > & but not double quotes, and never validated link schemes, so
+ * admin-supplied ToS text could break out of an attribute or inject
+ * `[x](javascript:...)` — stored XSS against any operator viewing the page.
+ * ReactMarkdown (already used elsewhere in the app) escapes text nodes and
+ * builds real React elements, so no raw HTML is ever interpolated; urlTransform
+ * additionally pins hrefs to http/https/mailto.
+ *
+ * remark-gfm and remark-breaks preserve what the old sanitizer did beyond
+ * CommonMark: bare URLs autolink and single newlines render as hard breaks,
+ * so hard-wrapped ToS text keeps its line structure.
+ */
+export function TosPreview({ body }) {
   if (!body?.trim()) return null
-  let html = body
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/^- (.+)$/gm, '• $1')
-    .replace(/(https?:\/\/[^\s<>()]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>')
-  return html.split('\n\n').map(p => p.trim()).filter(Boolean).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('')
+  return (
+    <div className={MARKDOWN_ELEMENT_CLASSES}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkBreaks]}
+        urlTransform={(url) => {
+          try {
+            const parsed = new URL(url, window.location.origin)
+            return ['http:', 'https:', 'mailto:'].includes(parsed.protocol) ? url : ''
+          } catch {
+            return ''
+          }
+        }}
+        components={{
+          // A link whose URL was rejected by urlTransform arrives with an
+          // empty href; render it as plain text instead of an <a href="">
+          // self-link that would open a copy of the console in a new tab.
+          a: ({ node, href, children, ...props }) =>
+            href ? (
+              <a {...props} href={href} target="_blank" rel="noopener noreferrer">
+                {children}
+              </a>
+            ) : (
+              <span>{children}</span>
+            ),
+          // The old renderer could not emit images and the field does not
+          // advertise them; a remote image would beacon to its host from
+          // every operator's browser. Show the alt text instead.
+          img: ({ alt }) => (alt ? <span>{alt}</span> : null),
+        }}
+      >
+        {body}
+      </ReactMarkdown>
+    </div>
+  )
 }
 
 export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConfig, saving, revokeSuperseded, onRevokeSupersededChange, onToggleRevokeOnRenewal, canWrite }) {
@@ -30,10 +73,10 @@ export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConf
   const acmePublicBase = publicBaseUrl(acmeSettings.acme_public_base_url, '/acme')
 
   // Preview of saved ToS (from props)
-  const savedPreview = useMemo(() => renderTosPreview(tos?.body), [tos?.body])
+  const savedPreview = useMemo(() => Boolean(tos?.body?.trim()), [tos?.body])
 
   // Preview inside edit modal
-  const editPreview = useMemo(() => renderTosPreview(editBody), [editBody])
+  const editPreview = useMemo(() => Boolean(editBody?.trim()), [editBody])
 
   const handleOpenEdit = () => {
     setEditTitle(tos?.title || '')
@@ -139,12 +182,32 @@ export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConf
         </div>
       </CompactSection>
 
+      <CompactSection title={t('acme.dnsPersistSection')} icon={ArrowsClockwise}>
+        <div className="space-y-2">
+          <ToggleSwitch
+            checked={acmeSettings.dns_persist_enabled || false}
+            onChange={(val) => updateSetting('dns_persist_enabled', val)}
+            disabled={!canWrite}
+            label={t('acme.dnsPersistEnabled')}
+            description={t('acme.dnsPersistEnabledDesc')}
+          />
+          {acmeSettings.dns_persist_enabled && (
+            <>
+              <p className="text-xs text-amber-500">{t('acme.dnsPersistWarning')}</p>
+              <p className="text-xs text-text-tertiary">
+                {t('acme.dnsPersistIssuerNote', { domains: (acmeSettings.dns_persist_issuer_domains || []).join(', ') || '—' })}
+              </p>
+            </>
+          )}
+        </div>
+      </CompactSection>
+
       <CompactSection title={t('acme.termsOfService')} icon={FileText}>
         <div className="space-y-2">
           {tosExists && savedPreview ? (
             <div className="rounded-lg border border-border bg-bg-tertiary p-3 max-h-52 overflow-y-auto">
               {tos.title && <p className="text-sm font-semibold text-text-primary mb-2">{tos.title}</p>}
-              <div className="text-xs text-text-secondary [&>p]:mb-2 last:[&>p]:mb-0" dangerouslySetInnerHTML={{ __html: savedPreview }} />
+              <div className="text-xs text-text-secondary"><TosPreview body={tos?.body} /></div>
             </div>
           ) : (
             <p className="text-xs text-text-tertiary">{t('acme.termsOfServiceHelper')}</p>
@@ -210,7 +273,7 @@ export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConf
           {editPreview && (
             <div className="rounded-lg border border-border bg-bg-tertiary p-3">
               <p className="text-xs text-text-tertiary mb-2">{t('acme.termsOfServicePreview')}</p>
-              <div className="text-xs text-text-secondary [&>p]:mb-2 last:[&>p]:mb-0" dangerouslySetInnerHTML={{ __html: editPreview }} />
+              <div className="text-xs text-text-secondary"><TosPreview body={editBody} /></div>
             </div>
           )}
           <div className="flex justify-end gap-2 pt-4 border-t border-border">

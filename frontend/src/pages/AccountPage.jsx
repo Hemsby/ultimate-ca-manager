@@ -16,7 +16,7 @@ import {
 } from '../components'
 import { accountService, casService, userCertificatesService } from '../services'
 import { useAuth, useNotification, useMobile } from '../contexts'
-import { useClipboard } from '../hooks'
+import { useClipboard, usePermission } from '../hooks'
 import { formatDate , downloadBlob} from '../lib/utils'
 
 export default function AccountPage() {
@@ -25,6 +25,7 @@ export default function AccountPage() {
   const { isMobile } = useMobile()
   const { showSuccess, showError, showConfirm, showPrompt } = useNotification()
   const { copy } = useClipboard()
+  const { hasPermission } = usePermission()
 
   // Tab configuration - inside component to use translations
   const TABS = [
@@ -78,6 +79,15 @@ export default function AccountPage() {
 
   // API Key form state
   const [apiKeyForm, setApiKeyForm] = useState({ name: '', expires_days: '', scope: 'full' })
+
+  // Mirror the backend's mTLS issuance gates so the UI never offers an action
+  // that can only 403: POST /api/v2/mtls/certificates requires
+  // write:user_certificates (a CA signs the result), and directing any CA
+  // other than the configured mTLS one additionally requires write:cas.
+  // Import and assign stay available to every authenticated user.
+  const canGenerateMtls = hasPermission('write:user_certificates')
+  const canChooseMtlsCa = hasPermission('write:cas')
+  const effectiveMtlsTab = mtlsTab === 'generate' && !canGenerateMtls ? 'import' : mtlsTab
 
   // Load data
   useEffect(() => {
@@ -1164,22 +1174,24 @@ export default function AccountPage() {
             <>
               {/* Tab selector */}
               <div className="flex border-b border-border">
+                {canGenerateMtls && (
+                  <button
+                    type="button"
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+                      effectiveMtlsTab === 'generate'
+                        ? 'border-accent-primary text-accent-primary'
+                        : 'border-transparent text-text-secondary hover:text-text-primary'
+                    }`}
+                    onClick={() => setMtlsTab('generate')}
+                  >
+                    {t('account.mtlsGenerate')}
+                  </button>
+                )}
                 <button
                   type="button"
                   className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    mtlsTab === 'generate' 
-                      ? 'border-accent-primary text-accent-primary' 
-                      : 'border-transparent text-text-secondary hover:text-text-primary'
-                  }`}
-                  onClick={() => setMtlsTab('generate')}
-                >
-                  {t('account.mtlsGenerate')}
-                </button>
-                <button
-                  type="button"
-                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    mtlsTab === 'import' 
-                      ? 'border-accent-primary text-accent-primary' 
+                    effectiveMtlsTab === 'import'
+                      ? 'border-accent-primary text-accent-primary'
                       : 'border-transparent text-text-secondary hover:text-text-primary'
                   }`}
                   onClick={() => setMtlsTab('import')}
@@ -1189,8 +1201,8 @@ export default function AccountPage() {
                 <button
                   type="button"
                   className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-                    mtlsTab === 'assign' 
-                      ? 'border-accent-primary text-accent-primary' 
+                    effectiveMtlsTab === 'assign'
+                      ? 'border-accent-primary text-accent-primary'
                       : 'border-transparent text-text-secondary hover:text-text-primary'
                   }`}
                   onClick={() => { setMtlsTab('assign'); loadAvailableCerts() }}
@@ -1199,7 +1211,7 @@ export default function AccountPage() {
                 </button>
               </div>
 
-              {mtlsTab === 'generate' && (
+              {effectiveMtlsTab === 'generate' && canGenerateMtls && (
                 <>
                   <Input
                     label={t('account.mtlsCertName')}
@@ -1207,16 +1219,21 @@ export default function AccountPage() {
                     onChange={(e) => setMtlsForm(prev => ({ ...prev, name: e.target.value }))}
                     placeholder={`${user?.username || 'user'} mTLS`}
                   />
-                  <Select
-                    label={t('account.mtlsIssuingCA')}
-                    value={mtlsForm.ca_id}
-                    onChange={(val) => setMtlsForm(prev => ({ ...prev, ca_id: val }))}
-                    placeholder={t('account.mtlsDefaultCA')}
-                    options={cas.filter(ca => ca.has_private_key !== false).map(ca => ({
-                      value: ca.refid || String(ca.id),
-                      label: ca.descr || ca.subject || ca.refid,
-                    }))}
-                  />
+                  {/* Directing a CA other than the configured mTLS one requires
+                      write:cas server-side — without it, only the configured
+                      default is issuable, so offer no choice that would 403. */}
+                  {canChooseMtlsCa && (
+                    <Select
+                      label={t('account.mtlsIssuingCA')}
+                      value={mtlsForm.ca_id}
+                      onChange={(val) => setMtlsForm(prev => ({ ...prev, ca_id: val }))}
+                      placeholder={t('account.mtlsDefaultCA')}
+                      options={cas.filter(ca => ca.has_private_key !== false).map(ca => ({
+                        value: ca.refid || String(ca.id),
+                        label: ca.descr || ca.subject || ca.refid,
+                      }))}
+                    />
+                  )}
                   <Input
                     label={t('account.mtlsValidityDays')}
                     type="number"
@@ -1237,7 +1254,7 @@ export default function AccountPage() {
                 </>
               )}
 
-              {mtlsTab === 'import' && (
+              {effectiveMtlsTab === 'import' && (
                 <>
                   <Input
                     label={t('account.mtlsCertName')}
@@ -1277,7 +1294,7 @@ export default function AccountPage() {
                 </>
               )}
 
-              {mtlsTab === 'assign' && (
+              {effectiveMtlsTab === 'assign' && (
                 <>
                   {availableCertsLoading ? (
                     <div className="flex justify-center py-8">

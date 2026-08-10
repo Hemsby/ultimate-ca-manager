@@ -146,7 +146,8 @@ def detect_auth_methods():
                 )
             else:
                 # Reverse-proxy headers — same trusted-proxy gate as login_mtls().
-                headers = dict(request.headers)
+                # Case-insensitive mapping — do NOT dict() it (see login_mtls).
+                headers = request.headers
                 spoof_attempt = (
                     'X-SSL-Client-Verify' in headers
                     or 'X-SSL-Client-S-DN' in headers
@@ -155,7 +156,7 @@ def detect_auth_methods():
                 if spoof_attempt and not trusted_proxy.is_request_from_trusted_proxy():
                     logger.warning(
                         "auth/methods: ignoring proxy cert headers from untrusted peer %s",
-                        request.remote_addr,
+                        trusted_proxy.immediate_peer_addr(),
                     )
                 elif 'X-SSL-Client-Verify' in headers:
                     cert_info = CertificateParser.extract_from_nginx_headers(headers)
@@ -413,8 +414,13 @@ def login_2fa():
     if not data or not data.get('code'):
         return error_response('Verification code required', 400)
 
-    # Input validation - TOTP codes are 6-10 digits
-    code = str(data['code']).strip().upper()[:10]  # Max 10 chars
+    # Input validation. This accepts both a TOTP code (6-8 digits) and a
+    # recovery code, which is generated as four 4-hex-char groups joined by
+    # dashes (XXXX-XXXX-XXXX-XXXX = 19 chars). The previous [:10] truncation
+    # silently cut every recovery code down to 'XXXX-XXXX-', so it could never
+    # match a stored code and account recovery was impossible. The cap stays,
+    # just above the longest legitimate input rather than below it.
+    code = str(data['code']).strip().upper()[:32]
     if not code or len(code) < 6:
         return error_response('Invalid verification code format', 400)
 
@@ -523,7 +529,11 @@ def login_mtls():
             # in UCM_TRUSTED_PROXIES (default: loopback). Without this gate
             # any caller who can reach gunicorn directly can spoof
             # X-SSL-Client-* headers and forge mTLS authentication.
-            headers = dict(request.headers)
+            # request.headers is a case-insensitive mapping. Do NOT wrap it
+            # in dict(): WSGI reconstructs header names title-cased
+            # (X-Ssl-Client-Verify), so exact-case lookups against
+            # dict(request.headers) never match and proxy cert auth dies.
+            headers = request.headers
             spoof_attempt = (
                 'X-SSL-Client-Verify' in headers
                 or 'X-SSL-Client-S-DN' in headers
@@ -532,7 +542,7 @@ def login_mtls():
             if spoof_attempt and not trusted_proxy.is_request_from_trusted_proxy():
                 logger.warning(
                     "mTLS login: ignoring proxy cert headers from untrusted peer %s",
-                    request.remote_addr,
+                    trusted_proxy.immediate_peer_addr(),
                 )
             elif 'X-SSL-Client-Verify' in headers:
                 cert_info = CertificateParser.extract_from_nginx_headers(headers)

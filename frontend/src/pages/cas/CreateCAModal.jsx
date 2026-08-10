@@ -7,7 +7,7 @@
  *   cas        — array of existing CAs (for parent CA select dropdown)
  *   onSuccess  — called after CA is successfully created
  */
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CaretRight, CaretDown } from '@phosphor-icons/react'
 import { Modal, Input, Select, Button } from '../../components'
@@ -45,6 +45,11 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
   const [createFormKeyUsage, setCreateFormKeyUsage] = useState(ROOT_KEY_USAGE)
   const [createFormEkuServerAuth, setCreateFormEkuServerAuth] = useState(false)
   const [showCertProfile, setShowCertProfile] = useState(false)
+  // #269: guard against double submits (slow RSA keygens invite double-clicks).
+  // A ref, not state: state updates don't apply before React re-renders, so a
+  // fast second click would slip through a state-closure guard.
+  const [creating, setCreating] = useState(false)
+  const creatingRef = useRef(false)
 
   // HSM key storage state
   const [createFormKeyStorage, setCreateFormKeyStorage] = useState('local') // 'local' | 'hsm'
@@ -126,60 +131,63 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
 
   const handleCreateCA = async (e) => {
     e.preventDefault()
-    const formData = new FormData(e.target)
-    const data = {
-      commonName: formData.get('commonName'),
-      organization: formData.get('organization'),
-      organizationalUnit: formData.get('organizationalUnit'),
-      country: formData.get('country'),
-      state: formData.get('state'),
-      locality: formData.get('locality'),
-      description: formData.get('description'),
-      keyAlgo: createFormKeyAlgo,
-      keySize: createFormKeyAlgo === 'ECDSA' ? createFormKeySize : parseInt(createFormKeySize),
-      validityYears: parseInt(createFormValidity),
-      type: createFormType,
-      parentCAId: createFormType === 'intermediate' ? createFormParentCAId : null,
-      ...(createFormPathLength !== '' && { pathLength: parseInt(createFormPathLength) }),
-      namedUrls: createFormNamedUrls,
-      hashAlgorithm: createFormDigest,
-      keyUsage: createFormKeyUsage,
-      ...(createFormType === 'intermediate' && {
-        extendedKeyUsage: createFormEkuServerAuth ? ['serverAuth'] : [],
-      }),
-    }
-
-    // HSM key storage — replaces local key fields
-    if (createFormKeyStorage === 'hsm') {
-      if (!createFormHsmProviderId) {
-        showError(t('cas.create.hsmProviderRequired'))
-        return
-      }
-      delete data.keyAlgo
-      delete data.keySize
-      if (createFormHsmKeyMode === 'generate') {
-        const label = (createFormHsmKeyLabel || '').trim()
-        if (!label) {
-          showError(t('cas.create.hsmKeyLabelRequired'))
-          return
-        }
-        if (!/^[a-zA-Z0-9_-]+$/.test(label)) {
-          showError(t('cas.create.hsmKeyLabelInvalid'))
-          return
-        }
-        data.hsmProviderId = parseInt(createFormHsmProviderId, 10)
-        data.hsmKeyLabel = label
-        data.hsmKeyAlgorithm = createFormHsmKeyAlgorithm
-      } else {
-        if (!createFormHsmKeyId) {
-          showError(t('cas.create.hsmExistingKeyRequired'))
-          return
-        }
-        data.hsmKeyId = parseInt(createFormHsmKeyId, 10)
-      }
-    }
-
+    if (creatingRef.current) return
+    creatingRef.current = true
+    setCreating(true)
     try {
+      const formData = new FormData(e.target)
+      const data = {
+        commonName: formData.get('commonName'),
+        organization: formData.get('organization'),
+        organizationalUnit: formData.get('organizationalUnit'),
+        country: formData.get('country'),
+        state: formData.get('state'),
+        locality: formData.get('locality'),
+        description: formData.get('description'),
+        keyAlgo: createFormKeyAlgo,
+        keySize: createFormKeyAlgo === 'ECDSA' ? createFormKeySize : parseInt(createFormKeySize),
+        validityYears: parseInt(createFormValidity),
+        type: createFormType,
+        parentCAId: createFormType === 'intermediate' ? createFormParentCAId : null,
+        ...(createFormPathLength !== '' && { pathLength: parseInt(createFormPathLength) }),
+        namedUrls: createFormNamedUrls,
+        hashAlgorithm: createFormDigest,
+        keyUsage: createFormKeyUsage,
+        ...(createFormType === 'intermediate' && {
+          extendedKeyUsage: createFormEkuServerAuth ? ['serverAuth'] : [],
+        }),
+      }
+
+      // HSM key storage — replaces local key fields
+      if (createFormKeyStorage === 'hsm') {
+        if (!createFormHsmProviderId) {
+          showError(t('cas.create.hsmProviderRequired'))
+          return
+        }
+        delete data.keyAlgo
+        delete data.keySize
+        if (createFormHsmKeyMode === 'generate') {
+          const label = (createFormHsmKeyLabel || '').trim()
+          if (!label) {
+            showError(t('cas.create.hsmKeyLabelRequired'))
+            return
+          }
+          if (!/^[a-zA-Z0-9_-]+$/.test(label)) {
+            showError(t('cas.create.hsmKeyLabelInvalid'))
+            return
+          }
+          data.hsmProviderId = parseInt(createFormHsmProviderId, 10)
+          data.hsmKeyLabel = label
+          data.hsmKeyAlgorithm = createFormHsmKeyAlgorithm
+        } else {
+          if (!createFormHsmKeyId) {
+            showError(t('cas.create.hsmExistingKeyRequired'))
+            return
+          }
+          data.hsmKeyId = parseInt(createFormHsmKeyId, 10)
+        }
+      }
+
       muteToasts()
       await casService.create(data)
       showSuccess(t('messages.success.create.ca'))
@@ -187,6 +195,9 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
       onSuccess()
     } catch (error) {
       showError(error.message || t('cas.createFailed'))
+    } finally {
+      creatingRef.current = false
+      setCreating(false)
     }
   }
 
@@ -544,13 +555,15 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
           <Button
             type="submit"
             disabled={
+              creating || (
               createFormKeyStorage === 'hsm' && (
                 hsmProviders.length === 0 ||
                 (createFormHsmKeyMode === 'existing' && !!createFormHsmProviderId && hsmKeys.length === 0)
               )
+              )
             }
           >
-            {t('common.createCA')}
+            {creating ? t('common.creating') : t('common.createCA')}
           </Button>
         </div>
       </form>

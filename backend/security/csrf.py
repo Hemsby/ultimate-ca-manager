@@ -38,9 +38,14 @@ CSRF_EXEMPT_PATHS = [
     '/api/v2/sso/ldap/login',   # LDAP password login (pre-session)
     '/api/v2/sso/saml/metadata',  # SAML metadata exchange (public)
     '/api/v2/sso/available',    # Public auth method discovery
-    # mTLS bare-cert authentication (no prior session)
-    '/api/v2/mtls/enroll',
-    '/api/v2/mtls/enroll-import',
+    # NOTE: /api/v2/mtls/enroll and /api/v2/mtls/enroll-import were listed here
+    # as "bare-cert authentication (no prior session)", but both are
+    # @require_auth() state-changing routes that bind a certificate to the
+    # caller's account. Exempting them let a cross-site POST enrol an
+    # attacker-supplied certificate onto the victim's account, giving the
+    # attacker a credential for it. Session callers hold a CSRF token, and
+    # X-API-Key requests are exempted by the middleware anyway, so neither
+    # legitimate caller needs a blanket path exemption.
     '/acme/',                   # ACME protocol
     '/scep/',                   # SCEP protocol  
     '/.well-known/acme',        # ACME challenge

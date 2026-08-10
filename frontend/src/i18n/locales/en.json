@@ -797,7 +797,12 @@
       "maxReached": "Maximum {{max}} EKUs reached",
       "helper": "{{remaining}} more EKUs can be added (RFC 5280 §4.2.1.12).",
       "defaultLocked": "Default for this certificate type"
-    }
+    },
+    "template": "Template",
+    "allTemplates": "All templates",
+    "modifiedFromTemplate": "Modified from template",
+    "issuedFromTemplate": "Issued from template: {{name}}",
+    "templateOverridesHint": "Diverges from template '{{name}}' on: {{fields}}"
   },
   "cas": {
     "parentCA": "Parent CA",
@@ -1154,6 +1159,9 @@
     "editGroup": "Edit Group",
     "deleteGroup": "Delete Group",
     "groupName": "Group Name",
+    "permissions": "Permissions",
+    "permissionsHelp": "Permissions granted to every member of this group, in addition to their own role.",
+    "noPermissions": "No permissions granted",
     "members": "Members",
     "noGroups": "No groups found",
     "noMembers": "No members found",
@@ -1358,6 +1366,7 @@
     "autoApproveDesc": "Skip ACME challenge validation for this domain. Certificates are issued immediately without verifying domain control.",
     "issuingCA": "Issuing CA",
     "useDefaultCA": "Use default CA",
+    "issuingCAProxyHelper": "Only applies when UCM issues the certificate through its own ACME server; it has no effect when the domain is forwarded to Let's Encrypt (the certificate comes from the upstream CA).",
     "defaultCA": "Default",
     "testDnsAccess": "Test DNS Access",
     "domainCreatedSuccess": "Domain registered successfully",
@@ -1437,6 +1446,8 @@
     "proxyUpstreamCAAccount": "Upstream CA account",
     "proxyUpstreamCAAccountHelper": "Select a registered external ACME CA account. EAB and credentials are managed in External CA Accounts below.",
     "proxySelectCaAccount": "Select a CA account…",
+    "proxyPruneReplacedCertificates": "Purge replaced certificates",
+    "proxyPruneReplacedCertificatesDesc": "Automatically delete proxy-imported certificates once a renewal for the same domains succeeds. Revoked certificates are always kept.",
     "proxyNoCaAccounts": "No external CA accounts configured. Add one in External CA Accounts below.",
     "proxyManageCaAccountsHint": "EAB credentials and per-CA settings are managed in External CA Accounts below.",
     "proxyEnabled": "Expose via ACME proxy",
@@ -1519,7 +1530,15 @@
       "deleteTitle": "Delete EAB Credential",
       "delete": "Delete",
       "deletedSuccess": "EAB credential deleted",
-      "deleteFailed": "Failed to delete EAB credential"
+      "deleteFailed": "Failed to delete EAB credential",
+      "allowedDomains": "Allowed domains",
+      "allowedDomainsHelp": "One pattern per line or comma-separated (e.g. *.mydomain.com, host.mydomain.com). Leave empty to block all issuance for this credential.",
+      "allDomainsLabel": "All domains (adds * to the allowed list)",
+      "allDomains": "All domains",
+      "noDomains": "None (issuance blocked)",
+      "editDomainsTitle": "Edit allowed domains",
+      "domainsSaved": "Allowed domains updated",
+      "domainsSaveFailed": "Failed to update allowed domains"
     },
     "termsOfServiceTitlePlaceholder": "Terms of Service (leave empty to hide)",
     "termsOfServiceBodyPlaceholder": "Write your terms here...\n\nSupports: **bold**, *italic*, [links](url), - lists\n\nUse double empty lines for paragraphs.",
@@ -1574,7 +1593,12 @@
     "caaEnforceWarning": "In isolated networks every ACME issuance will fail if the resolver cannot answer CAA queries.",
     "tlsAlpn01Desc": "validation via TLS on port 443 (RFC 8737)",
     "tlsAlpnPort": "TLS-ALPN-01 port",
-    "tlsAlpnPortHelper": "Local port the TLS-ALPN-01 responder listens on during validation (default 443)."
+    "tlsAlpnPortHelper": "Local port the TLS-ALPN-01 responder listens on during validation (default 443).",
+    "dnsPersistSection": "Persistent DNS Validation (dns-persist-01)",
+    "dnsPersistEnabled": "Offer dns-persist-01 challenge (draft-ietf-acme-dns-persist)",
+    "dnsPersistEnabledDesc": "Validation via a persistent TXT record at _validation-persist.<domain> bound to the ACME account. Clients renew without writing DNS records.",
+    "dnsPersistWarning": "Risk: a compromise of the ACME account key grants issuance capability for the domain until the TXT record is removed (draft §7.2). Enable only for accounts and zones you control.",
+    "dnsPersistIssuerNote": "Issuer domain names for the TXT record: {{domains}} (from CAA identifiers, or the ACME public hostname when unset)."
   },
   "scep": {
     "title": "SCEP Protocol",
@@ -1738,6 +1762,7 @@
     "crlScheduleUpdated": "CRL schedule updated",
     "crlScheduleFailed": "Failed to update CRL schedule",
     "crlValidity": "Validity",
+    "crlValidityOfflineWarning": "Long validity is intended for offline CAs; relying parties may keep stale revocation data for the whole window.",
     "crlPublishInterval": "Publish every",
     "crlPublishAuto": "Auto (near expiry)",
     "crlDigest": "Signature digest",
@@ -1827,7 +1852,8 @@
       "importSelected": "Import {{count}} selected",
       "importSuccess": "Successfully imported {{count}} items ({{skipped}} skipped)",
       "noItemsSelected": "Please select at least one item to import",
-      "ignoreCert": "Ignore SSL certificate (self-signed)"
+      "ignoreCert": "Ignore SSL certificate (self-signed)",
+      "sslWarning": "⚠ SSL verification is disabled. Connections are vulnerable to man-in-the-middle attacks."
     },
     "export": {
       "allCertsTitle": "Export All Certificates",
@@ -4453,6 +4479,8 @@
     "selectCA": "Select a CA for timestamp signing",
     "policyOid": "Policy OID",
     "policyOidHelp": "OID identifying the TSA policy under which timestamps are issued",
+    "requireDedicatedCert": "Require a dedicated TSA certificate",
+    "requireDedicatedCertDesc": "Refuse to sign timestamps with the CA certificate itself. Requires a dedicated end-entity signing certificate with a critical timeStamping EKU (RFC 3161).",
     "endpoint": "TSA Endpoint",
     "endpointDesc": "Use this URL in your TSA client configuration",
     "timestampRequest": "Timestamp Request",

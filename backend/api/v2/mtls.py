@@ -16,7 +16,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
 
-from auth.unified import require_auth
+from auth.unified import require_auth, has_permission
 from config.settings import is_docker, restart_ucm_service
 from models import User, Certificate, CA, SystemConfig, db
 from models.auth_certificate import AuthCertificate
@@ -172,26 +172,47 @@ def list_mtls_certificates():
 
 
 @bp.route('/certificates', methods=['POST'])
-@require_auth()
+@require_auth(['write:user_certificates'])
 def create_mtls_certificate():
-    """Issue a new mTLS client certificate and auto-enroll it"""
+    """Issue a new mTLS client certificate and auto-enroll it
+
+    Requires an issuance scope: this makes a CA sign a certificate, which is
+    not a read-only operation. Previously guarded by a bare @require_auth(), so
+    any authenticated principal — including the read-only viewer and auditor
+    roles — could obtain a CA-signed client certificate.
+    """
 
     user = g.current_user
     data = request.get_json() or {}
 
-    # Resolve CA — prefer request ca_id, fall back to trusted CA, then first available
+    # Resolve CA — prefer request ca_id, else the configured mTLS CA.
+    # There is deliberately no "first CA in the table" fallback: that could
+    # silently sign with the root CA when no mTLS CA has been configured.
+    trusted_refid = _get_mtls_config('mtls_trusted_ca_id')
     ca_id = data.get('ca_id')
     ca = None
     if ca_id:
         ca = db.session.get(CA, ca_id) or CA.query.filter_by(refid=str(ca_id)).first()
+        # An explicit ca_id may name ANY CA row — the root included — yet the
+        # route only requires write:user_certificates, a self-service scope
+        # every operator holds and that groups may grant to any user.
+        # Overriding the configured mTLS CA is a CA-level decision, so any
+        # other target additionally requires a CA-level scope.
+        if ca and ca.refid != trusted_refid \
+                and not has_permission('write:cas', g.permissions):
+            return error_response(
+                'Issuing from a CA other than the configured mTLS CA '
+                'requires write:cas',
+                403,
+            )
     if not ca:
-        trusted_refid = _get_mtls_config('mtls_trusted_ca_id')
         if trusted_refid:
             ca = CA.query.filter_by(refid=trusted_refid).first()
     if not ca:
-        ca = CA.query.first()
-    if not ca:
-        return error_response('No CA available', 400)
+        return error_response(
+            'No mTLS CA configured — set the mTLS trusted CA or pass an explicit ca_id',
+            400,
+        )
 
     validity_days = min(max(int(data.get('validity_days', 365)), 1), 3650)
     cert_name = data.get('name', f'{user.username} mTLS')
@@ -434,7 +455,8 @@ def enroll_presented_certificate():
     # Also try proxy headers — only when the immediate peer is trusted
     # (same gate as login_mtls in auth_methods.py).
     if not cert_info:
-        headers = dict(request.headers)
+        # Case-insensitive mapping — do NOT dict() it (see login_mtls).
+        headers = request.headers
         spoof_attempt = (
             'X-SSL-Client-Verify' in headers
             or 'X-SSL-Client-S-DN' in headers
@@ -443,7 +465,7 @@ def enroll_presented_certificate():
         if spoof_attempt and not trusted_proxy.is_request_from_trusted_proxy():
             logger.warning(
                 "mTLS enroll: ignoring proxy cert headers from untrusted peer %s",
-                request.remote_addr,
+                trusted_proxy.immediate_peer_addr(),
             )
         elif 'X-SSL-Client-Verify' in headers:
             cert_info = CertificateParser.extract_from_nginx_headers(headers)

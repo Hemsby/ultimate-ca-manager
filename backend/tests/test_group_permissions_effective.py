@@ -53,6 +53,19 @@ class TestGrantableSet:
         assert 'read:certs' not in GROUP_GRANTABLE_PERMISSIONS
 
 
+class TestAvailablePermissionsEndpoint:
+
+    def test_endpoint_lists_grantable_permissions(self, app, auth_client):
+        r = auth_client.get('/api/v2/groups/available-permissions')
+        assert r.status_code == 200
+        data = json.loads(r.data)['data']
+        assert isinstance(data, list) and data
+        # The picker's source of truth: the grantable set, sorted, never admin/wildcard.
+        assert data == sorted(GROUP_GRANTABLE_PERMISSIONS)
+        assert '*' not in data
+        assert not [p for p in data if p.startswith('admin:')]
+
+
 class TestEffectivePermissions:
 
     def test_group_permission_is_added_to_role(self, app, viewer_in_group):

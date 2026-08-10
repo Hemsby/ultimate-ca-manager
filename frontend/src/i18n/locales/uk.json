@@ -797,7 +797,12 @@
       "maxReached": "Досягнуто максимум {{max}} EKU",
       "helper": "Можна додати ще {{remaining}} EKU (RFC 5280 §4.2.1.12).",
       "defaultLocked": "За замовчуванням для цього типу сертифіката"
-    }
+    },
+    "template": "Шаблон",
+    "allTemplates": "Усі шаблони",
+    "modifiedFromTemplate": "Змінено відносно шаблону",
+    "issuedFromTemplate": "Видано з шаблону: {{name}}",
+    "templateOverridesHint": "Відрізняється від шаблону '{{name}}' у: {{fields}}"
   },
   "cas": {
     "parentCA": "Батьківський ЦС",
@@ -1154,6 +1159,9 @@
     "editGroup": "Редагувати групу",
     "deleteGroup": "Видалити групу",
     "groupName": "Назва групи",
+    "permissions": "Дозволи",
+    "permissionsHelp": "Дозволи, що надаються кожному учаснику цієї групи додатково до його власної ролі.",
+    "noPermissions": "Дозволи не надано",
     "members": "Учасники",
     "noGroups": "Групи не знайдено",
     "noMembers": "Учасників не знайдено",
@@ -1358,6 +1366,7 @@
     "autoApproveDesc": "Пропустити перевірку виклику ACME для цього домену. Сертифікати видаються негайно без перевірки контролю над доменом.",
     "issuingCA": "CA-емітент",
     "useDefaultCA": "Використовувати CA за замовчуванням",
+    "issuingCAProxyHelper": "Застосовується лише коли UCM видає сертифікат через власний сервер ACME; не діє, коли домен переспрямовується до Let's Encrypt (сертифікат надходить від висхідного ЦС).",
     "defaultCA": "CA за замовчуванням",
     "testDnsAccess": "Перевірити доступ DNS",
     "domainCreatedSuccess": "Домен успішно зареєстровано",
@@ -1437,6 +1446,8 @@
     "proxyUpstreamCAAccount": "Обліковий запис CA вгорі по течії",
     "proxyUpstreamCAAccountHelper": "Виберіть зареєстрований зовнішній ACME CA. EAB і облікові дані керуються в Зовнішніх CA нижче.",
     "proxySelectCaAccount": "Вибрати обліковий запис CA…",
+    "proxyPruneReplacedCertificates": "Видаляти замінені сертифікати",
+    "proxyPruneReplacedCertificatesDesc": "Автоматично видаляти імпортовані проксі сертифікати після успішного оновлення для тих самих доменів. Відкликані сертифікати завжди зберігаються.",
     "proxyNoCaAccounts": "Зовнішні CA не налаштовані. Додайте обліковий запис у Зовнішніх CA нижче.",
     "proxyManageCaAccountsHint": "EAB і налаштування для кожного CA керуються в Зовнішніх CA нижче.",
     "proxyEnabled": "Надати через ACME-проксі",
@@ -1519,7 +1530,15 @@
       "deleteTitle": "Видалити облікові дані EAB",
       "delete": "Видалити",
       "deletedSuccess": "Облікові дані EAB видалено",
-      "deleteFailed": "Не вдалося видалити облікові дані EAB"
+      "deleteFailed": "Не вдалося видалити облікові дані EAB",
+      "allowedDomains": "Дозволені домени",
+      "allowedDomainsHelp": "Один шаблон на рядок або через кому (напр. *.mydomain.com, host.mydomain.com). Залиште порожнім, щоб заблокувати всі видачі для цих облікових даних.",
+      "allDomainsLabel": "Усі домени (додає * до списку дозволених)",
+      "allDomains": "Усі домени",
+      "noDomains": "Жодного (видачу заблоковано)",
+      "editDomainsTitle": "Редагувати дозволені домени",
+      "domainsSaved": "Дозволені домени оновлено",
+      "domainsSaveFailed": "Не вдалося оновити дозволені домени"
     },
     "termsOfServiceTitlePlaceholder": "Умови надання послуг (залиште порожнім для приховування)",
     "termsOfServiceBodyPlaceholder": "Напишіть свої умови тут...\n\nПідтримує: **жирний**, *курсив*, [посилання](url), - списки\n\nВикористовуйте порожні рядки для абзаців.",
@@ -1574,7 +1593,12 @@
     "caaEnforceWarning": "В ізольованих мережах кожен випуск ACME не вдасться, якщо резолвер не може відповісти на запити CAA.",
     "tlsAlpn01Desc": "перевірка через TLS на порту 443 (RFC 8737)",
     "tlsAlpnPort": "Порт TLS-ALPN-01",
-    "tlsAlpnPortHelper": "Локальний порт, який слухає відповідач TLS-ALPN-01 під час перевірки (типово 443)."
+    "tlsAlpnPortHelper": "Локальний порт, який слухає відповідач TLS-ALPN-01 під час перевірки (типово 443).",
+    "dnsPersistSection": "Постійна DNS-валідація (dns-persist-01)",
+    "dnsPersistEnabled": "Пропонувати dns-persist-01 (draft-ietf-acme-dns-persist)",
+    "dnsPersistEnabledDesc": "Валідація через постійний TXT-запис у _validation-persist.<домен>, прив'язаний до ACME-акаунта. Подовження без запису в DNS.",
+    "dnsPersistWarning": "Ризик: компрометація ключа ACME-акаунта дозволяє видачу для домену, поки існує TXT-запис (draft §7.2). Вмикайте лише для контрольованих акаунтів і зон.",
+    "dnsPersistIssuerNote": "Домени емітента для TXT-запису: {{domains}} (з ідентифікаторів CAA, або публічне ім'я хоста ACME)."
   },
   "scep": {
     "title": "Протокол SCEP",
@@ -1738,6 +1762,7 @@
     "crlScheduleUpdated": "Розклад CRL оновлено",
     "crlScheduleFailed": "Не вдалося оновити розклад CRL",
     "crlValidity": "Термін дії",
+    "crlValidityOfflineWarning": "Тривала дійсність призначена для офлайн-CA; сторони, що довіряють CRL, можуть зберігати застарілі дані відкликання протягом усього вікна.",
     "crlPublishInterval": "Публікувати кожні",
     "crlPublishAuto": "Авто (перед закінченням)",
     "crlDigest": "Дайджест підпису",
@@ -1827,7 +1852,8 @@
       "importSelected": "Імпортувати {{count}} вибраних",
       "importSuccess": "Успішно імпортовано {{count}} елементів ({{skipped}} пропущено)",
       "noItemsSelected": "Будь ласка, виберіть хоча б один елемент для імпорту",
-      "ignoreCert": "Ігнорувати SSL-сертифікат (самопідписаний)"
+      "ignoreCert": "Ігнорувати SSL-сертифікат (самопідписаний)",
+      "sslWarning": "⚠ Перевірку SSL вимкнено. З'єднання вразливі до атак типу man-in-the-middle."
     },
     "export": {
       "allCertsTitle": "Експорт Усі Сертифікатs",
@@ -4450,6 +4476,8 @@
     "selectCA": "Виберіть CA для підпису позначок часу",
     "policyOid": "OID політики",
     "policyOidHelp": "OID, що ідентифікує політику TSA, за якою видаються позначки часу",
+    "requireDedicatedCert": "Вимагати окремий сертифікат TSA",
+    "requireDedicatedCertDesc": "Відмовляти в підписуванні позначок часу сертифікатом самої CA. Потрібен окремий сертифікат підписання (кінцевого суб'єкта) з критичним EKU timeStamping (RFC 3161).",
     "endpoint": "Кінцева точка TSA",
     "endpointDesc": "Використовуйте цю URL-адресу в конфігурації клієнта TSA",
     "timestampRequest": "Запит позначки часу",

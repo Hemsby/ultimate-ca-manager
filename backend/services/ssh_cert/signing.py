@@ -95,6 +95,22 @@ class SSHCertificateSigningMixin:
                     ext_dict = {e: '' for e in extensions}
                 else:
                     ext_dict = extensions
+                # Caller-supplied extensions were previously applied verbatim,
+                # so a requester could grant itself permit-port-forwarding /
+                # permit-agent-forwarding (etc.) regardless of the CA's policy —
+                # the CA's configured list was consulted only when the caller
+                # omitted extensions entirely. Constrain them the same way
+                # principals are constrained, against the CA's own list.
+                # get_default_extensions() distinguishes "unset" (NULL column —
+                # standard OpenSSH set, preserving pre-existing CAs) from an
+                # explicitly empty policy ('[]' — nothing may be requested).
+                allowed_exts = set(ca.get_default_extensions())
+                invalid = [e for e in ext_dict if e not in allowed_exts]
+                if invalid:
+                    raise ValueError(
+                        "Extension(s) not permitted by this CA: "
+                        f"{', '.join(sorted(invalid))}"
+                    )
             else:
                 ext_dict = {e: '' for e in ca.get_default_extensions()}
             for ext_name, ext_value in sorted(ext_dict.items()):
