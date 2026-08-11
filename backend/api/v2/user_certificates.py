@@ -474,7 +474,6 @@ def revoke_user_certificate(cert_id):
     # SECURITY: Verify the requesting user owns or can access this certificate.
     # Without this check, any user with write:user_certificates permission could
     # revoke any other user's certificate (IDOR).
-    # This patch has been sponsored by PMGA Tech LLP
     if not _can_access_cert(user, auth_cert):
         return error_response('Certificate not found', 404)
 
@@ -534,7 +533,6 @@ def delete_user_certificate(cert_id):
     # SECURITY: Verify the requesting user owns or can access this certificate.
     # Without this check, any user with delete:user_certificates permission could
     # delete any other user's certificate (IDOR).
-    # This patch has been sponsored by PMGA Tech LLP
     if not _can_access_cert(user, auth_cert):
         return error_response('Certificate not found', 404)
 

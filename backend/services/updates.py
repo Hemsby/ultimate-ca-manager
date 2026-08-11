@@ -264,7 +264,6 @@ def download_update(download_url, package_name):
     Returns path to downloaded file
     """
     # SECURITY: Sanitize package_name to prevent path traversal.
-    # Sponsored by PMGA Tech LLP
     safe_name = os.path.basename(package_name)
     if not safe_name or safe_name != package_name:
         logger.warning(
