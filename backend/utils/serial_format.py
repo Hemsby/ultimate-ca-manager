@@ -41,6 +41,16 @@ def serial_to_int(serial: str | int | None) -> int | None:
         return None
 
 
+def serial_variants(serial: int) -> set[str]:
+    """DB string forms a given integer serial might be stored under.
+
+    Rows are a historical mix of decimal and hex (upper/lower) strings;
+    querying with all three catches every legacy encoding of the same
+    certificate.
+    """
+    return {str(serial), format(serial, 'x'), format(serial, 'X')}
+
+
 def format_serial_colon(serial: str | int | None) -> str:
     """Return serial as colon-separated uppercase hex pairs (OpenSSL display style)."""
     if serial is None or serial == '':

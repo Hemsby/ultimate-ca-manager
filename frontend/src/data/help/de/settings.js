@@ -74,6 +74,8 @@ export default {
           { label: 'HTTPS', text: 'TLS-Zertifikat für die UCM-Weboberfläche' },
           { label: 'Updates', text: 'Nach neuen Versionen suchen, Änderungsprotokoll anzeigen, Auto-Update (DEB/RPM)' },
           { label: 'Webhooks', text: 'HTTP-Webhooks für Zertifikatsereignisse (Ausstellung, Widerruf, Ablauf)' },
+          { label: 'Active Directory', text: 'UCMs eigene AD/LDAP-Verbindung für zertifikatsbezogene Abfragen (Kerberos-Prinzipalauflösung, AD-abgeleitete Betreffe)' },
+          { label: 'Windows-Autoregistrierung', text: 'MS-XCEP/MS-WSTEP native Windows-Registrierung: Richtlinienermittlung, Zertifikatsausstellung und Kerberos/SPNEGO-Bindung' },
         ]
       },
       {
@@ -84,6 +86,27 @@ export default {
           { label: 'Microsoft 365 / Outlook.com', text: 'Azure-AD-App mit delegierter SMTP.Send-Berechtigung registrieren' },
           { label: 'Refresh-Tokens', text: 'UCM speichert das Refresh-Token und erneuert Access-Tokens vor jedem Versand automatisch' },
           { label: 'Fallback', text: 'Passwort-Authentifizierung wird weiterhin unterstützt, wenn OAuth2 nicht konfiguriert ist' },
+        ]
+      },
+      {
+        title: 'Active-Directory-Connector',
+        content: 'UCMs eigene LDAP-Verbindung zu Active Directory, unabhängig von einem unter SSO konfigurierten LDAP-Anbieter -- dieser dient der Anmeldung bei UCM, dieser hier den zertifikatsbezogenen AD-Abfragen.',
+        items: [
+          { label: 'Zweck', text: 'Löst ein Kerberos-Maschinen- oder Benutzerprinzipal zu seinem AD-Objekt auf, damit UCM einen Zertifikatsbetreff/SAN ableiten kann, genau wie eine echte Windows-CA' },
+          { label: 'Felder', text: 'Server, Port, LDAPS mit optionaler CA-Verifizierung, Basis-DN, Bind-DN/Passwort' },
+          { label: 'Verbindung testen', text: 'Verbindung und Anmeldedaten vor dem Speichern überprüfen' },
+          { label: 'GPO-Registrierungs-URLs', text: 'Kerberos- und Benutzername/Passwort-URLs für die Zertifikatregistrierungsrichtlinie zur Registrierung in der Gruppenrichtlinie' },
+        ]
+      },
+      {
+        title: 'Windows-Autoregistrierung (XCEP/WSTEP)',
+        content: 'Native Windows-Zertifikatregistrierung über MS-XCEP-Richtlinienermittlung und MS-WSTEP-Ausstellung -- unterstützt manuelle MMC/certreq-Registrierung und unbeaufsichtigte GPO-Autoregistrierung.',
+        items: [
+          { label: 'XCEP', text: 'Ermöglicht Windows-Clients, verfügbare Zertifikatvorlagen vor der Registrierung zu ermitteln' },
+          { label: 'WSTEP', text: 'Verarbeitet Zertifikatsanforderung und -erneuerung, sobald die Richtlinie ermittelt wurde' },
+          { label: 'Kerberos/SPNEGO', text: 'Bindet die Kerberos-authentifizierten Endpunkte für die stille GPO-Autoregistrierung (erfordert einen SPN und ein Keytab vom Domänencontroller)' },
+          { label: 'Einrichtungs-Checkliste', text: 'Der Tab zeigt eine Live-Checkliste dessen, was konfiguriert ist bzw. noch fehlt, sowohl für die manuelle als auch die unbeaufsichtigte Registrierung' },
+          { label: 'AD-abgeleitete Betreffe', text: 'Vorlagen können sich für die Ableitung ihres Betreffs/SAN aus Active Directory (über den AD-Connector) für die unbeaufsichtigte Registrierung entscheiden' },
         ]
       },
 
@@ -322,6 +345,52 @@ Einstellungen › Sicherung ermöglicht automatische Backups.
 - **Aufbewahrung**: die N neuesten behalten, ältere bereinigen
 - Backups mit dem Backup-Passwort **verschlüsselt**
 
+
+## Active-Directory-Connector
+
+UCMs eigene LDAP-Verbindung zu Active Directory, unabhängig von einem unter SSO konfigurierten LDAP-Anbieter. Jener dient der Anmeldung bei UCM; dieser hier wird für zertifikatsbezogene AD-Abfragen verwendet und funktioniert unabhängig davon, ob SSO überhaupt konfiguriert ist.
+
+- **Zweck** — Löst ein Kerberos-Maschinen- oder Benutzerprinzipal zu seinem AD-Objekt auf, damit UCM einen Zertifikatsbetreff/SAN ableiten kann, genau wie eine echte Windows-CA
+- **Server** — Hostname/IP und Port eines Domänencontrollers
+- **LDAPS** — Umschalten, um LDAP über SSL/TLS zu verwenden; **SSL-Zertifikat prüfen** validiert das Zertifikat des DC (optional gegen ein benutzerdefiniertes CA-Bundle, wenn es nicht öffentlich vertrauenswürdig ist)
+- **Basis-DN** und **Bind-DN / Passwort** — Für Abfragen verwendete Dienstkonto-Anmeldedaten
+- **Verbindung testen** — Konnektivität und Anmeldedaten vor dem Speichern überprüfen
+
+### GPO-Registrierungsrichtlinien-URLs
+
+Registrieren Sie nach der Konfiguration eine der angezeigten URLs als Certificate Enrollment Policy-Server in der Gruppenrichtlinie (Richtlinien für öffentliche Schlüssel → Zertifikatdienste-Client – Zertifikatregistrierungsrichtlinie), zusammen mit Zertifikatdienste-Client – Automatische Registrierung:
+- **Kerberos** — Keine Anmeldeaufforderung; erfordert einen domänenverbundenen Client und den GPO-Authentifizierungstyp Kerberos
+- **Benutzername/Passwort** — Fragt nach Anmeldedaten; nur für die interaktive Registrierung „Neues Zertifikat anfordern“
+
+## Windows-Autoregistrierung (XCEP/WSTEP)
+
+Native Windows-Zertifikatregistrierung über **MS-XCEP** (Richtlinienermittlung) und **MS-WSTEP** (Zertifikatsausstellung und -erneuerung) -- dieselben Protokolle, die ein echtes ADCS für MMC „Neues Zertifikat anfordern“, \`certreq\` und unbeaufsichtigte GPO-Autoregistrierung verwendet.
+
+### Einrichtungs-Checkliste
+
+Der Tab verfolgt, was konfiguriert ist und was noch benötigt wird, sowohl für den manuellen als auch den unbeaufsichtigten Registrierungspfad -- eine Zertifizierungsstelle, Richtlinienermittlung (XCEP), Zertifikatsausstellung (WSTEP) und, für unbeaufsichtigte GPO-Autoregistrierung, ein Active-Directory-Connector, Kerberos/SPNEGO und mindestens eine Vorlage mit erlaubter Autoregistrierung.
+
+### Richtlinienermittlung (XCEP)
+
+- **Zertifizierungsstelle** — Die CA, deren Vorlagen angekündigt werden und die über diese Konfiguration Zertifikate ausstellt
+- **Gültigkeit (Tage)** — Standardgültigkeit für über WSTEP ausgestellte Zertifikate
+
+### Kerberos / SPNEGO
+
+Bindet die Kerberos-authentifizierten XCEP/WSTEP-Endpunkte für die stille GPO-Autoregistrierung, sodass Maschinen und Benutzer über ihr Kerberos-Ticket statt per Anmeldeaufforderung authentifiziert werden:
+- **Dienstprinzipalname (SPN)** — z. B. \`HTTP/ucm.beispiel.de@BEISPIEL.DE\`
+- **Keytab** — Erstellt mit \`ktpass\` oder \`ktutil\` auf dem Domänencontroller für den obigen SPN
+
+> ⚠ Wenn die serverseitige SPNEGO-Bibliothek nicht installiert ist, funktioniert die Kerberos-Authentifizierung nicht, selbst wenn sie hier aktiviert ist -- eine Warnung wird im Tab angezeigt.
+
+### Registrierungsrichtlinien-URLs
+
+- **Benutzername/Passwort** — Fragt nach Anmeldedaten; für die interaktive Registrierung „Neues Zertifikat anfordern“, ohne Active Directory zu benötigen
+- **Kerberos** — Keine Anmeldeaufforderung; erfordert einen domänenverbundenen Client und eine GPO-Konfiguration
+
+### AD-abgeleitete Betreffe
+
+Eine Zertifikatvorlage kann sich für **Betreff aus Active Directory erstellen** (Vorlagen → Registrierung) entscheiden: Für unbeaufsichtigte GPO-Autoregistrierung werden Betreff und SAN aus dem AD-Objekt des Anfragers über den AD-Connector abgeleitet, statt vom Client eine Angabe zu verlangen -- entspricht der Konfiguration einer echten ADCS-Vorlage für die Autoregistrierung. Unabhängig davon kündigt **Autoregistrierung zulassen** die Vorlage als \`autoEnroll=true\` in der Certificate Enrollment Policy an, sodass GPO-/Kerberos-authentifizierte Clients sie beim Anmelden automatisch anfordern.
 `
   }
 }

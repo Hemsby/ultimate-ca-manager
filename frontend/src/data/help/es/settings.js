@@ -75,6 +75,8 @@ export default {
           { label: 'HTTPS', text: 'Certificado TLS para la interfaz web de UCM' },
           { label: 'Actualizaciones', text: 'Buscar nuevas versiones, ver registro de cambios, actualización automática (DEB/RPM)' },
           { label: 'Webhooks', text: 'Webhooks HTTP para eventos de certificados (emisión, revocación, expiración). Autenticación saliente opcional: Bearer, Basic, API key o encabezado personalizado' },
+          { label: 'Active Directory', text: 'Conexión propia de UCM a AD/LDAP para búsquedas relacionadas con certificados (resolución de entidades de seguridad Kerberos, sujetos derivados de AD)' },
+          { label: 'Autoinscripción de Windows', text: 'Inscripción nativa de Windows MS-XCEP/MS-WSTEP: descubrimiento de directivas, emisión de certificados y vinculación Kerberos/SPNEGO' },
         ]
       },
       {
@@ -85,6 +87,27 @@ export default {
           { label: 'Microsoft 365 / Outlook.com', text: 'Registrar una app Azure AD con permiso delegado SMTP.Send' },
           { label: 'Refresh tokens', text: 'UCM almacena el refresh token y renueva los access tokens automáticamente antes de cada envío' },
           { label: 'Respaldo', text: 'La autenticación por contraseña sigue soportada cuando OAuth2 no está configurado' },
+        ]
+      },
+      {
+        title: 'Conector de Active Directory',
+        content: 'Conexión LDAP propia de UCM a Active Directory, independiente de cualquier proveedor LDAP configurado en SSO -- ese sirve para iniciar sesión en UCM, este para las consultas de AD relacionadas con certificados.',
+        items: [
+          { label: 'Propósito', text: 'Resuelve una entidad de seguridad de máquina o usuario Kerberos a su objeto de AD, para que UCM pueda derivar un sujeto/SAN de certificado, tal como lo haría una CA de Windows real' },
+          { label: 'Campos', text: 'Servidor, puerto, LDAPS con verificación de CA opcional, Base DN, Bind DN/contraseña' },
+          { label: 'Probar conexión', text: 'Verificar la conectividad y las credenciales antes de guardar' },
+          { label: 'URL de inscripción GPO', text: 'URL de directiva de inscripción de certificados Kerberos y Usuario/Contraseña para registrar en Directiva de grupo' },
+        ]
+      },
+      {
+        title: 'Autoinscripción de Windows (XCEP/WSTEP)',
+        content: 'Inscripción de certificados nativa de Windows mediante el descubrimiento de directivas MS-XCEP y la emisión MS-WSTEP -- admite la inscripción manual con MMC/certreq y la autoinscripción GPO desatendida.',
+        items: [
+          { label: 'XCEP', text: 'Permite a los clientes Windows descubrir las plantillas de certificado disponibles antes de inscribirse' },
+          { label: 'WSTEP', text: 'Gestiona la solicitud y renovación del certificado una vez descubierta la directiva' },
+          { label: 'Kerberos/SPNEGO', text: 'Vincula los puntos de conexión autenticados por Kerberos usados para la autoinscripción GPO silenciosa (requiere un SPN y un keytab del controlador de dominio)' },
+          { label: 'Lista de verificación de configuración', text: 'La pestaña muestra una lista de verificación en vivo de lo configurado frente a lo que falta, tanto para la inscripción manual como la desatendida' },
+          { label: 'Sujetos derivados de AD', text: 'Las plantillas pueden optar por derivar su sujeto/SAN de Active Directory (mediante el conector de AD) para la inscripción desatendida' },
         ]
       },
 
@@ -336,6 +359,52 @@ Ajustes › Copia de seguridad permite copias automáticas.
 - **Retención**: conservar las N más recientes, eliminar las antiguas
 - Copias **cifradas** con la contraseña de copia
 
+
+## Conector de Active Directory
+
+Conexión LDAP propia de UCM a Active Directory, independiente de cualquier proveedor LDAP configurado en SSO. Ese sirve para iniciar sesión en UCM; este se usa para las consultas de AD relacionadas con certificados y funciona con independencia de si SSO está configurado o no.
+
+- **Propósito** — Resuelve una entidad de seguridad de máquina o usuario Kerberos a su objeto de AD, para que UCM pueda derivar un sujeto/SAN de certificado tal como lo haría una CA de Windows real
+- **Servidor** — Nombre de host/IP y puerto de un controlador de dominio
+- **LDAPS** — Activar para usar LDAP sobre SSL/TLS; **Verificar certificado SSL** valida el certificado del DC (opcionalmente frente a un paquete de CA personalizado cuando no es públicamente confiable)
+- **Base DN** y **Bind DN / Contraseña** — Credenciales de la cuenta de servicio usadas para las búsquedas
+- **Probar conexión** — Verificar la conectividad y las credenciales antes de guardar
+
+### URL de directiva de inscripción GPO
+
+Una vez configurado, registre una de las URL mostradas como servidor de Directiva de inscripción de certificados en Directiva de grupo (Directivas de clave pública → Cliente de servicios de certificados – Directiva de inscripción de certificados), junto con Cliente de servicios de certificados – Inscripción automática:
+- **Kerberos** — Sin solicitud de credenciales; requiere un cliente unido al dominio y el tipo de autenticación de la GPO establecido en Kerberos
+- **Usuario/Contraseña** — Solicita credenciales; solo para la inscripción interactiva "Solicitar nuevo certificado"
+
+## Autoinscripción de Windows (XCEP/WSTEP)
+
+Inscripción de certificados nativa de Windows mediante **MS-XCEP** (descubrimiento de directivas) y **MS-WSTEP** (emisión y renovación de certificados) -- los mismos protocolos que usa un ADCS real para la inscripción interactiva "Solicitar nuevo certificado" en MMC, \`certreq\` y la autoinscripción GPO desatendida.
+
+### Lista de verificación de configuración
+
+La pestaña realiza un seguimiento de lo que está configurado frente a lo que aún falta, tanto para la inscripción manual como para la desatendida -- una autoridad de certificación, descubrimiento de directivas (XCEP), emisión de certificados (WSTEP) y, para la autoinscripción GPO desatendida, un conector de Active Directory, Kerberos/SPNEGO y al menos una plantilla con la autoinscripción permitida.
+
+### Descubrimiento de directivas (XCEP)
+
+- **Autoridad de certificación** — La CA cuyas plantillas se anuncian y que emite certificados mediante esta configuración
+- **Validez (días)** — Validez predeterminada aplicada a los certificados emitidos mediante WSTEP
+
+### Kerberos / SPNEGO
+
+Vincula los puntos de conexión XCEP/WSTEP autenticados por Kerberos usados para la autoinscripción GPO silenciosa, de modo que las máquinas y los usuarios se autentiquen mediante su ticket Kerberos en lugar de una solicitud de credenciales:
+- **Nombre de entidad de servicio (SPN)** — p. ej. \`HTTP/ucm.ejemplo.com@EJEMPLO.COM\`
+- **Keytab** — Generado con \`ktpass\` o \`ktutil\` en el controlador de dominio para el SPN anterior
+
+> ⚠ Si la biblioteca SPNEGO del lado del servidor no está instalada, la autenticación Kerberos no funcionará aunque esté habilitada aquí -- se muestra una advertencia en la pestaña.
+
+### URL de directiva de inscripción
+
+- **Usuario/Contraseña** — Solicita credenciales; para la inscripción interactiva "Solicitar nuevo certificado", no requiere Active Directory
+- **Kerberos** — Sin solicitud de credenciales; requiere un cliente unido al dominio y configuración de GPO
+
+### Sujetos derivados de AD
+
+Una plantilla de certificado puede optar por **Crear sujeto desde Active Directory** (Plantillas → Inscripción): para la autoinscripción GPO desatendida, el sujeto y el SAN se derivan del objeto de AD del solicitante mediante el conector de AD en lugar de exigir que el cliente proporcione uno -- coincide con la configuración de una plantilla ADCS real para la autoinscripción. De forma independiente, **Permitir autoinscripción** anuncia la plantilla como \`autoEnroll=true\` en la Directiva de inscripción de certificados, de modo que los clientes autenticados por GPO/Kerberos la soliciten automáticamente al iniciar sesión.
 `
   }
 }

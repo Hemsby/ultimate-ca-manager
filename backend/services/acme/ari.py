@@ -20,7 +20,7 @@ from typing import Optional, Tuple
 from models import Certificate
 from models.acme_models import AcmeOrder
 from utils.datetime_utils import utc_now
-from utils.serial_format import serial_to_int
+from utils.serial_format import serial_to_int, serial_variants
 
 # How often a client should re-poll the renewalInfo resource (RFC 9773 §4.2
 # recommends advertising this via Retry-After).
@@ -78,11 +78,7 @@ def find_certificate(aki_hex: str, serial_int: int) -> Optional[Certificate]:
     DB's history, so we match on the integer value and confirm the AKI to
     avoid cross-CA collisions.
     """
-    candidates = {
-        str(serial_int),
-        format(serial_int, 'x'),
-        format(serial_int, 'X'),
-    }
+    candidates = serial_variants(serial_int)
     rows = (Certificate.query
             .filter(Certificate.crt.isnot(None))
             .filter(Certificate.serial_number.in_(candidates))

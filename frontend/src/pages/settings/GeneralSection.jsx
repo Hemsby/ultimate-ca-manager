@@ -173,7 +173,7 @@ export default function GeneralSection({ settings, updateSetting, handleSave, sa
               <Button
                 type="button"
                 onClick={async () => {
-                  await handleSave('generalSite')
+                  await handleSave('general')
                   setEndpointsRefresh((k) => k + 1)
                 }}
                 disabled={saving}
@@ -298,7 +298,7 @@ export default function GeneralSection({ settings, updateSetting, handleSave, sa
           </label>
           {canWrite('settings') && (
             <div className="pt-2">
-              <Button type="button" onClick={() => handleSave('generalSession')} disabled={saving}>
+              <Button type="button" onClick={() => handleSave('general')} disabled={saving}>
                 <FloppyDisk size={16} />
                 {t('common.saveChanges')}
               </Button>

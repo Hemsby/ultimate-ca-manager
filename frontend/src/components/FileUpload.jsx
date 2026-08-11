@@ -7,6 +7,11 @@ import { UploadSimple, FileText, X } from '@phosphor-icons/react'
 import { cn } from '../lib/utils'
 import { Button } from './Button'
 
+function formatSize(bytes) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)}KB`
+  return `${(bytes / 1024 / 1024).toFixed(0)}MB`
+}
+
 export function FileUpload({ 
   accept, 
   multiple = false, 
@@ -35,7 +40,7 @@ export function FileUpload({
 
   const validateFile = (file) => {
     if (maxSize && file.size > maxSize) {
-      return `File size exceeds ${(maxSize / 1024 / 1024).toFixed(0)}MB`
+      return `File size exceeds ${formatSize(maxSize)}`
     }
     return null
   }
@@ -124,7 +129,7 @@ export function FileUpload({
             {t('common.dropFilesOrBrowse')}
           </p>
           <p className="text-xs text-text-secondary">
-            {helperText || `${accept || t('common.anyFile')} • Max ${(maxSize / 1024 / 1024).toFixed(0)}MB`}
+            {helperText || `${accept || t('common.anyFile')} • Max ${formatSize(maxSize)}`}
           </p>
         </label>
       </div>

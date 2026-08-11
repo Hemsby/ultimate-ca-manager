@@ -241,13 +241,16 @@ def create_template():
         extensions_template=json.dumps(extensions),
         is_system=False,  # User-created templates are never system
         is_active=True,
+        ad_derived_subject=bool(data.get('ad_derived_subject', False)),
+        autoenroll_enabled=bool(data.get('autoenroll_enabled', False)),
+        allowed_ad_group=(data.get('allowed_ad_group') or '').strip()[:255] or None,
         created_by=g.current_user.username
     )
-    
+
     try:
         db.session.add(template)
         db.session.commit()
-        
+
         AuditService.log_action(
             action='template_create',
             resource_type='template',
@@ -344,7 +347,16 @@ def update_template(template_id):
     
     if 'is_active' in data:
         template.is_active = bool(data['is_active'])
-    
+
+    if 'ad_derived_subject' in data:
+        template.ad_derived_subject = bool(data['ad_derived_subject'])
+
+    if 'autoenroll_enabled' in data:
+        template.autoenroll_enabled = bool(data['autoenroll_enabled'])
+
+    if 'allowed_ad_group' in data:
+        template.allowed_ad_group = (data['allowed_ad_group'] or '').strip()[:255] or None
+
     template.updated_by = g.current_user.username
     template.updated_at = utc_now()
     
@@ -500,6 +512,9 @@ def duplicate_template(template_id):
         extensions_template=template.extensions_template,
         is_system=False,
         is_active=template.is_active,
+        ad_derived_subject=template.ad_derived_subject,
+        autoenroll_enabled=template.autoenroll_enabled,
+        allowed_ad_group=template.allowed_ad_group,
         created_by=g.current_user.username
     )
 

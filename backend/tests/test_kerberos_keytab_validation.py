@@ -1,0 +1,121 @@
+"""Regression tests: Kerberos keytab validation (issue #229 item 4).
+
+Before this fix, uploading a keytab only checked its file extension/size --
+there was no feedback on whether it actually parsed, or whether its
+principal matched the configured SPN, short of the generic "settings
+saved" toast. ``negotiate_auth.inspect_keytab`` now parses the keytab via
+the same GSSAPI call the real acceptor uses, so a "valid" result means it
+will actually work at request time.
+
+``_VALID_KEYTAB_B64`` is a hand-built, real (RFC-shape) MIT keytab file
+containing a single ``HTTP/testhost.example.test@EXAMPLE.TEST`` entry,
+confirmed against a real GSSAPI installation (ucm2.vm.hagland.home) to
+parse successfully and report that exact principal -- not a mock.
+"""
+import base64
+import io
+from pathlib import Path
+
+import pytest
+
+from services.kerberos import negotiate_auth
+
+_VALID_KEYTAB_B64 = (
+    'BQIAAABeAAIADEVYQU1QTEUuVEVTVAAESFRUUAAVdGVzdGhvc3QuZXhhbXBsZS50ZXN0AAAA'
+    'AWd0hYABABIAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fAAAAAQ=='
+)
+
+
+@pytest.fixture
+def valid_keytab_path(tmp_path):
+    path = tmp_path / 'valid.keytab'
+    path.write_bytes(base64.b64decode(_VALID_KEYTAB_B64))
+    return str(path)
+
+
+@pytest.fixture
+def garbage_keytab_path(tmp_path):
+    path = tmp_path / 'garbage.keytab'
+    path.write_bytes(b'this is not a keytab file at all, just garbage bytes')
+    return str(path)
+
+
+class TestInspectKeytab:
+    def test_valid_keytab_reports_principal(self, valid_keytab_path):
+        result = negotiate_auth.inspect_keytab(valid_keytab_path)
+        assert result == {
+            'valid': True,
+            'principal': 'HTTP/testhost.example.test@EXAMPLE.TEST',
+            'error': None,
+        }
+
+    def test_malformed_keytab_is_invalid_not_a_crash(self, garbage_keytab_path):
+        result = negotiate_auth.inspect_keytab(garbage_keytab_path)
+        assert result['valid'] is False
+        assert result['principal'] is None
+        assert result['error']  # some GSSAPI-provided reason, exact text is library-specific
+
+    def test_missing_keytab_is_invalid(self, tmp_path):
+        result = negotiate_auth.inspect_keytab(str(tmp_path / 'does-not-exist.keytab'))
+        assert result == {'valid': False, 'principal': None, 'error': 'No keytab uploaded'}
+
+    def test_default_path_is_keytab_path(self, monkeypatch, valid_keytab_path):
+        monkeypatch.setattr(negotiate_auth, 'KEYTAB_PATH', Path(valid_keytab_path))
+        result = negotiate_auth.inspect_keytab()
+        assert result['valid'] is True
+        assert result['principal'] == 'HTTP/testhost.example.test@EXAMPLE.TEST'
+
+
+class TestKeytabUploadEndpoint:
+    """Exercises api/v2/kerberos.py's upload_kerberos_keytab through the
+    real Flask app, since the validate-before-persist ordering (reject a
+    malformed keytab without overwriting a working one) is the actual
+    behavior being fixed, not just inspect_keytab in isolation."""
+
+    def test_malformed_upload_is_rejected_and_not_persisted(self, auth_client, app, tmp_path, monkeypatch):
+        keytab_target = tmp_path / 'persisted.keytab'
+        monkeypatch.setattr(negotiate_auth, 'KEYTAB_PATH', keytab_target)
+
+        # Seed a working keytab first, so we can prove the bad upload didn't clobber it.
+        keytab_target.write_bytes(base64.b64decode(_VALID_KEYTAB_B64))
+        before = keytab_target.read_bytes()
+
+        data = {'file': (io.BytesIO(b'not a real keytab'), 'bad.keytab')}
+        r = auth_client.post('/api/v2/kerberos/keytab', data=data, content_type='multipart/form-data')
+
+        assert r.status_code == 400
+        assert keytab_target.read_bytes() == before  # untouched
+
+    def test_valid_upload_is_persisted_and_reports_principal(self, auth_client, app, tmp_path, monkeypatch):
+        keytab_target = tmp_path / 'persisted2.keytab'
+        monkeypatch.setattr(negotiate_auth, 'KEYTAB_PATH', keytab_target)
+        monkeypatch.setattr(negotiate_auth, 'get_spn', lambda: 'HTTP/testhost.example.test@EXAMPLE.TEST')
+
+        keytab_bytes = base64.b64decode(_VALID_KEYTAB_B64)
+        data = {'file': (io.BytesIO(keytab_bytes), 'good.keytab')}
+        r = auth_client.post('/api/v2/kerberos/keytab', data=data, content_type='multipart/form-data')
+
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body['data']['keytab_valid'] is True
+        assert body['data']['keytab_principal'] == 'HTTP/testhost.example.test@EXAMPLE.TEST'
+        assert body['data']['keytab_spn_matches'] is True
+        assert keytab_target.read_bytes() == keytab_bytes
+
+    def test_valid_upload_with_mismatched_spn_is_still_accepted(self, auth_client, app, tmp_path, monkeypatch):
+        """A keytab can legitimately carry a different (or additional)
+        principal than the SPN field currently says -- reject the upload
+        outright would be wrong; surface the mismatch instead."""
+        keytab_target = tmp_path / 'persisted3.keytab'
+        monkeypatch.setattr(negotiate_auth, 'KEYTAB_PATH', keytab_target)
+        monkeypatch.setattr(negotiate_auth, 'get_spn', lambda: 'HTTP/some-other-host.example.test@EXAMPLE.TEST')
+
+        keytab_bytes = base64.b64decode(_VALID_KEYTAB_B64)
+        data = {'file': (io.BytesIO(keytab_bytes), 'good.keytab')}
+        r = auth_client.post('/api/v2/kerberos/keytab', data=data, content_type='multipart/form-data')
+
+        assert r.status_code == 200
+        body = r.get_json()
+        assert body['data']['keytab_valid'] is True
+        assert body['data']['keytab_spn_matches'] is False
+        assert keytab_target.read_bytes() == keytab_bytes

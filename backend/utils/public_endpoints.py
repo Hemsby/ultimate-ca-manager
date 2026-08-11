@@ -37,6 +37,10 @@ _HEALTH_PATHS = frozenset({
 })
 _PROTOCOL_PREFIXES = (
     '/cdp/', '/ca/', '/ocsp', '/scep/', '/.well-known/', '/tsa', '/ssh/setup/',
+    # XCEP/WSTEP (services/wstep/__init__.py, api/xcep_protocol.py): real
+    # Windows SOAP clients don't follow POST redirects, so these must never
+    # get caught by the canonical-host redirect the way admin UI paths do.
+    '/ADPolicyProvider_CEP_', '/ADCertificateService_CES_',
 )
 _ACME_PREFIXES = ('/acme/',)
 _STATIC_PREFIXES = ('/static/', '/assets/')
