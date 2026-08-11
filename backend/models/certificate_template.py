@@ -56,6 +56,16 @@ class CertificateTemplate(db.Model):
     # Enroll-broadly/Autoenroll-narrowly.
     autoenroll_enabled = db.Column(db.Boolean, default=False)
 
+    # Optional Enroll ACL gate: an AD group (DN or sAMAccountName) that the
+    # authenticated Kerberos principal must belong to before WSTEP will
+    # issue against this template. Unset (default) means no restriction --
+    # matches real ADCS's own default "any authenticated member can enroll"
+    # behavior. Only enforced on the Kerberos-bound CES path, since the
+    # UsernamePassword path has no per-request principal to check (a single
+    # shared SystemConfig credential, not a UCM/AD account) -- see
+    # services/wstep/wstep_service.py's issue().
+    allowed_ad_group = db.Column(db.String(255))
+
     # Metadata
     created_at = db.Column(db.DateTime, default=utc_now)
     created_by = db.Column(db.String(80))
@@ -79,6 +89,7 @@ class CertificateTemplate(db.Model):
             "is_active": self.is_active,
             "ad_derived_subject": bool(self.ad_derived_subject),
             "autoenroll_enabled": bool(self.autoenroll_enabled),
+            "allowed_ad_group": self.allowed_ad_group,
             "created_at": utc_isoformat(self.created_at),
             "created_by": self.created_by,
             "updated_at": utc_isoformat(self.updated_at),

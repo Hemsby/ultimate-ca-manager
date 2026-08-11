@@ -214,6 +214,11 @@ export default function TemplatesPage() {
                 {t('templates.autoenrollBadge')}
               </Badge>
             )}
+            {row.allowed_ad_group && (
+              <Badge variant="amber" size="sm" title={t('templates.enrollAclBadgeTooltip', { group: row.allowed_ad_group })}>
+                {t('templates.enrollAclBadge')}
+              </Badge>
+            )}
           </div>
         )
       },
@@ -366,6 +371,11 @@ export default function TemplatesPage() {
                 {t('templates.autoenrollBadge')}
               </Badge>
             )}
+            {selectedTemplate.allowed_ad_group && (
+              <Badge variant="amber" size="sm" title={t('templates.enrollAclBadgeTooltip', { group: selectedTemplate.allowed_ad_group })}>
+                {t('templates.enrollAclBadge')}
+              </Badge>
+            )}
           </div>
         }
       />
@@ -431,6 +441,7 @@ export default function TemplatesPage() {
       <CompactSection title={t('templates.enrollment')} icon={ShieldCheck}>
         <CompactGrid columns={2}>
           <CompactField autoIcon="default" label={t('templates.autoenrollEnabled')} value={selectedTemplate.autoenroll_enabled ? t('common.enabled') : t('common.disabled')} />
+          <CompactField autoIcon="default" label={t('templates.allowedAdGroup')} value={selectedTemplate.allowed_ad_group || t('templates.allowedAdGroupUnset')} />
         </CompactGrid>
       </CompactSection>
 
@@ -664,7 +675,8 @@ function buildInitialState(template) {
       extended_key_usage: ['serverAuth'],
       san_types: ['dns', 'ip'],
       ad_derived_subject: false,
-      autoenroll_enabled: false
+      autoenroll_enabled: false,
+      allowed_ad_group: ''
     }
   }
   const dn = template.dn_template || {}
@@ -685,7 +697,8 @@ function buildInitialState(template) {
     extended_key_usage: ext.extended_key_usage || [],
     san_types: ext.san_types || [],
     ad_derived_subject: template.ad_derived_subject || false,
-    autoenroll_enabled: template.autoenroll_enabled || false
+    autoenroll_enabled: template.autoenroll_enabled || false,
+    allowed_ad_group: template.allowed_ad_group || ''
   }
 }
 
@@ -730,7 +743,8 @@ function TemplateForm({ template, onSubmit, onCancel }) {
           san_types: formData.san_types
         },
         ad_derived_subject: formData.ad_derived_subject,
-        autoenroll_enabled: formData.autoenroll_enabled
+        autoenroll_enabled: formData.autoenroll_enabled,
+        allowed_ad_group: formData.allowed_ad_group.trim()
       })
     } finally {
       setLoading(false)
@@ -838,6 +852,15 @@ function TemplateForm({ template, onSubmit, onCancel }) {
           {t('templates.autoenrollEnabled')}
         </label>
         <p className="text-xs text-text-secondary mt-1">{t('templates.autoenrollEnabledDescription')}</p>
+
+        <Input
+          label={t('templates.allowedAdGroup')}
+          value={formData.allowed_ad_group}
+          onChange={(e) => set('allowed_ad_group', e.target.value)}
+          placeholder={t('templates.allowedAdGroupPlaceholder')}
+          className="mt-3"
+        />
+        <p className="text-xs text-text-secondary mt-1">{t('templates.allowedAdGroupDescription')}</p>
       </div>
 
       {/* Extensions */}

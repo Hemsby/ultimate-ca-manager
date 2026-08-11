@@ -287,6 +287,87 @@ def lookup_user_ad_identity(sam_account_name):
             pass
 
 
+def _looks_like_dn(value):
+    """Cheap DN heuristic (``'CN=Foo,OU=Groups,DC=hagland,DC=domain'``) vs a
+    plain name (``'Foo'``, ``'VPN-Enroll'``) -- good enough to route
+    ``is_member_of_group``'s group argument without requiring admins to
+    always type a full DN. A false negative just means an extra lookup, not
+    a security problem: the group is still resolved by name search below.
+    """
+    return '=' in value and ',' in value
+
+
+def is_member_of_group(sam_account_name, group):
+    """Whether the AD account ``sam_account_name`` (no trailing ``$``
+    stripped -- caller passes it exactly as parsed from the Kerberos
+    principal, so a machine account keeps its ``$``) is a member of
+    ``group``, given either as a full DN or a plain name (``sAMAccountName``
+    or ``cn``) -- resolved to a DN first via search if it doesn't already
+    look like one (see ``_looks_like_dn``).
+
+    Uses AD's ``LDAP_MATCHING_RULE_IN_CHAIN`` (``:1.2.840.113556.1.4.1941:``)
+    on ``memberOf`` so nested group membership counts, matching how a real
+    ADCS Enroll ACL evaluates a principal's full token group list rather
+    than only direct membership.
+
+    Fails closed to ``False`` on every failure mode -- connector not
+    configured/disabled, unreachable, bind failure, group not found, or
+    account not found/not a member. Never raises. Callers must treat
+    ``False`` as "deny", not "skip the check" -- this is a security gate,
+    unlike the subject-derivation lookups above which fail closed to a
+    softer "can't derive a subject, fall through to normal rejection".
+    """
+    from ldap3.utils.conv import escape_filter_chars
+
+    from models import ADConnectorConfig
+
+    if not sam_account_name or not group:
+        return False
+
+    config = ADConnectorConfig.get_singleton()
+    if not config or not config.enabled or not config.server or not config.base_dn:
+        return False
+
+    try:
+        conn = _connect(config)
+    except Exception as e:
+        logger.warning("AD Connector: bind failed during group membership check: %s", e)
+        return False
+
+    try:
+        if _looks_like_dn(group):
+            group_dn = group
+        else:
+            safe_group = escape_filter_chars(group)
+            conn.search(
+                config.base_dn,
+                f'(&(objectClass=group)(|(sAMAccountName={safe_group})(cn={safe_group})))',
+                attributes=['distinguishedName'],
+            )
+            if not conn.entries:
+                logger.warning("AD Connector: group %r not found for Enroll ACL check", group)
+                return False
+            group_dn = conn.entries[0].entry_dn
+
+        safe_sam = escape_filter_chars(sam_account_name)
+        safe_group_dn = escape_filter_chars(group_dn)
+        conn.search(
+            config.base_dn,
+            f'(&(sAMAccountName={safe_sam})'
+            f'(memberOf:1.2.840.113556.1.4.1941:={safe_group_dn}))',
+            attributes=['sAMAccountName'],
+        )
+        return bool(conn.entries)
+    except Exception as e:
+        logger.warning("AD Connector: group membership check failed: %s", e)
+        return False
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
+
 def test_connection(config):
     """Test connectivity + bind for a config-like object -- either the
     saved ``ADConnectorConfig`` row or an unsaved ``SimpleNamespace`` built

@@ -12,6 +12,7 @@ from cryptography.x509.oid import NameOID
 from lxml import etree
 
 from models import CA, db
+from models.certificate_template import CertificateTemplate
 from models.system_config import SystemConfig
 from services.wstep.soap_envelope import ADDRESSING_NS, SOAP_NS, WSSE_NS, WST_NS
 
@@ -266,3 +267,31 @@ def test_issue_rejects_sha1_csr_with_specific_message(client, wstep_config):
     assert r.status_code == 400
     assert b'sha1' in r.data.lower()
     assert b'SHA-256' in r.data
+
+
+def test_issue_ignores_enroll_acl_on_username_password_path(client, app, wstep_config):
+    """Per-template Enroll ACL (CertificateTemplate.allowed_ad_group) only
+    gates the Kerberos-bound CES endpoint -- the UsernamePassword path
+    authenticates a single shared SystemConfig credential with no
+    per-request principal, so there's no identity to check group
+    membership for. A template restricted to a group must still issue
+    normally here, matching pre-feature behavior exactly."""
+    with app.app_context():
+        CertificateTemplate.query.filter_by(name='Test UsernamePassword ACL Template').delete()
+        template = CertificateTemplate(
+            name='Test UsernamePassword ACL Template', template_type='client_auth',
+            extensions_template='{}', is_active=True, allowed_ad_group='VPN-Enroll',
+        )
+        db.session.add(template)
+        db.session.commit()
+
+    try:
+        csr, _key = _make_csr(common_name='wstep-acl-unaffected.example.test')
+        r = client.post(ISSUE_URL, data=_build_rst(csr), headers=_basic_auth())
+        assert r.status_code == 200
+        cert = _issued_cert_from_rstr(r.data)
+        assert cert.subject.rfc4514_string() == 'CN=wstep-acl-unaffected.example.test'
+    finally:
+        with app.app_context():
+            CertificateTemplate.query.filter_by(name='Test UsernamePassword ACL Template').delete()
+            db.session.commit()

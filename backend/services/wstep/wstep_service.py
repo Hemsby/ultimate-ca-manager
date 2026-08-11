@@ -351,6 +351,50 @@ def _template_extra_ekus(template):
     return [_EKU_OIDS[name] for name in names if name in _EKU_OIDS]
 
 
+def _required_enroll_acl_groups(ca, matched_template):
+    """The AD group(s) whose membership satisfies the Enroll ACL for this
+    issuance attempt, as a de-duplicated list -- empty if nothing is
+    restricted.
+
+    When ``_match_template`` found a specific template, only that
+    template's own ``allowed_ad_group`` applies (if set): a confident
+    match (a populated CSR whose EKU set scored best against exactly one
+    template) is unambiguous.
+
+    When it found nothing (``matched_template is None``), this falls back
+    to every ``allowed_ad_group`` set across all templates resolvable for
+    this CA. This matters because ``matched_template is None`` is not a
+    rare edge case here -- it's what *every* naked CSR from real Windows
+    GPO machine autoenrollment produces, since a naked CSR carries no EKU
+    extension at all and therefore scores negative against any template
+    that declares EKUs (see ``_match_template``'s docstring), and MS-WSTEP
+    has no other per-request template-selection signal to fall back on.
+    Silently treating "no match" as "no gate" would mean the Enroll ACL
+    never actually applies to unattended autoenrollment -- the primary
+    scenario it exists to restrict -- so an unmatched naked CSR must
+    satisfy ANY restricted template's group instead of none of them.
+    """
+    if matched_template is not None:
+        return [matched_template.allowed_ad_group] if matched_template.allowed_ad_group else []
+
+    try:
+        from models import CertificateTemplate
+        from services.xcep.policy_builder import _resolve_templates_for_ca
+    except Exception:
+        return []
+
+    all_active = CertificateTemplate.query.filter_by(is_active=True).all()
+    candidates = _resolve_templates_for_ca(ca, all_active)
+    groups = []
+    seen = set()
+    for template in candidates:
+        group = template.allowed_ad_group
+        if group and group not in seen:
+            seen.add(group)
+            groups.append(group)
+    return groups
+
+
 def _user_ad_derivation_enabled(ca):
     """Whether any template resolvable for ``ca`` has opted into
     AD-derived user subjects (``CertificateTemplate.ad_derived_subject``).
@@ -429,6 +473,17 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
     configured, no template has opted in, or the lookup fails for any
     reason (account not found, LDAP unreachable, no userPrincipalName
     set, ...).
+
+    Enroll ACL: see ``_required_enroll_acl_groups`` for exactly which
+    template's ``allowed_ad_group`` applies (the matched template's own,
+    or -- for an unmatched/naked CSR -- every restricted template
+    resolvable for ``ca``). If that set is non-empty, ``kerberos_principal``
+    must resolve to a sam_account_name that ``lookup.is_member_of_group``
+    confirms is a member of at least one of them (nested groups included)
+    -- otherwise issuance is refused with a fault, not silently downgraded.
+    UsernamePassword-bound calls (``kerberos_principal=None``) are never
+    gated, since that path authenticates a single shared SystemConfig
+    credential with no per-request principal to check membership for.
     """
     csr, err = _load_csr(csr_der)
     if err:
@@ -436,7 +491,8 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
 
     override_subject = None
     override_san = None
-    if kerberos_principal and _is_naked_csr(csr):
+    kerberos_sam_account_name = None
+    if kerberos_principal:
         from services.ad_connector import lookup
         parsed = lookup.parse_kerberos_principal(kerberos_principal)
         if parsed and not lookup.realm_matches_connector(parsed[1]):
@@ -445,7 +501,9 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
             # against; sAMAccountName alone (parsed[0]) isn't globally
             # unique the way a realm-qualified principal is, so a mismatch
             # here must not fall through to a same-named account lookup in
-            # the wrong domain -- see lookup.realm_matches_connector.
+            # the wrong domain -- see lookup.realm_matches_connector. Also
+            # denies the Enroll ACL check below a sam_account_name to check,
+            # which fails that check closed rather than skipping it.
             logger.warning(
                 "AD Connector: Kerberos principal %r realm does not match the "
                 "configured connector's domain -- refusing to derive a subject",
@@ -453,34 +511,36 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
             )
             parsed = None
         if parsed:
-            sam_account_name, _realm = parsed
-            if lookup.is_machine_principal(kerberos_principal):
-                dns_hostname = lookup.lookup_computer_dns_hostname(sam_account_name)
-                if dns_hostname:
-                    override_subject = x509.Name(
-                        [x509.NameAttribute(NameOID.COMMON_NAME, dns_hostname)]
+            kerberos_sam_account_name = parsed[0]
+
+    if kerberos_sam_account_name and _is_naked_csr(csr):
+        if lookup.is_machine_principal(kerberos_principal):
+            dns_hostname = lookup.lookup_computer_dns_hostname(kerberos_sam_account_name)
+            if dns_hostname:
+                override_subject = x509.Name(
+                    [x509.NameAttribute(NameOID.COMMON_NAME, dns_hostname)]
+                )
+        elif _user_ad_derivation_enabled(ca):
+            identity = lookup.lookup_user_ad_identity(kerberos_sam_account_name)
+            if identity:
+                # AD's mail attribute is optional -- validated (not just
+                # truthy) before use, since it's untrusted directory
+                # data reaching straight into a certificate subject/SAN.
+                # A malformed value degrades to "no email", never a
+                # crash or a bogus RDN.
+                email = identity.get('mail')
+                if email and not is_valid_san_email(email):
+                    logger.warning(
+                        "AD Connector: ignoring malformed mail attribute %r for %r",
+                        email, kerberos_sam_account_name,
                     )
-            elif _user_ad_derivation_enabled(ca):
-                identity = lookup.lookup_user_ad_identity(sam_account_name)
-                if identity:
-                    # AD's mail attribute is optional -- validated (not just
-                    # truthy) before use, since it's untrusted directory
-                    # data reaching straight into a certificate subject/SAN.
-                    # A malformed value degrades to "no email", never a
-                    # crash or a bogus RDN.
-                    email = identity.get('mail')
-                    if email and not is_valid_san_email(email):
-                        logger.warning(
-                            "AD Connector: ignoring malformed mail attribute %r for %r",
-                            email, sam_account_name,
-                        )
-                        email = None
-                    derived_subject = _x509_name_from_dn_components(identity['dn_components'], email=email)
-                    if derived_subject is not None:
-                        override_subject = derived_subject
-                        override_san = [build_upn_other_name(identity['upn'])]
-                        if email:
-                            override_san.append(x509.RFC822Name(email))
+                    email = None
+                derived_subject = _x509_name_from_dn_components(identity['dn_components'], email=email)
+                if derived_subject is not None:
+                    override_subject = derived_subject
+                    override_san = [build_upn_other_name(identity['upn'])]
+                    if email:
+                        override_san.append(x509.RFC822Name(email))
 
     err = _validate_csr(
         csr, require_pop=require_pop, allow_naked_subject=override_subject is not None
@@ -498,6 +558,31 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
     if matched_template is not None:
         from services.xcep.policy_builder import _policy_oid_for_template
         template_oid = _policy_oid_for_template(ca, matched_template)
+
+    # Enroll ACL: only gates the Kerberos-bound path -- the UsernamePassword
+    # path authenticates a single shared SystemConfig credential, not a
+    # per-request principal, so there's no identity here to check group
+    # membership for. See _required_enroll_acl_groups for why an unmatched
+    # (typically naked) CSR checks against every restricted template for
+    # the CA rather than being skipped. A missing/unresolved
+    # sam_account_name (parse failure, cross-realm mismatch) denies rather
+    # than skips the check, same as an AD lookup failure inside
+    # is_member_of_group -- this is a security gate, not a best-effort
+    # convenience lookup.
+    if kerberos_principal:
+        required_groups = _required_enroll_acl_groups(ca, matched_template)
+        if required_groups and (
+            not kerberos_sam_account_name
+            or not any(
+                lookup.is_member_of_group(kerberos_sam_account_name, group)
+                for group in required_groups
+            )
+        ):
+            logger.warning(
+                "WSTEP Enroll ACL: principal %r denied (requires membership in one of %r)",
+                kerberos_principal, required_groups,
+            )
+            return None, 'Requester is not authorized to enroll against this template'
 
     try:
         cert_pem, _serial = CAService.sign_csr_from_crypto(

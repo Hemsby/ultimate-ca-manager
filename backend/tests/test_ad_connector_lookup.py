@@ -198,3 +198,116 @@ class TestLookupComputerDnsHostname:
         monkeypatch.setattr(lookup, '_connect', lambda config: _FakeConnection(entries=[entry]))
         with app.app_context():
             assert lookup.lookup_computer_dns_hostname('WIN11$') == 'win11.hagland.domain'
+
+
+class _FakeSequentialConnection:
+    """Like ``_FakeConnection`` but returns a different ``entries`` list on
+    each successive ``search()`` call -- needed for ``is_member_of_group``,
+    which searches once to resolve a plain group name to a DN and again to
+    check membership.
+    """
+    def __init__(self, entries_sequence):
+        self._entries_sequence = list(entries_sequence)
+        self.entries = []
+        self.unbound = False
+
+    def search(self, base_dn, filter_str, attributes=None):
+        self.entries = self._entries_sequence.pop(0) if self._entries_sequence else []
+
+    def unbind(self):
+        self.unbound = True
+
+
+class TestIsMemberOfGroup:
+    def test_not_configured_returns_false(self, app):
+        with app.app_context():
+            ADConnectorConfig.query.delete()
+            db.session.commit()
+            assert lookup.is_member_of_group('alice', 'VPN-Enroll') is False
+
+    def test_disabled_returns_false(self, app):
+        _configure(None, app, enabled=False)
+        with app.app_context():
+            assert lookup.is_member_of_group('alice', 'VPN-Enroll') is False
+
+    def test_empty_sam_account_name_returns_false(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        with app.app_context():
+            assert lookup.is_member_of_group('', 'VPN-Enroll') is False
+            assert lookup.is_member_of_group(None, 'VPN-Enroll') is False
+
+    def test_empty_group_returns_false(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        with app.app_context():
+            assert lookup.is_member_of_group('alice', '') is False
+            assert lookup.is_member_of_group('alice', None) is False
+
+    def test_bind_failure_returns_false(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        monkeypatch.setattr(lookup, '_connect', lambda config: (_ for _ in ()).throw(RuntimeError('bind failed')))
+        with app.app_context():
+            assert lookup.is_member_of_group('alice', 'VPN-Enroll') is False
+
+    def test_group_name_not_found_returns_false(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        monkeypatch.setattr(lookup, '_connect', lambda config: _FakeSequentialConnection([[]]))
+        with app.app_context():
+            assert lookup.is_member_of_group('alice', 'VPN-Enroll') is False
+
+    def test_member_by_group_name(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        group_entry = _FakeEntry({})
+        group_entry.entry_dn = 'CN=VPN-Enroll,OU=Groups,DC=hagland,DC=domain'
+        member_entry = _FakeEntry({'sAMAccountName': 'alice'})
+        monkeypatch.setattr(
+            lookup, '_connect',
+            lambda config: _FakeSequentialConnection([[group_entry], [member_entry]]),
+        )
+        with app.app_context():
+            assert lookup.is_member_of_group('alice', 'VPN-Enroll') is True
+
+    def test_not_member_by_group_name(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        group_entry = _FakeEntry({})
+        group_entry.entry_dn = 'CN=VPN-Enroll,OU=Groups,DC=hagland,DC=domain'
+        monkeypatch.setattr(
+            lookup, '_connect',
+            lambda config: _FakeSequentialConnection([[group_entry], []]),
+        )
+        with app.app_context():
+            assert lookup.is_member_of_group('alice', 'VPN-Enroll') is False
+
+    def test_member_by_group_dn_skips_resolution_search(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        member_entry = _FakeEntry({'sAMAccountName': 'alice'})
+        monkeypatch.setattr(
+            lookup, '_connect',
+            lambda config: _FakeSequentialConnection([[member_entry]]),
+        )
+        with app.app_context():
+            assert lookup.is_member_of_group(
+                'alice', 'CN=VPN-Enroll,OU=Groups,DC=hagland,DC=domain'
+            ) is True
+
+    def test_search_exception_returns_false(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        monkeypatch.setattr(
+            lookup, '_connect',
+            lambda config: _FakeConnection(search_raises=RuntimeError('search failed')),
+        )
+        with app.app_context():
+            assert lookup.is_member_of_group('alice', 'VPN-Enroll') is False
+
+    def test_machine_principal_sam_account_name(self, app, monkeypatch):
+        """A trailing '$' on a machine account's sAMAccountName is passed
+        through unchanged -- it's a real part of the value, not stripped."""
+        _configure(None, app, enabled=True)
+        group_entry = _FakeEntry({})
+        group_entry.entry_dn = 'CN=Enroll-Machines,OU=Groups,DC=hagland,DC=domain'
+        member_entry = _FakeEntry({'sAMAccountName': 'WIN11$'})
+        monkeypatch.setattr(
+            lookup, '_connect',
+            lambda config: _FakeSequentialConnection([[group_entry], [member_entry]]),
+        )
+        with app.app_context():
+            assert lookup.is_member_of_group('WIN11$', 'Enroll-Machines') is True

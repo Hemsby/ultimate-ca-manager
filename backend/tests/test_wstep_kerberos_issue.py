@@ -470,3 +470,239 @@ class TestNakedCsrSubjectDerivation:
             headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
         )
         assert r.status_code == 400
+
+
+def _clear_acl_template(app):
+    from models import CATemplatePin
+
+    with app.app_context():
+        existing = CertificateTemplate.query.filter_by(name='Test Enroll ACL Template').first()
+        if existing:
+            CATemplatePin.query.filter_by(template_id=existing.id).delete()
+            db.session.delete(existing)
+            db.session.commit()
+
+
+def _configure_acl_template(app, allowed_ad_group, ca_id, extended_key_usage=None):
+    """An active template with an Enroll ACL group set, PINNED to ``ca_id``.
+
+    Pinning matters here specifically: ``_resolve_templates_for_ca`` falls
+    back to *every* active template in the whole database when nothing is
+    pinned to a CA -- fine for the derivation tests above, which only care
+    that at least one qualifying template exists, but wrong for these ACL
+    tests, which need ``_match_template``/``_required_enroll_acl_groups``
+    to see *only* this template. Running the full suite leaves other test
+    modules' throwaway templates behind (they don't all clean up), and an
+    unrelated leftover template with an equal-or-better EKU score and a
+    lower id would silently win the tie-break instead of this one --
+    exactly the failure mode this pin closes off.
+
+    ``extended_key_usage=None`` (empty EKU) matches a plain populated CSR
+    with score 0 -- see _match_template -- exercising the confident-match
+    branch of the ACL gate. A non-empty ``extended_key_usage`` (e.g.
+    ``['clientAuth']``) instead makes this template score negative against
+    both a populated no-EKU CSR and a naked CSR, so _match_template returns
+    None for either -- exercising the CA-wide fallback branch instead (see
+    _required_enroll_acl_groups).
+
+    Also clears 'Test AD User Template' (used by the derivation tests
+    above), since an empty-EKU variant of it would otherwise tie-break
+    unpredictably against this one."""
+    import json
+
+    from models import CATemplatePin
+
+    _clear_ad_derived_templates(app)
+    _clear_acl_template(app)
+    with app.app_context():
+        extensions = {'extended_key_usage': extended_key_usage} if extended_key_usage else {}
+        template = CertificateTemplate(
+            name='Test Enroll ACL Template', template_type='client_auth',
+            extensions_template=json.dumps(extensions), is_active=True,
+            allowed_ad_group=allowed_ad_group,
+        )
+        db.session.add(template)
+        db.session.flush()
+        db.session.add(CATemplatePin(ca_id=ca_id, template_id=template.id))
+        db.session.commit()
+
+
+class TestEnrollAcl:
+    """Per-template Enroll ACL: only gates the Kerberos-bound path (see
+    wstep_service.issue's allowed_ad_group handling) -- checks the
+    authenticated principal's AD group membership via
+    ad_lookup.is_member_of_group before letting a group-restricted
+    template issue."""
+
+    def test_member_of_required_group_is_issued(self, client, app, wstep_kerberos_config, monkeypatch):
+        _configure_ad_connector(app)
+        _configure_acl_template(app, 'VPN-Enroll', wstep_kerberos_config['id'])
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: _authenticated_result(),
+        )
+        monkeypatch.setattr(
+            ad_lookup, 'is_member_of_group',
+            lambda sam_account_name, group: (sam_account_name, group) == ('HOST$', 'VPN-Enroll'),
+        )
+
+        try:
+            csr, key = _make_csr()
+            r = client.post(
+                ISSUE_URL, data=_build_rst(csr),
+                headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+            )
+            assert r.status_code == 200
+            cert = _issued_cert_from_rstr(r.data)
+            assert cert.public_key().public_numbers() == key.public_key().public_numbers()
+        finally:
+            _clear_acl_template(app)
+
+    def test_non_member_is_rejected(self, client, app, wstep_kerberos_config, monkeypatch):
+        _configure_ad_connector(app)
+        _configure_acl_template(app, 'VPN-Enroll', wstep_kerberos_config['id'])
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: _authenticated_result(),
+        )
+        monkeypatch.setattr(ad_lookup, 'is_member_of_group', lambda sam_account_name, group: False)
+
+        try:
+            csr, _key = _make_csr()
+            r = client.post(
+                ISSUE_URL, data=_build_rst(csr),
+                headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+            )
+            assert r.status_code == 400
+        finally:
+            _clear_acl_template(app)
+
+    def test_ad_lookup_failure_fails_closed(self, client, app, wstep_kerberos_config, monkeypatch):
+        """is_member_of_group itself fails closed to False on every AD error
+        mode (see test_ad_connector_lookup.py) -- this confirms issue()
+        propagates that as a denial, not a silent bypass, when the
+        connector/DC is unreachable."""
+        _configure_ad_connector(app)
+        _configure_acl_template(app, 'VPN-Enroll', wstep_kerberos_config['id'])
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: _authenticated_result(),
+        )
+        monkeypatch.setattr(ad_lookup, '_connect', lambda config: (_ for _ in ()).throw(RuntimeError('DC unreachable')))
+
+        try:
+            csr, _key = _make_csr()
+            r = client.post(
+                ISSUE_URL, data=_build_rst(csr),
+                headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+            )
+            assert r.status_code == 400
+        finally:
+            _clear_acl_template(app)
+
+    def test_unset_allowed_group_is_unrestricted(self, client, app, wstep_kerberos_config, monkeypatch):
+        """No allowed_ad_group configured -- the default -- must issue
+        exactly as before this feature existed, with no membership check at
+        all. Proven by a spy that raises if is_member_of_group is ever
+        called, not just by asserting 200 (which would also pass if the
+        spy silently ran and happened to return truthy)."""
+        _configure_ad_connector(app)
+        _configure_acl_template(app, None, wstep_kerberos_config['id'])
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: _authenticated_result(),
+        )
+
+        def _fail_if_called(sam_account_name, group):
+            raise AssertionError('is_member_of_group must not be called when nothing is restricted')
+
+        monkeypatch.setattr(ad_lookup, 'is_member_of_group', _fail_if_called)
+
+        try:
+            csr, key = _make_csr()
+            r = client.post(
+                ISSUE_URL, data=_build_rst(csr),
+                headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+            )
+            assert r.status_code == 200
+            cert = _issued_cert_from_rstr(r.data)
+            assert cert.public_key().public_numbers() == key.public_key().public_numbers()
+        finally:
+            _clear_acl_template(app)
+
+    def test_naked_csr_falls_back_to_ca_wide_restricted_templates_and_denies(
+        self, client, app, wstep_kerberos_config, monkeypatch
+    ):
+        """The real GPO machine-autoenrollment scenario: a naked CSR (no
+        EKU extension at all) never confidently matches a template that
+        itself declares an EKU (see _match_template's docstring), so
+        _match_template returns None. Without the CA-wide fallback in
+        _required_enroll_acl_groups, this template's allowed_ad_group would
+        never be checked at all -- silently defeating the ACL for exactly
+        the unattended-autoenrollment case it exists to restrict."""
+        _configure_ad_connector(app)
+        _configure_acl_template(app, 'VPN-Enroll', wstep_kerberos_config['id'], extended_key_usage=['clientAuth'])
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: _authenticated_result(),
+        )
+        monkeypatch.setattr(
+            ad_lookup, 'lookup_computer_dns_hostname',
+            lambda sam_account_name: 'win11.hagland.domain',
+        )
+        monkeypatch.setattr(ad_lookup, 'is_member_of_group', lambda sam_account_name, group: False)
+
+        try:
+            csr, _key = _make_naked_csr()
+            r = client.post(
+                ISSUE_URL, data=_build_rst(csr),
+                headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+            )
+            assert r.status_code == 400
+        finally:
+            _clear_acl_template(app)
+
+    def test_naked_csr_falls_back_to_ca_wide_restricted_templates_and_allows_member(
+        self, client, app, wstep_kerberos_config, monkeypatch
+    ):
+        """Same unmatched-template scenario as above, but the principal IS
+        a member of the restricted template's group -- confirms the
+        fallback is a real gate, not an unconditional deny."""
+        _configure_ad_connector(app)
+        _configure_acl_template(app, 'VPN-Enroll', wstep_kerberos_config['id'], extended_key_usage=['clientAuth'])
+        monkeypatch.setattr(negotiate_auth, 'is_library_available', lambda: True)
+        monkeypatch.setattr(negotiate_auth, 'is_configured', lambda: True)
+        monkeypatch.setattr(
+            negotiate_auth, 'authenticate_negotiate',
+            lambda auth_header, connection_key: _authenticated_result(),
+        )
+        monkeypatch.setattr(
+            ad_lookup, 'lookup_computer_dns_hostname',
+            lambda sam_account_name: 'win11.hagland.domain',
+        )
+        monkeypatch.setattr(
+            ad_lookup, 'is_member_of_group',
+            lambda sam_account_name, group: (sam_account_name, group) == ('HOST$', 'VPN-Enroll'),
+        )
+
+        try:
+            csr, key = _make_naked_csr()
+            r = client.post(
+                ISSUE_URL, data=_build_rst(csr),
+                headers={'Authorization': 'Negotiate dG9rZW4=', 'Content-Type': 'application/soap+xml'},
+            )
+            assert r.status_code == 200
+            cert = _issued_cert_from_rstr(r.data)
+            assert cert.public_key().public_numbers() == key.public_key().public_numbers()
+        finally:
+            _clear_acl_template(app)
