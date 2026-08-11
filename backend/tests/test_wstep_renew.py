@@ -252,6 +252,45 @@ def test_renew_rejects_unrecognized_certificate(client, app, wstep_renew_config)
     assert r.status_code == 400
 
 
+def test_renew_rejects_serial_substitution_attack(client, app, wstep_renew_config):
+    """A self-signed certificate that reuses a real, UCM-issued cert's
+    serial number and subject, but is signed by an attacker's own key,
+    must be rejected. Serial numbers and subjects are public (visible on
+    any copy of an issued cert), so before the stored-cert byte comparison
+    a lookup keyed on serial number alone was enough to pass. That let an
+    attacker forge a lookalike cert, sign the RST with their own key, and
+    get a fresh certificate issued for the victim's identity bound to the
+    attacker's key."""
+    victim_cert, _victim_key = _issue_test_cert(
+        app, wstep_renew_config, common_name='serial-substitution-victim.example.test'
+    )
+    attacker_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    forged_cert = (
+        x509.CertificateBuilder()
+        .subject_name(victim_cert.subject).issuer_name(victim_cert.subject)
+        .public_key(attacker_key.public_key())
+        .serial_number(victim_cert.serial_number)
+        .not_valid_before(now).not_valid_after(now + datetime.timedelta(days=1))
+        .sign(attacker_key, hashes.SHA256())
+    )
+    csr = _renewal_csr(victim_cert.subject, attacker_key)
+
+    with app.app_context():
+        serials_before = {row.serial_number for row in Certificate.query.all()}
+
+    signed = _build_signed_rst(forged_cert, attacker_key, csr)
+    r = client.post(RENEW_URL, data=signed)
+    assert r.status_code == 400
+    assert b'not recognized' in r.data
+
+    with app.app_context():
+        serials_after = {row.serial_number for row in Certificate.query.all()}
+        assert serials_after == serials_before, (
+            'no certificate must be issued for the forged-serial attack'
+        )
+
+
 def test_renew_rejects_subject_mismatch(client, app, wstep_renew_config):
     cert, key = _issue_test_cert(app, wstep_renew_config, common_name='subject-match.example.test')
     mismatched_csr = x509.CertificateSigningRequestBuilder().subject_name(

@@ -10,9 +10,11 @@ following EST's pattern (``api/est_protocol.py``'s ``simpleenroll``/
 ``simplereenroll``) rather than SCEP's inlined ``x509.CertificateBuilder``
 tech debt.
 """
+import base64
 import logging
 
 from cryptography import x509
+from cryptography.hazmat.primitives.serialization import Encoding
 from cryptography.x509.oid import NameOID
 
 from models import Certificate
@@ -20,6 +22,7 @@ from services.ca_service import CAService
 from utils.datetime_utils import utc_now
 from utils.key_type import validate_enrollment_public_key
 from utils.san_parse import is_valid_san_email
+from utils.serial_format import serial_variants
 from utils.upn_san import build_upn_other_name
 
 from . import ws_security
@@ -630,14 +633,30 @@ def renew(ca, csr_der, security_header, csr_element, validity_days, source='wste
     except Exception:
         return None, 'Invalid signing certificate'
 
-    # Signature verification only proves possession of the private key —
-    # it does not establish trust. Confirm this is a certificate UCM
-    # itself issued, and that it's still usable, before treating it as an
-    # authenticated identity.
-    db_cert = Certificate.query.filter_by(
-        serial_number=str(signing_cert.serial_number)
-    ).first()
-    if not db_cert or not db_cert.crt:
+    # Serial number and subject are both public, so matching on them alone
+    # (as this used to) lets an attacker forge a self-signed lookalike and
+    # renew under a victim's identity. Require a byte-for-byte match against
+    # a certificate UCM itself issued from this same CA.
+    db_cert = None
+    candidates = Certificate.query.filter(
+        Certificate.caref == ca.refid,
+        Certificate.serial_number.in_(serial_variants(signing_cert.serial_number)),
+        Certificate.crt.isnot(None),
+    ).all()
+    signing_der = signing_cert.public_bytes(Encoding.DER)
+    for candidate in candidates:
+        try:
+            stored_cert = x509.load_pem_x509_certificate(base64.b64decode(candidate.crt))
+        except Exception:
+            logger.warning(
+                'WSTEP renew: could not decode stored cert id=%s while matching '
+                'signing certificate serial=%s', candidate.id, signing_cert.serial_number
+            )
+            continue
+        if stored_cert.public_bytes(Encoding.DER) == signing_der:
+            db_cert = candidate
+            break
+    if not db_cert:
         return None, 'Signing certificate is not recognized'
     if db_cert.revoked:
         return None, 'Signing certificate has been revoked'
