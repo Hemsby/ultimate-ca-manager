@@ -385,7 +385,7 @@ class CSROperationsMixin:
             ca_cert, csr.subject, csr_sans, renewal_of=renewal_of
         )
 
-        # If CSR has empty subject, populate CN from first SAN DNS name
+        # If CSR has empty subject, populate CN from first SAN DNS name or IP address
         subject = csr.subject
         if not list(subject):
             try:
@@ -393,6 +393,9 @@ class CSROperationsMixin:
                 for name in san_ext.value:
                     if isinstance(name, x509.DNSName):
                         subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name.value)])
+                        break
+                    elif isinstance(name, x509.IPAddress):
+                        subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, str(name.value))])
                         break
             except x509.ExtensionNotFound:
                 pass
