@@ -146,13 +146,20 @@ def extract_signer_certificate(signed_data) -> Optional[x509.Certificate]:
     return None
 
 
-def verify_cms_signature(signed_data, signer_cert: x509.Certificate) -> None:
+def verify_cms_signature(signed_data, signer_cert) -> None:
     """Verify the CMS SignerInfo signature against signer_cert's public key.
 
     This is the *outer* signature wrapping the SCEP envelope. RFC 8894 §3.1
     requires it to be validated before processing the payload — without this
     check, an attacker who can deliver bytes to /scep can submit any CSR for
     enrollment.
+
+    ``signer_cert`` is normally an ``x509.Certificate`` (every SCEP caller).
+    A raw ``cryptography`` public key object is also accepted directly, for
+    WSTEP's self-signed "Full PKCS#7" envelopes (real Windows clients embed
+    no certificate at all — the SignerInfo identifies itself purely via a
+    subjectKeyIdentifier of the CSR's own key — see
+    ``wstep_service._verify_pkcs7_pop``).
 
     Raises:
         ValueError: if the message is malformed or unsupported.
@@ -187,7 +194,11 @@ def verify_cms_signature(signed_data, signer_cert: x509.Certificate) -> None:
     else:
         signed_bytes = b"\x31" + raw[1:]
 
-    public_key = signer_cert.public_key()
+    public_key = (
+        signer_cert.public_key()
+        if isinstance(signer_cert, x509.Certificate)
+        else signer_cert
+    )
     if isinstance(public_key, rsa.RSAPublicKey):
         if sig_alg not in (
             "rsassa_pkcs1v15", "rsa", "sha1_rsa", "sha256_rsa",

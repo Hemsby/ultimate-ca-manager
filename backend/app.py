@@ -894,8 +894,11 @@ def create_app(config_name=None):
         @app.before_request
         def enforce_https():
             if not request.is_secure and request.url.startswith('http://'):
-                # Skip protocol endpoints — CRL/OCSP/SCEP/ACME/EST clients often can't follow redirects
-                if request.path.startswith(('/cdp/', '/ca/', '/ocsp', '/scep/', '/acme/', '/.well-known/', '/tsa', '/ssh/setup/')):
+                # Skip protocol endpoints — CRL/OCSP/SCEP/ACME/EST/XCEP/WSTEP clients often can't follow redirects
+                if request.path.startswith((
+                    '/cdp/', '/ca/', '/ocsp', '/scep/', '/acme/', '/.well-known/', '/tsa', '/ssh/setup/',
+                    '/ADPolicyProvider_CEP_', '/ADCertificateService_CES_',
+                )):
                     return None
                 url = request.url.replace('http://', 'https://', 1)
                 url = url.replace(f':{config.HTTPS_PORT}', f':{config.HTTPS_PORT}')
@@ -918,6 +921,7 @@ def create_app(config_name=None):
             # Protocol endpoints must remain available (revocation, enrollment)
             '/cdp/', '/ca/', '/ocsp', '/scep/', '/acme/', '/.well-known/', '/tsa',
             '/ssh/setup/',  # Public SSH CA setup scripts
+            '/ADPolicyProvider_CEP_', '/ADCertificateService_CES_',  # XCEP/WSTEP
         )
         if request.path.startswith(allowed_prefixes):
             return None
@@ -1608,7 +1612,25 @@ def register_blueprints(app):
         app.logger.info("✓ EST protocol enabled (/.well-known/est)")
     except ImportError:
         pass
-    
+
+    # MS-XCEP Protocol (Certificate Enrollment Policy) - policy discovery
+    # for Windows autoenrollment clients (MMC, certreq, GPO).
+    try:
+        from api.xcep_protocol import bp as xcep_bp
+        app.register_blueprint(xcep_bp)
+        app.logger.info("✓ MS-XCEP protocol enabled")
+    except ImportError:
+        pass
+
+    # MS-WSTEP Protocol (WS-Trust Enrollment) - certificate issuance/renewal
+    # for Windows autoenrollment clients, discovered via MS-XCEP above.
+    try:
+        from api.wstep_protocol import bp as wstep_bp
+        app.register_blueprint(wstep_bp)
+        app.logger.info("✓ MS-WSTEP protocol enabled")
+    except ImportError:
+        pass
+
     # TSA Protocol (RFC 3161) - /tsa
     try:
         from api.tsa_protocol import bp as tsa_bp

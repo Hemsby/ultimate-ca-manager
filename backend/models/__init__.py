@@ -30,6 +30,7 @@ from models.sso import SSOProvider, SSOSession
 from models.policy import CertificatePolicy, ApprovalRequest
 from models.ssh import SSHCertificateAuthority, SSHCertificate
 from models.msca import MicrosoftCA, MSCARequest
+from models.ad_connector import ADConnectorConfig
 from models.discovered_certificate import ScanProfile, ScanRun, DiscoveredCertificate
 from models.ca_template_pin import CATemplatePin
 from models.webhook_delivery import WebhookDelivery
@@ -54,4 +55,5 @@ __all__ = [
     "CATemplatePin",
     "WebhookDelivery",
     "KeyRecoveryRequest",
+    "ADConnectorConfig",
 ]

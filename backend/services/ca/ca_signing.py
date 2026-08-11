@@ -42,7 +42,12 @@ class CASigningMixin:
         validity_days: int = 365,
         source: str = 'manual',
         renewal_of: x509.Certificate = None,
+        require_pop: bool = True,
+        ms_certificate_template_oid: str = None,
+        override_subject: x509.Name = None,
+        override_san: list = None,
         cert_type: str = 'server_cert',
+        extra_ekus: list = None,
     ) -> Tuple[str, str]:
         """
         Sign a CSR (x509 object) using a CA.
@@ -56,9 +61,22 @@ class CASigningMixin:
             renewal_of: Certificate being renewed, if any — its names and
                 EKUs are graced (renewal at par must not silently narrow
                 what the device already has)
+            require_pop: forwarded to TrustStoreService.sign_csr — see its
+                docstring. Only WSTEP passes False.
+            ms_certificate_template_oid: forwarded to TrustStoreService.sign_csr
+                — see its docstring. Only WSTEP passes this.
+            override_subject: forwarded to TrustStoreService.sign_csr — see
+                its docstring. Only WSTEP's Kerberos binding passes this.
+            override_san: forwarded to TrustStoreService.sign_csr — see its
+                docstring. Only WSTEP's Kerberos binding passes this.
             cert_type: Signing profile for TrustStoreService.sign_csr —
-                decides the EKU ceiling. EST passes 'device_cert';
-                the default keeps every other caller on the TLS profile.
+                decides the EKU ceiling. EST passes 'device_cert'; WSTEP
+                overrides this too for its own matched-template flow; the
+                default keeps every other caller on the TLS profile.
+            extra_ekus: forwarded to TrustStoreService.sign_csr — see its
+                docstring. Only WSTEP passes this, for a matched template's
+                own configured EKUs (e.g. Smartcard Logon) that a CSR-EKU
+                cap keyed off cert_type could otherwise never let through.
 
         Returns:
             Tuple of (cert_pem_string, serial_number_string)
@@ -96,6 +114,11 @@ class CASigningMixin:
             cps_uri=cps_uri,
             cps_oid=cps_oid,
             renewal_of=renewal_of,
+            require_pop=require_pop,
+            ms_certificate_template_oid=ms_certificate_template_oid,
+            override_subject=override_subject,
+            override_san=override_san,
+            extra_ekus=extra_ekus,
         )
 
         # Extract serial number
@@ -109,12 +132,20 @@ class CASigningMixin:
         # Store certificate in database
         cert_pem_str = cert_pem_bytes.decode('utf-8') if isinstance(cert_pem_bytes, bytes) else cert_pem_bytes
 
-        # Extract CN
+        # Extract CN from the issued certificate's own subject, not the
+        # CSR's -- for WSTEP's Kerberos binding, override_subject can mean
+        # the two differ entirely (a naked CSR issued with a server-derived
+        # subject), and the issued cert's subject is what's actually true.
+        # [-1] (the last/most-specific CN), not [0]: a directory-path
+        # subject like an AD-derived user's has more than one CN RDN
+        # (``CN=Roy Hagland,CN=Users,DC=hagland,DC=domain``), and in the
+        # root-to-leaf DER order x509.Name encodes, the person's own name
+        # is the last one, not the container ("Users") that happens first.
         cn = ''
         try:
-            cn = csr.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[0].value
+            cn = cert_obj.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)[-1].value
         except (IndexError, Exception):
-            cn = csr.subject.rfc4514_string()
+            cn = cert_obj.subject.rfc4514_string()
 
         cert_pem_raw = cert_pem_bytes if isinstance(cert_pem_bytes, bytes) else cert_pem_bytes.encode()
 
@@ -135,12 +166,14 @@ class CASigningMixin:
             pass
 
         # Extract SANs
-        san_dns, san_ip, san_email = [], [], []
+        from utils.upn_san import extract_upns_from_san_list
+        san_dns, san_ip, san_email, san_upn = [], [], [], []
         try:
             san_ext = cert_obj.extensions.get_extension_for_oid(x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
             san_dns = list(san_ext.value.get_values_for_type(x509.DNSName))
             san_ip = [str(n) for n in san_ext.value.get_values_for_type(x509.IPAddress)]
             san_email = list(san_ext.value.get_values_for_type(x509.RFC822Name))
+            san_upn = extract_upns_from_san_list(list(san_ext.value))
         except x509.ExtensionNotFound:
             pass
 
@@ -165,6 +198,7 @@ class CASigningMixin:
             san_dns=json.dumps(san_dns) if san_dns else None,
             san_ip=json.dumps(san_ip) if san_ip else None,
             san_email=json.dumps(san_email) if san_email else None,
+            san_upn=json.dumps(san_upn) if san_upn else None,
             source=source,
         )
         db.session.add(new_cert)

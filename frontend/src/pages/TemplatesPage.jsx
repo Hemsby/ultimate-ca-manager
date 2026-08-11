@@ -204,6 +204,21 @@ export default function TemplatesPage() {
               {type === 'ca' ? <ShieldCheck size={14} weight="duotone" /> : <FileText size={14} weight="duotone" />}
             </div>
             <span className="font-medium truncate">{val || t('common.unnamed')}</span>
+            {row.ad_derived_subject && (
+              <Badge variant="violet" size="sm" title={t('templates.adDerivedBadgeTooltip')}>
+                {t('templates.adDerivedBadge')}
+              </Badge>
+            )}
+            {row.autoenroll_enabled && (
+              <Badge variant="cyan" size="sm" title={t('templates.autoenrollBadgeTooltip')}>
+                {t('templates.autoenrollBadge')}
+              </Badge>
+            )}
+            {row.allowed_ad_group && (
+              <Badge variant="amber" size="sm" title={t('templates.enrollAclBadgeTooltip', { group: row.allowed_ad_group })}>
+                {t('templates.enrollAclBadge')}
+              </Badge>
+            )}
           </div>
         )
       },
@@ -218,9 +233,21 @@ export default function TemplatesPage() {
               </div>
               <span className="font-medium truncate">{val || t('common.unnamed')}</span>
             </div>
-            <Badge variant={type === 'ca' ? 'amber' : 'primary'} size="sm" dot>
-              {type === 'ca' ? t('common.ca') : t('templates.cert')}
-            </Badge>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {row.ad_derived_subject && (
+                <Badge variant="violet" size="sm" title={t('templates.adDerivedBadgeTooltip')}>
+                  {t('templates.adDerivedBadge')}
+                </Badge>
+              )}
+              {row.autoenroll_enabled && (
+                <Badge variant="cyan" size="sm" title={t('templates.autoenrollBadgeTooltip')}>
+                  {t('templates.autoenrollBadge')}
+                </Badge>
+              )}
+              <Badge variant={type === 'ca' ? 'amber' : 'primary'} size="sm" dot>
+                {type === 'ca' ? t('common.ca') : t('templates.cert')}
+              </Badge>
+            </div>
           </div>
         )
       }
@@ -330,9 +357,26 @@ export default function TemplatesPage() {
         title={selectedTemplate.name}
         subtitle={t('templates.certificatesIssued', { count: selectedTemplate.usage_count || 0 })}
         badge={
-          <Badge variant={selectedTemplate.type === 'ca' ? 'warning' : 'primary'} size="sm">
-            {selectedTemplate.type === 'ca' ? t('common.ca') : t('common.certificate')}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            <Badge variant={selectedTemplate.type === 'ca' ? 'warning' : 'primary'} size="sm">
+              {selectedTemplate.type === 'ca' ? t('common.ca') : t('common.certificate')}
+            </Badge>
+            {selectedTemplate.ad_derived_subject && (
+              <Badge variant="violet" size="sm" title={t('templates.adDerivedBadgeTooltip')}>
+                {t('templates.adDerivedBadge')}
+              </Badge>
+            )}
+            {selectedTemplate.autoenroll_enabled && (
+              <Badge variant="cyan" size="sm" title={t('templates.autoenrollBadgeTooltip')}>
+                {t('templates.autoenrollBadge')}
+              </Badge>
+            )}
+            {selectedTemplate.allowed_ad_group && (
+              <Badge variant="amber" size="sm" title={t('templates.enrollAclBadgeTooltip', { group: selectedTemplate.allowed_ad_group })}>
+                {t('templates.enrollAclBadge')}
+              </Badge>
+            )}
+          </div>
         }
       />
 
@@ -390,6 +434,14 @@ export default function TemplatesPage() {
           <CompactField autoIcon="locality" label={t('common.locality')} value={selectedTemplate.dn_template?.L || '—'} />
           <CompactField autoIcon="organization" label={t('templates.organization')} value={selectedTemplate.dn_template?.O || '—'} />
           <CompactField autoIcon="commonName" label={t('templates.commonName')} value={selectedTemplate.dn_template?.CN || '—'} />
+          <CompactField autoIcon="default" label={t('templates.adDerivedSubject')} value={selectedTemplate.ad_derived_subject ? t('common.enabled') : t('common.disabled')} />
+        </CompactGrid>
+      </CompactSection>
+
+      <CompactSection title={t('templates.enrollment')} icon={ShieldCheck}>
+        <CompactGrid columns={2}>
+          <CompactField autoIcon="default" label={t('templates.autoenrollEnabled')} value={selectedTemplate.autoenroll_enabled ? t('common.enabled') : t('common.disabled')} />
+          <CompactField autoIcon="default" label={t('templates.allowedAdGroup')} value={selectedTemplate.allowed_ad_group || t('templates.allowedAdGroupUnset')} />
         </CompactGrid>
       </CompactSection>
 
@@ -621,7 +673,10 @@ function buildInitialState(template) {
       subject: { C: '', ST: '', L: '', O: '', OU: '', CN: '' },
       key_usage: ['digitalSignature', 'keyEncipherment'],
       extended_key_usage: ['serverAuth'],
-      san_types: ['dns', 'ip']
+      san_types: ['dns', 'ip'],
+      ad_derived_subject: false,
+      autoenroll_enabled: false,
+      allowed_ad_group: ''
     }
   }
   const dn = template.dn_template || {}
@@ -640,7 +695,10 @@ function buildInitialState(template) {
     },
     key_usage: ext.key_usage || [],
     extended_key_usage: ext.extended_key_usage || [],
-    san_types: ext.san_types || []
+    san_types: ext.san_types || [],
+    ad_derived_subject: template.ad_derived_subject || false,
+    autoenroll_enabled: template.autoenroll_enabled || false,
+    allowed_ad_group: template.allowed_ad_group || ''
   }
 }
 
@@ -683,7 +741,10 @@ function TemplateForm({ template, onSubmit, onCancel }) {
           extended_key_usage: formData.extended_key_usage,
           basic_constraints: { ca: false },
           san_types: formData.san_types
-        }
+        },
+        ad_derived_subject: formData.ad_derived_subject,
+        autoenroll_enabled: formData.autoenroll_enabled,
+        allowed_ad_group: formData.allowed_ad_group.trim()
       })
     } finally {
       setLoading(false)
@@ -766,6 +827,40 @@ function TemplateForm({ template, onSubmit, onCancel }) {
           <Input label="OU" value={formData.subject.OU} onChange={(e) => updateSubject('OU', e.target.value)} placeholder="IT Department" />
           <Input label={t('templates.commonName')} value={formData.subject.CN} onChange={(e) => updateSubject('CN', e.target.value)} placeholder={t('templates.cnPlaceholder')} />
         </div>
+        <label className={`${checkboxCls} mt-3`}>
+          <input
+            type="checkbox"
+            checked={formData.ad_derived_subject}
+            onChange={(e) => set('ad_derived_subject', e.target.checked)}
+            className="accent-accent-primary"
+          />
+          {t('templates.adDerivedSubject')}
+        </label>
+        <p className="text-xs text-text-secondary mt-1">{t('templates.adDerivedSubjectDescription')}</p>
+      </div>
+
+      {/* Enrollment */}
+      <div className="border-t border-border pt-4">
+        <h4 className={sectionTitle}>{t('templates.enrollment')}</h4>
+        <label className={checkboxCls}>
+          <input
+            type="checkbox"
+            checked={formData.autoenroll_enabled}
+            onChange={(e) => set('autoenroll_enabled', e.target.checked)}
+            className="accent-accent-primary"
+          />
+          {t('templates.autoenrollEnabled')}
+        </label>
+        <p className="text-xs text-text-secondary mt-1">{t('templates.autoenrollEnabledDescription')}</p>
+
+        <Input
+          label={t('templates.allowedAdGroup')}
+          value={formData.allowed_ad_group}
+          onChange={(e) => set('allowed_ad_group', e.target.value)}
+          placeholder={t('templates.allowedAdGroupPlaceholder')}
+          className="mt-3"
+        />
+        <p className="text-xs text-text-secondary mt-1">{t('templates.allowedAdGroupDescription')}</p>
       </div>
 
       {/* Extensions */}

@@ -13,7 +13,7 @@ import {
   Plus, PencilSimple, TestTube, Lightning, Globe, Shield, CheckCircle, XCircle, MagnifyingGlass,
   Bell, Copy, Power, ArrowClockwise, LockKey, Warning, User, GithubLogo,
   Plugs, UsersThree, UserPlus, TreeStructure, CaretDown, Play,
-  WindowsLogo, ClockClockwise
+  WindowsLogo, ClockClockwise, IdentificationBadge
 } from '@phosphor-icons/react'
 import {
   ResponsiveLayout,
@@ -27,7 +27,7 @@ import { SmartImportModal } from '../components/SmartImport'
 import CertificatePickerModal from '../components/CertificatePickerModal'
 import CertificateInput from '../components/CertificateInput'
 import LanguageSelector from '../components/ui/LanguageSelector'
-import { settingsService, systemService, casService, ssoService, mtlsService, mscaService } from '../services'
+import { settingsService, systemService, casService, ssoService, mtlsService, mscaService, adConnectorService } from '../services'
 import { useNotification, useMobile } from '../contexts'
 import { useServiceReconnect } from '../hooks'
 import { usePermission } from '../hooks'
@@ -46,6 +46,9 @@ import SsoProviderForm from './settings/SsoProviderForm'
 import WebhookForm from './settings/WebhookForm'
 import MscaConnectionForm from './settings/MscaConnectionForm'
 import MscaCaControlModal from '../components/MscaCaControlModal'
+import AdConnectorSection from './settings/AdConnectorSection'
+import XcepWstepSection from './settings/XcepWstepSection'
+import AdConnectorForm from './settings/AdConnectorForm'
 import GeneralSection from './settings/GeneralSection'
 import EmailSection from './settings/EmailSection'
 import SecuritySection from './settings/SecuritySection'
@@ -80,6 +83,8 @@ const BASE_SETTINGS_CATEGORIES = [
   { id: 'ct', labelKey: 'settings.tabs.ct', icon: Eye, color: 'icon-bg-cyan' },
   { id: 'autoRenewal', labelKey: 'settings.tabs.autoRenewal', icon: ClockClockwise, color: 'icon-bg-emerald' },
   { id: 'microsoftCA', labelKey: 'settings.tabs.microsoftCA', icon: WindowsLogo, color: 'icon-bg-indigo' },
+  { id: 'adConnector', labelKey: 'settings.tabs.adConnector', icon: IdentificationBadge, color: 'icon-bg-blue' },
+  { id: 'xcepWstep', labelKey: 'settings.tabs.xcepWstep', icon: WindowsLogo, color: 'icon-bg-indigo' },
   { id: 'about', labelKey: 'settings.tabs.about', icon: Info, color: 'icon-bg-sky' },
 ]
 
@@ -88,21 +93,6 @@ const SSO_PROVIDER_ICONS = {
   ldap: Database,
   oauth2: Globe,
   saml: Shield,
-}
-
-// Fields each "Save Changes" button owns -- lets handleSave() send only its
-// own card's fields instead of the whole settings object.
-const SECTION_FIELDS = {
-  generalSite: ['system_name', 'base_url', 'protocol_base_url', 'http_protocol_port', 'acme_public_vhost', 'acme_public_port', 'acme_public_tls_cert_id'],
-  generalSession: ['session_timeout', 'max_login_attempts', 'lockout_duration', 'timezone', 'date_format', 'show_time'],
-  security2fa: ['enforce_2fa'],
-  securityHsts: ['hsts_enabled', 'hsts_include_subdomains', 'hsts_max_age', 'ocsp_response_validity_hours'],
-  securityKeyRecovery: ['key_recovery_dual_control'],
-  securityPassword: ['min_password_length', 'password_require_uppercase', 'password_require_numbers', 'password_require_special'],
-  securitySession: ['session_max_lifetime', 'api_rate_limit'],
-  backupAuto: ['auto_backup_enabled', 'backup_frequency', 'backup_password'],
-  backupRetention: ['backup_retention_days'],
-  audit: ['audit_enabled', 'audit_retention_days'],
 }
 
 export default function SettingsPage() {
@@ -141,7 +131,16 @@ export default function SettingsPage() {
   const [selectedCategory, setSelectedCategory] = useState(
     searchParams.get('tab') || 'general'
   )
-  
+
+  // Re-sync when the URL's ?tab= changes from outside this component (e.g.
+  // navigate('/settings?tab=adConnector') from another page's "Configure"
+  // link) -- the state above only captures the URL at mount, and React
+  // Router doesn't remount this component for an in-place query-param
+  // change, so without this the tab never visibly switches.
+  useEffect(() => {
+    setSelectedCategory(searchParams.get('tab') || 'general')
+  }, [searchParams])
+
   // Update URL when category changes
   const handleCategoryChange = (categoryId) => {
     setSelectedCategory(categoryId)
@@ -189,6 +188,12 @@ export default function SettingsPage() {
   const [mscaTesting, setMscaTesting] = useState(false)
   const [mscaConfirmDelete, setMscaConfirmDelete] = useState(null)
   const [mscaCaControl, setMscaCaControl] = useState(null)
+
+  // Active Directory Connector state
+  const [adConnectorConfig, setAdConnectorConfig] = useState(null)
+  const [adConnectorLoading, setAdConnectorLoading] = useState(false)
+  const [adConnectorTesting, setAdConnectorTesting] = useState(false)
+  const [showAdConnectorModal, setShowAdConnectorModal] = useState(false)
 
   // Encryption states
   const [encryptionStatus, setEncryptionStatus] = useState(null)
@@ -252,6 +257,7 @@ export default function SettingsPage() {
     loadSsoProviders()
     loadWebhooks()
     loadMscaConnections()
+    loadAdConnectorConfig()
     loadEncryptionStatus()
     loadAnomalies()
     loadExpiryAlerts()
@@ -640,6 +646,59 @@ export default function SettingsPage() {
     }
   }
 
+  // Active Directory Connector handlers
+  const loadAdConnectorConfig = async () => {
+    setAdConnectorLoading(true)
+    try {
+      const response = await adConnectorService.get()
+      setAdConnectorConfig(response.data || null)
+    } catch (error) {
+    } finally {
+      setAdConnectorLoading(false)
+    }
+  }
+
+  const handleAdConnectorEdit = () => {
+    setShowAdConnectorModal(true)
+  }
+
+  const handleAdConnectorSave = async (formData) => {
+    try {
+      await adConnectorService.save(formData)
+      showSuccess(t('messages.success.update.settings'))
+      setShowAdConnectorModal(false)
+      loadAdConnectorConfig()
+    } catch (error) {
+      showError(error.message || t('messages.errors.updateFailed.settings'))
+    }
+  }
+
+  const handleAdConnectorToggle = async () => {
+    if (!adConnectorConfig) return
+    try {
+      await adConnectorService.save({ enabled: !adConnectorConfig.enabled })
+      loadAdConnectorConfig()
+    } catch (error) {
+      showError(error.message || t('messages.errors.updateFailed.settings'))
+    }
+  }
+
+  const handleAdConnectorTest = async () => {
+    setAdConnectorTesting(true)
+    try {
+      const response = await adConnectorService.testSaved()
+      showSuccess(response.data?.message || t('adConnector.testSuccess'))
+    } catch (error) {
+      showError(error.message || t('adConnector.testFailed'))
+    } finally {
+      setAdConnectorTesting(false)
+      // test-saved records last_test_at/last_test_result server-side
+      // regardless of outcome -- refresh so the section's status badge
+      // doesn't keep showing whatever the previous test left behind.
+      loadAdConnectorConfig()
+    }
+  }
+
   // Webhook handlers
   const loadWebhooks = async () => {
     setWebhooksLoading(true)
@@ -992,11 +1051,7 @@ export default function SettingsPage() {
           smtp_oauth_redirect_uri: settings.smtp_oauth_redirect_uri,
         })
       } else {
-        const fields = SECTION_FIELDS[section]
-        const payload = fields
-          ? Object.fromEntries(fields.map((key) => [key, settings[key]]))
-          : settings
-        await settingsService.updateBulk(payload)
+        await settingsService.updateBulk(settings)
       }
       showSuccess(t('messages.success.update.settings'))
       if (section === 'email') setOauthDirty(false)
@@ -1531,6 +1586,20 @@ export default function SettingsPage() {
             hasPermission={hasPermission}
           />
         )
+      case 'adConnector':
+        return (
+          <AdConnectorSection
+            adConnectorConfig={adConnectorConfig}
+            adConnectorLoading={adConnectorLoading}
+            adConnectorTesting={adConnectorTesting}
+            handleAdConnectorEdit={handleAdConnectorEdit}
+            handleAdConnectorToggle={handleAdConnectorToggle}
+            handleAdConnectorTest={handleAdConnectorTest}
+            hasPermission={hasPermission}
+          />
+        )
+      case 'xcepWstep':
+        return <XcepWstepSection />
       case 'about':
         return <AboutSection />
 
@@ -1609,7 +1678,7 @@ export default function SettingsPage() {
           { labelKey: 'settings.groups.security', tabs: ['security', 'sso', 'ct'], color: 'icon-bg-amber' },
           { labelKey: 'settings.groups.notifications', tabs: ['email', 'webhooks'], color: 'icon-bg-teal' },
           { labelKey: 'settings.groups.automation', tabs: ['autoRenewal'], color: 'icon-bg-emerald' },
-          { labelKey: 'settings.groups.integrations', tabs: ['microsoftCA'], color: 'icon-bg-indigo' },
+          { labelKey: 'settings.groups.integrations', tabs: ['microsoftCA', 'adConnector', 'xcepWstep'], color: 'icon-bg-indigo' },
           { labelKey: 'settings.groups.interface', tabs: ['appearance', 'audit'], color: 'icon-bg-violet' },
           { labelKey: 'settings.groups.about', tabs: ['about'], color: 'icon-bg-sky' },
         ]}
@@ -1777,7 +1846,21 @@ export default function SettingsPage() {
         open={!!mscaCaControl}
         onClose={() => setMscaCaControl(null)}
       />
-      
+
+      {/* Active Directory Connector Modal */}
+      <Modal
+        open={showAdConnectorModal}
+        onClose={() => setShowAdConnectorModal(false)}
+        title={t('adConnector.title')}
+        size="lg"
+      >
+        <AdConnectorForm
+          config={adConnectorConfig}
+          onSave={handleAdConnectorSave}
+          onCancel={() => setShowAdConnectorModal(false)}
+        />
+      </Modal>
+
       {/* Enable Encryption Modal */}
       <Modal
         open={showEnableEncryptionModal}

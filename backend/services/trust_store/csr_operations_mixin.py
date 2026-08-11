@@ -19,6 +19,37 @@ from .constraints_mixin import ConstraintsMixin
 
 logger = logging.getLogger(__name__)
 
+_MS_CERTIFICATE_TEMPLATE_OID = x509.ObjectIdentifier('1.3.6.1.4.1.311.21.7')
+
+
+def _certificate_template_extension(template_oid, major=100, minor=0):
+    """Build the Microsoft CertificateTemplateOID extension (MS-CRTD):
+    ``SEQUENCE { templateID OBJECT IDENTIFIER, major INTEGER, minor
+    INTEGER }``. ``cryptography`` has no native type for it, so it's
+    hand-built with asn1crypto and wrapped as UnrecognizedExtension —
+    same approach already used for CMC parsing in
+    services/wstep/rst_parser.py. major/minor are arbitrary (Windows
+    doesn't validate them against anything server-side); 100/0 mirrors
+    a typical real ADCS template's default major version."""
+    from asn1crypto import core as asn1_core
+
+    class _TemplateVersion(asn1_core.Integer):
+        pass
+
+    class _CertificateTemplateOID(asn1_core.Sequence):
+        _fields = [
+            ('template_id', asn1_core.ObjectIdentifier),
+            ('template_major_version', _TemplateVersion),
+            ('template_minor_version', _TemplateVersion, {'optional': True}),
+        ]
+
+    der = _CertificateTemplateOID({
+        'template_id': template_oid,
+        'template_major_version': major,
+        'template_minor_version': minor,
+    }).dump()
+    return x509.UnrecognizedExtension(_MS_CERTIFICATE_TEMPLATE_OID, der)
+
 
 _LEAF_CA_ONLY_EXTENSION_OIDS = frozenset({
     ExtensionOID.NAME_CONSTRAINTS,
@@ -273,6 +304,34 @@ def _key_usage_with_ca_signing(usage, enabled):
     )
 
 
+def _synthesize_san_from_subject(subject):
+    """SAN entries implied by a subject's CN/email attributes -- same
+    derivation ``sign_csr`` already applied when a CSR carries no SAN
+    extension of its own. Factored out so this can be computed once and
+    reused both for NameConstraints validation and for actually building the
+    certificate's SAN extension, so the two can't drift apart (see
+    ``sign_csr``'s ``override_subject`` handling)."""
+    san_names = []
+    for attr in subject:
+        if attr.oid == NameOID.COMMON_NAME:
+            cn_val = attr.value
+            try:
+                ip = ipaddress.ip_address(cn_val)
+                san_names.append(x509.IPAddress(ip))
+            except ValueError:
+                if '@' in cn_val:
+                    san_names.append(x509.RFC822Name(cn_val))
+                else:
+                    san_names.append(x509.DNSName(cn_val))
+            break
+    for attr in subject:
+        if attr.oid == NameOID.EMAIL_ADDRESS:
+            email_val = attr.value
+            if not any(isinstance(n, x509.RFC822Name) and n.value == email_val for n in san_names):
+                san_names.append(x509.RFC822Name(email_val))
+    return san_names
+
+
 class CSROperationsMixin:
     """CSR generation and signing operations mixin"""
 
@@ -353,17 +412,47 @@ class CSROperationsMixin:
         extra_ekus: Optional[List[str]] = None,
         renewal_of=None,
         allow_sensitive_ekus: bool = False,
+        require_pop: bool = True,
+        ms_certificate_template_oid: Optional[str] = None,
+        override_subject: Optional[x509.Name] = None,
+        override_san: Optional[List[x509.GeneralName]] = None,
     ) -> bytes:
         """Sign a CSR with a CA. ``renewal_of``: existing certificate this
         signing renews — its names are graced by NameConstraints validation.
         ``allow_sensitive_ekus``: keep OCSPSigning/timeStamping from the CSR —
         reserved for the admin Sign-CSR path (an operator explicitly signing a
-        delegated responder/TSA CSR); protocol enrollees never get them."""
+        delegated responder/TSA CSR); protocol enrollees never get them.
+        ``require_pop=False`` skips the self-signature (proof-of-possession)
+        check — only WSTEP passes this, for CSRs unwrapped from a PKCS#7/CMC
+        envelope whose inner CertificationRequest isn't reliably self-signed
+        by real Windows clients (see wstep_service._validate_csr, which
+        makes the same exception for the same reason).
+        ``ms_certificate_template_oid``: see the extension-building block
+        below — only WSTEP passes this.
+        ``override_subject``: replaces the CSR's own (possibly empty)
+        subject before anything else happens with it — only WSTEP's Kerberos
+        binding passes this, for the "naked" (no CN, no SAN) CSRs real
+        Windows GPO autoenrollment submits for templates configured to build
+        the subject from AD, trusting the CA to derive it server-side (see
+        services/ad_connector/lookup.py). Computed before NameConstraints
+        validation below, not after, so the constraint check sees the name
+        that will actually land on the certificate rather than the raw
+        CSR's own (empty) one — applying it later would let a CA's
+        NameConstraints be silently bypassed by whatever subject was
+        derived server-side.
+        ``override_san``: replaces the auto-synthesized SAN outright when
+        given, instead of deriving it from ``override_subject``'s CN via
+        ``_synthesize_san_from_subject``. Needed for AD-derived user
+        subjects: a user's directory-path CN (e.g. "Roy Hagland") isn't a
+        DNS name or email address, so synthesis would build a nonsensical
+        DNSName SAN entry — real ADCS instead puts the user's UPN in SAN as
+        a Microsoft OtherName, which the caller (wstep_service) builds and
+        passes here directly."""
         from utils.eku_validation import normalize_extra_ekus, to_object_identifiers, merge_eku_lists
 
         # Load CSR
         csr = x509.load_pem_x509_csr(csr_pem, default_backend())
-        if not csr.is_signature_valid:
+        if require_pop and not csr.is_signature_valid:
             raise ValueError("CSR has invalid signature")
 
         # Key-strength floor. Enforced here rather than at each caller so every
@@ -374,19 +463,10 @@ class CSROperationsMixin:
         if key_err:
             raise ValueError(f"CSR public key rejected: {key_err}")
 
-        # NameConstraints enforcement
-        csr_sans = None
-        try:
-            san_ext = csr.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-            csr_sans = list(san_ext.value)
-        except x509.ExtensionNotFound:
-            pass
-        ConstraintsMixin._validate_name_constraints(
-            ca_cert, csr.subject, csr_sans, renewal_of=renewal_of
-        )
-
-        # If CSR has empty subject, populate CN from first SAN DNS name
-        subject = csr.subject
+        # Effective subject: an override (if any) wins outright; otherwise
+        # fall back to populating CN from the CSR's own first SAN DNS name
+        # if the CSR's subject is empty.
+        subject = override_subject if override_subject is not None else csr.subject
         if not list(subject):
             try:
                 san_ext = csr.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
@@ -396,6 +476,30 @@ class CSROperationsMixin:
                         break
             except x509.ExtensionNotFound:
                 pass
+
+        # Effective SAN for constraint-checking: the CSR's own SAN extension
+        # if it has one, else whatever will be auto-synthesized from the
+        # (possibly overridden) subject below -- NameConstraints must see
+        # the name that will actually land on the certificate, not an empty
+        # list just because the CSR itself omitted SAN.
+        try:
+            san_ext = csr.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+            csr_sans = list(san_ext.value)
+            has_csr_san = True
+        except x509.ExtensionNotFound:
+            csr_sans = None
+            has_csr_san = False
+
+        if override_san is not None:
+            effective_sans = override_san
+        elif has_csr_san:
+            effective_sans = csr_sans
+        else:
+            effective_sans = _synthesize_san_from_subject(subject)
+
+        ConstraintsMixin._validate_name_constraints(
+            ca_cert, subject, effective_sans if effective_sans else None, renewal_of=renewal_of
+        )
 
         # Build certificate from CSR
         builder = x509.CertificateBuilder()
@@ -474,33 +578,15 @@ class CSROperationsMixin:
                 continue
             builder = builder.add_extension(extension.value, extension.critical)
 
-        # Auto-add SAN from CN if CSR has no SAN extension
-        try:
-            csr.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-        except x509.ExtensionNotFound:
-            san_names = []
-            for attr in subject:
-                if attr.oid == NameOID.COMMON_NAME:
-                    cn_val = attr.value
-                    try:
-                        ip = ipaddress.ip_address(cn_val)
-                        san_names.append(x509.IPAddress(ip))
-                    except ValueError:
-                        if '@' in cn_val:
-                            san_names.append(x509.RFC822Name(cn_val))
-                        else:
-                            san_names.append(x509.DNSName(cn_val))
-                    break
-            for attr in subject:
-                if attr.oid == NameOID.EMAIL_ADDRESS:
-                    email_val = attr.value
-                    if not any(isinstance(n, x509.RFC822Name) and n.value == email_val for n in san_names):
-                        san_names.append(x509.RFC822Name(email_val))
-            if san_names:
-                builder = builder.add_extension(
-                    x509.SubjectAlternativeName(san_names),
-                    critical=False,
-                )
+        # Auto-add SAN from CN if the CSR had no SAN extension -- reuses
+        # effective_sans, already computed above for NameConstraints, so
+        # what got constraint-checked and what actually lands on the
+        # certificate can't drift apart.
+        if not has_csr_san and effective_sans:
+            builder = builder.add_extension(
+                x509.SubjectAlternativeName(effective_sans),
+                critical=False,
+            )
 
         # Add basic extensions if not in CSR
         try:
@@ -696,6 +782,20 @@ class CSROperationsMixin:
         if ocsp_must_staple:
             builder = builder.add_extension(
                 x509.TLSFeature([x509.TLSFeatureType.status_request]),
+                critical=False,
+            )
+
+        # Microsoft Certificate Template extension (szOID_CERTIFICATE_TEMPLATE,
+        # 1.3.6.1.4.1.311.21.7) — only WSTEP passes this. Real Windows clients
+        # read this back off the issued cert to confirm it matches the policy
+        # they selected via XCEP; a cert with no template property at all was
+        # observed failing CX509Enrollment::Enroll with CERTSRV_E_PROPERTY_EMPTY
+        # ("the requested property value is empty") during real-client interop
+        # testing. `cryptography` has no built-in type for this MS-CRTD
+        # extension, so it's hand-built and added as UnrecognizedExtension.
+        if ms_certificate_template_oid:
+            builder = builder.add_extension(
+                _certificate_template_extension(ms_certificate_template_oid),
                 critical=False,
             )
 

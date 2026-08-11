@@ -6,7 +6,9 @@ from email import policy
 from email.parser import BytesParser
 
 import pytest
+from asn1crypto import algos as asn1_algos
 from asn1crypto import cms
+from asn1crypto import csr as asn1_csr
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, padding, serialization
 from cryptography.hazmat.primitives.asymmetric import padding as asym_padding, rsa
@@ -86,6 +88,27 @@ def _make_csr(common_name='device.example.test', san_names=(), extra_attributes=
             x509.ObjectIdentifier(oid), value, _tag=_ASN1Type.OctetString
         )
     return builder.sign(key, hashes.SHA256()), key
+
+
+def _make_sha1_csr(common_name='device.example.test'):
+    """A SHA-1-signed CSR. ``cryptography``'s own CSR builder refuses to
+    sign with SHA-1 at all (UnsupportedAlgorithm), so this reuses a
+    normally-built CSR's TBS bytes (hash-algorithm-independent) and signs
+    them directly with the RSA private key primitive, which still permits
+    SHA-1 -- matching how a real client like certreq.exe (default
+    HashAlgorithm) actually produces one."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    csr_sha256 = x509.CertificateSigningRequestBuilder().subject_name(
+        x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+    ).sign(key, hashes.SHA256())
+    tbs = csr_sha256.tbs_certrequest_bytes
+    signature = key.sign(tbs, asym_padding.PKCS1v15(), hashes.SHA1())
+    new_csr = asn1_csr.CertificationRequest({
+        'certification_request_info': asn1_csr.CertificationRequestInfo.load(tbs),
+        'signature_algorithm': asn1_algos.SignedDigestAlgorithm({'algorithm': 'sha1_rsa'}),
+        'signature': signature,
+    })
+    return x509.load_der_x509_csr(new_csr.dump()), key
 
 
 def _make_client_certificate(common_name='device.example.test', san_names=()):
@@ -178,6 +201,18 @@ class TestSimpleEnroll:
             content_type='application/octet-stream',
         )
         assert response.status_code == 200
+
+    def test_rejects_sha1_csr_with_specific_message(self, client, est_config):
+        """A SHA-1-signed CSR is genuinely proof-of-possession-valid
+        (confirmed by manually verifying the signature), but
+        ``cryptography``'s ``is_signature_valid`` refuses to vouch for it.
+        The rejection message should name the actual cause rather than the
+        generic PoP-failure wording."""
+        csr, _key = _make_sha1_csr('sha1-csr.example.test')
+        response = _post_csr(client, 'simpleenroll', csr, headers=_basic_auth())
+        assert response.status_code == 400
+        assert b'sha1' in response.data.lower()
+        assert b'SHA-256' in response.data
 
     def test_accepts_charset_and_returns_only_issued_certificate(self, client, est_config):
         csr, _ = _make_csr(san_names=('device.example.test',))

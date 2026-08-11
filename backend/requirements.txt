@@ -114,8 +114,31 @@ javaobj-py3>=0.4.3
 pycryptodomex>=3.20
 defusedxml>=0.7.1
 
+# MS-XCEP / MS-WSTEP (Windows autoenrollment, GH #229): SOAP/XML envelope
+# parsing and construction. Mature manylinux + Windows wheels, no native
+# lib beyond libxml2 (already pulled in transitively by other deps).
+lxml>=5.0
+# WS-Security XML-DSig verification for WSTEP's Certificate-bound renewal
+# binding (a real Windows CES client signs the RST with its current
+# certificate's private key; UCM verifies that signature before treating
+# it as an authenticated renewal request). Was already a transitive
+# dependency via python3-saml (SAML SSO); listed directly now that WSTEP
+# relies on it explicitly rather than incidentally.
+xmlsec>=1.3.13
+
 # Certificate conformance linting (RFC 5280 / CA-Browser Forum).
 # Pure-python wheel; its deps (pyasn1, pyasn1-modules, cryptography) are
 # already pulled in above. Optional at runtime — the linting feature
 # degrades gracefully (reports "linter unavailable") if it is not installed.
 pkilint>=0.12
+
+# MS-XCEP / MS-WSTEP Kerberos binding (Phase 3, GH #229/#230):
+# ADPolicyProvider_CEP_Kerberos / ADCertificateService_CES_Kerberos
+# authenticate via HTTP Negotiate/SPNEGO (RFC 4559), same as IIS Windows
+# Integrated Auth or Apache mod_auth_gssapi. pyspnego's Kerberos support
+# always goes through the system GSSAPI implementation (there is no pure-
+# Python Kerberos crypto), which needs its 'kerberos' extra — a C extension
+# (gssapi) requiring libkrb5-dev at build time. Kept out of the default set
+# for the same reason as requests-kerberos above. Install manually if
+# needed: pip install pyspnego[kerberos]
+# Both Kerberos-bound endpoints 503 cleanly if this isn't installed.
