@@ -135,6 +135,21 @@ def export_ca(ca_id):
         include_key = request.args.get('include_key', 'false').lower() == 'true'
         include_chain = request.args.get('include_chain', 'false').lower() == 'true'
         password = request.args.get('password')
+        # SECURITY: never accept passwords or key-containing formats via query
+        # string — the password would be visible in proxy access logs, browser
+        # history, and Referer headers.  The user-certificate export endpoint
+        # already enforces this; CA export must follow suit.
+        if password or export_format in ('pkcs12', 'p12', 'pfx', 'jks', 'key') or include_key:
+            if password:
+                logger.warning(
+                    "Rejected CA export with password in query string "
+                    "(ca_id=%s) — client must POST with JSON body",
+                    ca_id,
+                )
+            return error_response(
+                'Password and private-key exports must be sent via POST body (JSON), not query string',
+                400,
+            )
 
     # Private key export requires write permission (operator+)
     if include_key or export_format in ('pkcs12', 'pfx', 'key', 'jks'):
