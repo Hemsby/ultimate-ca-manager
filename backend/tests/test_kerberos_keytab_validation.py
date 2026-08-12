@@ -71,7 +71,6 @@ class TestInspectKeytab:
     def test_missing_keytab_is_invalid(self, tmp_path):
         result = negotiate_auth.inspect_keytab(str(tmp_path / 'does-not-exist.keytab'))
         assert result == {'valid': False, 'principal': None, 'error': 'No keytab uploaded'}
-
     @requires_gssapi
     def test_default_path_is_keytab_path(self, monkeypatch, valid_keytab_path):
         monkeypatch.setattr(negotiate_auth, 'KEYTAB_PATH', Path(valid_keytab_path))
@@ -99,7 +98,6 @@ class TestKeytabUploadEndpoint:
 
         assert r.status_code == 400
         assert keytab_target.read_bytes() == before  # untouched
-
     @requires_gssapi
     def test_valid_upload_is_persisted_and_reports_principal(self, auth_client, app, tmp_path, monkeypatch):
         keytab_target = tmp_path / 'persisted2.keytab'
@@ -116,7 +114,6 @@ class TestKeytabUploadEndpoint:
         assert body['data']['keytab_principal'] == 'HTTP/testhost.example.test@EXAMPLE.TEST'
         assert body['data']['keytab_spn_matches'] is True
         assert keytab_target.read_bytes() == keytab_bytes
-
     @requires_gssapi
     def test_valid_upload_with_mismatched_spn_is_still_accepted(self, auth_client, app, tmp_path, monkeypatch):
         """A keytab can legitimately carry a different (or additional)

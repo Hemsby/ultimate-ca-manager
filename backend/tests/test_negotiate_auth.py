@@ -9,6 +9,7 @@ instead. No Flask app/DB needed: get_spn() and _ensure_krb5_ktname() are
 monkeypatched, and everything else here is pure.
 """
 import base64
+import builtins
 
 import pytest
 
@@ -78,3 +79,24 @@ def test_full_completion_rejects_unresolved_protocol(monkeypatch):
     server = _FakeServer(complete=True, client_principal='alice@EXAMPLE.TEST', negotiated_protocol=None)
     result = _authenticate(monkeypatch, server)
     assert result.status == 'failed'
+
+
+def test_is_library_available_requires_gssapi_not_just_spnego(monkeypatch):
+    """Regression for GH #229: the base ``spnego`` package is importable
+    even without GSSAPI (it's pulled in transitively by requests-ntlm, so
+    ``import spnego`` alone proves nothing about Kerberos actually working).
+    If ``gssapi`` isn't importable, this must report unavailable rather than
+    let a caller advertise/attempt Kerberos that's guaranteed to fail."""
+    negotiate_auth.is_library_available.cache_clear()
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == 'gssapi':
+            raise ImportError("No module named 'gssapi'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, '__import__', fake_import)
+    try:
+        assert negotiate_auth.is_library_available() is False
+    finally:
+        negotiate_auth.is_library_available.cache_clear()

@@ -92,6 +92,14 @@ def _cleanup_expired_contexts():
 def is_library_available():
     """Whether pyspnego and its GSSAPI backend are importable.
 
+    Checks ``gssapi`` explicitly, not just ``spnego``: the base ``spnego``
+    package is importable even without it (it ends up installed anyway as a
+    transitive dependency of ``requests-ntlm``, already required for the
+    WinRM admin channel), but pyspnego's Kerberos support always goes
+    through GSSAPI (see module docstring) -- without it, negotiation fails
+    at request time with "GSSAPIProxy requires the Python gssapi library"
+    instead of the clean 503 this check is supposed to guarantee (GH #229).
+
     Cached: this is checked on every Kerberos-bound request and the answer
     can't change mid-process (a ``pip install`` while UCM is running
     wouldn't be picked up by already-imported ``sys.modules`` anyway).
@@ -101,6 +109,7 @@ def is_library_available():
     kept out of the default requirement set (see ``requirements.txt``).
     """
     try:
+        import gssapi  # noqa: F401
         import spnego  # noqa: F401
     except ImportError:
         return False

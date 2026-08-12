@@ -226,7 +226,14 @@ def get_policies_kerberos():
     if request.method in ('GET', 'HEAD'):
         return Response('', status=200, content_type='text/html; charset=utf-8')
 
-    if not negotiate_auth.is_library_available() or not negotiate_auth.is_configured():
+    if not negotiate_auth.is_library_available():
+        logger.warning(
+            "Kerberos/SPNEGO CEP request rejected: pyspnego's GSSAPI backend "
+            "isn't installed (pip install pyspnego[kerberos])"
+        )
+        return Response('Kerberos binding not configured', status=503)
+    if not negotiate_auth.is_configured():
+        logger.warning("Kerberos/SPNEGO CEP request rejected: Kerberos not enabled/configured")
         return Response('Kerberos binding not configured', status=503)
 
     cl = request.content_length
