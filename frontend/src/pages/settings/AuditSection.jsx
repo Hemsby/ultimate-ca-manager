@@ -5,6 +5,7 @@ import { ToggleSwitch } from '../../components/ui/ToggleSwitch'
 
 export default function AuditSection({ settings, updateSetting, handleSave, saving, hasPermission, syslogConfig, updateSyslogConfig, syslogSaving, syslogTesting, handleSaveSyslog, handleTestSyslog }) {
   const { t } = useTranslation()
+  const canWriteSettings = hasPermission('write:settings')
   return (
     <DetailContent>
       <DetailHeader
@@ -51,7 +52,7 @@ export default function AuditSection({ settings, updateSetting, handleSave, savi
               <span className="text-sm text-text-primary">{event.label}</span>
             </label>
           ))}
-          {hasPermission('admin:system') && (
+          {canWriteSettings && (
             <div className="pt-4">
               <Button type="button" onClick={() => handleSave('audit')} disabled={saving}>
                 <FloppyDisk size={16} />

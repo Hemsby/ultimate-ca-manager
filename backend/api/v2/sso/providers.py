@@ -1,6 +1,6 @@
 from . import bp, VALID_ROLES, logger
-from flask import request
-from auth.unified import require_auth
+from flask import request, g
+from auth.unified import require_auth, has_permission
 from utils.response import success_response, error_response
 from utils.db_transaction import safe_commit
 from models import db
@@ -54,8 +54,13 @@ def list_providers():
 def get_provider(provider_id):
     """Get SSO provider details"""
     provider = db.get_or_404(SSOProvider, provider_id)
-    # Include secrets only for admins
+    # Include secrets only for users with admin:system permission.
+    # Uses has_permission() instead of a hardcoded role string check so
+    # that custom RBAC roles with admin:system (or '*' wildcard) behave
+    # consistently with the built-in admin role.
     include_secrets = request.args.get('include_secrets') == 'true'
+    if include_secrets and not has_permission('admin:system', getattr(g, 'permissions', [])):
+        return error_response('Secrets available to administrators only', 403)
     return success_response(data=provider.to_dict(include_secrets=include_secrets))
 
 

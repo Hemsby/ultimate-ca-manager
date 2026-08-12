@@ -465,7 +465,7 @@ class CSROperationsMixin:
 
         # Effective subject: an override (if any) wins outright; otherwise
         # fall back to populating CN from the CSR's own first SAN DNS name
-        # if the CSR's subject is empty.
+        # or IP address if the CSR's subject is empty.
         subject = override_subject if override_subject is not None else csr.subject
         if not list(subject):
             try:
@@ -473,6 +473,9 @@ class CSROperationsMixin:
                 for name in san_ext.value:
                     if isinstance(name, x509.DNSName):
                         subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, name.value)])
+                        break
+                    elif isinstance(name, x509.IPAddress):
+                        subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, str(name.value))])
                         break
             except x509.ExtensionNotFound:
                 pass

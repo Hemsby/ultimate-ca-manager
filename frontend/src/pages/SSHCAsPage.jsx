@@ -149,8 +149,7 @@ export default function SSHCAsPage() {
 
   const handleDownloadPublicKey = async (ca) => {
     try {
-      const res = await sshCasService.getPublicKey(ca.id)
-      const publicKey = res.data?.public_key || res.data
+      const publicKey = await sshCasService.getPublicKey(ca.id)
       const blob = new Blob([typeof publicKey === 'string' ? publicKey : JSON.stringify(publicKey)], { type: 'text/plain' })
       downloadBlob(blob, `${ca.descr || 'ssh-ca'}_key.pub`)
     } catch (error) {
@@ -179,8 +178,7 @@ export default function SSHCAsPage() {
 
   const handleCopyPublicKey = async (ca) => {
     try {
-      const res = await sshCasService.getPublicKey(ca.id)
-      const publicKey = res.data?.public_key || res.data
+      const publicKey = await sshCasService.getPublicKey(ca.id)
       await clipboardCopy(typeof publicKey === 'string' ? publicKey : JSON.stringify(publicKey), 'publicKey')
       showSuccess(t('sshCas.publicKeyCopied'))
     } catch (error) {

@@ -22,16 +22,15 @@ from services.kerberos import negotiate_auth
 
 try:
     import gssapi  # noqa: F401
-    _gssapi_available = True
+    HAS_GSSAPI = True
 except ImportError:
-    _gssapi_available = False
+    HAS_GSSAPI = False
 
-# gssapi is an optional dependency (kept out of requirements.txt -- see its
-# comment there) that ``inspect_keytab`` needs to actually parse a keytab.
-# Without it, inspect_keytab correctly reports 'invalid' (exercised by the
-# not-a-crash/missing-file tests below), so only the tests asserting a
-# *valid* parse result need real GSSAPI to pass.
-needs_gssapi = pytest.mark.skipif(not _gssapi_available, reason='gssapi not installed')
+requires_gssapi = pytest.mark.skipif(
+    not HAS_GSSAPI,
+    reason='gssapi not installed (optional pyspnego[kerberos] extra); '
+           'positive-parse cases need the real GSSAPI keytab loader',
+)
 
 _VALID_KEYTAB_B64 = (
     'BQIAAABeAAIADEVYQU1QTEUuVEVTVAAESFRUUAAVdGVzdGhvc3QuZXhhbXBsZS50ZXN0AAAA'
@@ -54,7 +53,7 @@ def garbage_keytab_path(tmp_path):
 
 
 class TestInspectKeytab:
-    @needs_gssapi
+    @requires_gssapi
     def test_valid_keytab_reports_principal(self, valid_keytab_path):
         result = negotiate_auth.inspect_keytab(valid_keytab_path)
         assert result == {
@@ -72,8 +71,7 @@ class TestInspectKeytab:
     def test_missing_keytab_is_invalid(self, tmp_path):
         result = negotiate_auth.inspect_keytab(str(tmp_path / 'does-not-exist.keytab'))
         assert result == {'valid': False, 'principal': None, 'error': 'No keytab uploaded'}
-
-    @needs_gssapi
+    @requires_gssapi
     def test_default_path_is_keytab_path(self, monkeypatch, valid_keytab_path):
         monkeypatch.setattr(negotiate_auth, 'KEYTAB_PATH', Path(valid_keytab_path))
         result = negotiate_auth.inspect_keytab()
@@ -100,8 +98,7 @@ class TestKeytabUploadEndpoint:
 
         assert r.status_code == 400
         assert keytab_target.read_bytes() == before  # untouched
-
-    @needs_gssapi
+    @requires_gssapi
     def test_valid_upload_is_persisted_and_reports_principal(self, auth_client, app, tmp_path, monkeypatch):
         keytab_target = tmp_path / 'persisted2.keytab'
         monkeypatch.setattr(negotiate_auth, 'KEYTAB_PATH', keytab_target)
@@ -117,8 +114,7 @@ class TestKeytabUploadEndpoint:
         assert body['data']['keytab_principal'] == 'HTTP/testhost.example.test@EXAMPLE.TEST'
         assert body['data']['keytab_spn_matches'] is True
         assert keytab_target.read_bytes() == keytab_bytes
-
-    @needs_gssapi
+    @requires_gssapi
     def test_valid_upload_with_mismatched_spn_is_still_accepted(self, auth_client, app, tmp_path, monkeypatch):
         """A keytab can legitimately carry a different (or additional)
         principal than the SPN field currently says -- reject the upload

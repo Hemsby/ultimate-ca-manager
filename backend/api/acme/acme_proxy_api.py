@@ -406,20 +406,25 @@ def new_order(slug=None):
     if not is_valid:
         return proxy_error("malformed", err)
 
+    # SECURITY: Always verify the requesting account exists and is active,
+    # regardless of whether EAB is required so that deactivated accounts 
+    # are not allowed to create new orders.
+    requester_account_id = _kid_account_id(_request_protected_header())
+    if requester_account_id:
+        acme_svc = AcmeService()
+        account = acme_svc.get_account_by_kid(requester_account_id)
+        if not account:
+            return proxy_error('accountDoesNotExist', 'Account not found', 404)
+        if account.status == 'deactivated':
+            return proxy_error('unauthorized', 'Account is deactivated', 401)
+
     eab_cfg = SystemConfig.query.filter_by(key='acme_eab_required').first()
     eab_required = (eab_cfg.value if eab_cfg else 'false').lower() == 'true'
     if eab_required:
         # _request_protected_header() returns {} on undecodable input — the
         # missing kid then fails closed below.
-        account_id = _kid_account_id(_request_protected_header())
-        if not account_id:
+        if not requester_account_id:
             return proxy_error('malformed', 'Account kid required when EAB is enabled')
-        acme_svc = AcmeService()
-        account = acme_svc.get_account_by_kid(account_id)
-        if not account:
-            return proxy_error('accountDoesNotExist', 'Account not found', 404)
-        if account.status == 'deactivated':
-            return proxy_error('unauthorized', 'Account is deactivated', 401)
 
     try:
         identifiers = payload.get('identifiers')
@@ -437,7 +442,6 @@ def new_order(slug=None):
             )
 
         # Per-EAB domain restrictions (mirrors local ACME new-order)
-        requester_account_id = _kid_account_id(_request_protected_header())
         if requester_account_id:
             eab_cred = AcmeService().get_bound_eab_credential(
                 requester_account_id
@@ -553,6 +557,8 @@ def authz(authz_id, slug=None):
         return proxy_error("malformed", str(e), 404)
     except ProxyDns01OnlyError as e:
         return proxy_error('malformed', str(e), 400)
+    except PermissionError as e:
+        return proxy_error("unauthorized", str(e), 403)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except ProxyEndpointNotConfiguredError as e:
@@ -591,6 +597,8 @@ def challenge(chall_id, slug=None):
         return proxy_error("malformed", str(e), 404)
     except ProxyDns01OnlyError as e:
         return proxy_error('malformed', str(e), 400)
+    except PermissionError as e:
+        return proxy_error("unauthorized", str(e), 403)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except ProxyEndpointNotConfiguredError as e:

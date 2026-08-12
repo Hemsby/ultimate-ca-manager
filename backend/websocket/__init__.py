@@ -1,9 +1,29 @@
 """
 WebSocket module for UCM real-time events.
 Uses Flask-SocketIO for bidirectional communication.
+
+Updated for new events.py adoption:
+- broadcast_to_all removed → use broadcast_to_scope
+- emit_event now requires explicit room parameter
+- New: disconnect_user_sockets, disconnect_all_local_sockets
+- New: handle_reauth event for API key reauthentication
 """
 
-from .events import socketio, init_websocket, emit_event
+from .events import (
+    socketio,
+    init_websocket,
+    emit_event,
+    emit_to_user,
+    emit_certificate_event,
+    emit_ca_event,
+    emit_system_alert,
+    emit_audit_critical,
+    broadcast_to_scope,
+    get_connected_clients_count,
+    get_connected_clients_info,
+    disconnect_user_sockets,
+    disconnect_all_local_sockets,
+)
 from .event_types import EventType
 from .emitters import (
     on_certificate_issued,
@@ -24,18 +44,17 @@ from .emitters import (
     on_system_alert,
     on_audit_critical,
 )
-from .events import (
-    get_connected_clients_count,
-    get_connected_clients_info,
-    emit_system_alert,
-    emit_to_user,
-    broadcast_to_all,
-)
 
 __all__ = [
     'socketio',
     'init_websocket',
     'emit_event',
+    'emit_to_user',
+    'emit_certificate_event',
+    'emit_ca_event',
+    'emit_system_alert',
+    'emit_audit_critical',
+    'broadcast_to_scope',
     'EventType',
     # Emitter functions
     'on_certificate_issued',
@@ -58,7 +77,6 @@ __all__ = [
     # Management functions
     'get_connected_clients_count',
     'get_connected_clients_info',
-    'emit_system_alert',
-    'emit_to_user',
-    'broadcast_to_all',
+    'disconnect_user_sockets',
+    'disconnect_all_local_sockets',
 ]

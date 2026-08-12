@@ -1392,6 +1392,7 @@ export default function SettingsPage() {
             handleSave={handleSave}
             saving={saving}
             canWrite={canWrite}
+            hasPermission={hasPermission}
           />
         )
 
