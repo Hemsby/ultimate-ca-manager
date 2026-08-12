@@ -232,6 +232,14 @@ class TestPinnedSubjectFieldsIssuance:
                     ad_lookup, 'lookup_computer_dns_hostname',
                     lambda sam_account_name: 'win11.hagland.domain',
                 )
+                # Kerberos-bound issuance refuses when the AD Connector is
+                # enabled but the requester SID lookup fails (KB5014754
+                # strong mapping, #275) -- mock the SID like the other
+                # Kerberos-bound tests do.
+                monkeypatch.setattr(
+                    ad_lookup, 'lookup_object_sid',
+                    lambda sam_account_name: 'S-1-5-21-3623811015-3361044348-30300820-1105',
+                )
                 csr, _key = _make_csr()
                 cert_pem, err = wstep_service.issue(
                     ca, csr.public_bytes(Encoding.DER), validity_days=30,
