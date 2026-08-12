@@ -487,6 +487,20 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
     UsernamePassword-bound calls (``kerberos_principal=None``) are never
     gated, since that path authenticates a single shared SystemConfig
     credential with no per-request principal to check membership for.
+
+    Strong certificate mapping (KB5014754): whenever ``kerberos_principal``
+    resolves to a sam_account_name AND the AD Connector is configured and
+    enabled, the requester's own AD SID is embedded as the SID security
+    extension (see ``services/trust_store/csr_operations_mixin.py``'s
+    ``_ad_security_extension``) -- matching real ADCS's own automatic
+    behavior, unlike every other AD Connector feature here, this is
+    unconditional rather than a per-template opt-in, and independent of
+    whether the CSR is naked. If the AD Connector isn't configured/enabled
+    at all, this simply doesn't apply (no error) -- but if it IS enabled
+    and the SID lookup for this specific request fails for any reason,
+    issuance is refused rather than silently issuing a weaker-mapped cert.
+    UsernamePassword-bound calls never get this either, same reason as
+    Enroll ACL: no per-request principal to resolve a SID for.
     """
     csr, err = _load_csr(csr_der)
     if err:
@@ -515,6 +529,34 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
             parsed = None
         if parsed:
             kerberos_sam_account_name = parsed[0]
+
+    # Strong certificate mapping (KB5014754): embed the authenticated
+    # requester's AD SID as the SID security extension, matching real
+    # ADCS's own automatic behavior since a 2021-era hotfix -- unlike
+    # every other WSTEP AD Connector feature here, this is unconditional,
+    # not a per-template opt-in, and independent of _is_naked_csr below:
+    # the SID identifies who authenticated, not what subject was
+    # requested, so it applies to naked AND manually-typed Kerberos-bound
+    # CSRs alike. "AD Connector not configured at all" and "configured but
+    # this lookup failed" are deliberately different outcomes -- the
+    # former means the feature doesn't apply (checked directly against
+    # ADConnectorConfig, since lookup.py's functions collapse both cases
+    # to the same None), the latter refuses issuance rather than silently
+    # issuing a weaker-mapped cert.
+    requester_sid = None
+    if kerberos_sam_account_name:
+        from models import ADConnectorConfig
+
+        ad_config = ADConnectorConfig.get_singleton()
+        if ad_config and ad_config.enabled:
+            requester_sid = lookup.lookup_object_sid(kerberos_sam_account_name)
+            if requester_sid is None:
+                logger.warning(
+                    "WSTEP: could not resolve requester SID for %r via AD "
+                    "Connector -- refusing issuance (strong certificate mapping)",
+                    kerberos_sam_account_name,
+                )
+                return None, 'Could not resolve requester identity for strong certificate mapping'
 
     if kerberos_sam_account_name and _is_naked_csr(csr):
         if lookup.is_machine_principal(kerberos_principal):
@@ -594,6 +636,7 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
             ms_certificate_template_oid=template_oid,
             override_subject=override_subject,
             override_san=override_san,
+            requester_sid=requester_sid,
             # Upstream's CSR-EKU cap (see _template_extra_ekus) never
             # honours Microsoft Smartcard Logon from a CSR's own EKU
             # extension, whatever cert_type is — extra_ekus is the only

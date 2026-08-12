@@ -221,6 +221,95 @@ def lookup_computer_dns_hostname(sam_account_name):
             pass
 
 
+def _sid_bytes_to_string(raw):
+    """Windows binary SID -> ``"S-1-5-21-...-<RID>"`` string form.
+
+    Layout: ``byte[0]`` revision, ``byte[1]`` sub-authority count,
+    ``bytes[2:8]`` big-endian identifier authority, then N x 4-byte
+    little-endian sub-authorities. Verified against a real captured SID
+    (both a live LDAP query for a lab machine account and the SID string
+    embedded in a real ADCS-issued certificate's security extension agree
+    on the domain-SID prefix) -- not spec-derived.
+
+    ``None`` on any malformed input (wrong length for the declared
+    sub-authority count, empty bytes) rather than raising -- this is
+    untrusted binary data straight from a directory attribute.
+    """
+    if not raw or len(raw) < 8:
+        return None
+    revision = raw[0]
+    sub_count = raw[1]
+    expected_len = 8 + sub_count * 4
+    if len(raw) != expected_len:
+        return None
+    authority = int.from_bytes(raw[2:8], 'big')
+    sub_authorities = [
+        int.from_bytes(raw[8 + i * 4:12 + i * 4], 'little')
+        for i in range(sub_count)
+    ]
+    return f"S-{revision}-{authority}-" + "-".join(str(s) for s in sub_authorities)
+
+
+def lookup_object_sid(sam_account_name):
+    """The AD object's ``objectSid`` (user or computer -- no ``objectClass``
+    filter needed since ``sAMAccountName`` is domain-unique, machine
+    accounts keep their trailing ``$``), as a ``"S-1-5-21-..."`` string --
+    the exact form real ADCS embeds in the SID security extension
+    (``szOID_NTDS_CA_SECURITY_EXT``, see services/trust_store/
+    csr_operations_mixin.py's ``_ad_security_extension``) for KB5014754
+    strong certificate mapping.
+
+    ``ldap3`` does not auto-format ``objectSid`` -- ``entry.objectSid.value``
+    returns the raw bytes mis-decoded as a string, so this reads
+    ``raw_values[0]`` (the real binary SID) and converts it via
+    ``_sid_bytes_to_string``.
+
+    Returns ``None`` on every failure mode: connector not configured or
+    disabled, unreachable, bind failure, entry not found, or the attribute
+    is empty/malformed. Never raises. Callers needing to distinguish
+    "connector not configured" (skip this feature) from "configured but
+    this lookup failed" (deny, for strong mapping) must check
+    ``ADConnectorConfig`` themselves before calling this -- this function's
+    ``None`` return does not carry that distinction, matching every other
+    lookup in this module.
+    """
+    from ldap3.utils.conv import escape_filter_chars
+
+    from models import ADConnectorConfig
+
+    config = ADConnectorConfig.get_singleton()
+    if not config or not config.enabled or not config.server or not config.base_dn:
+        return None
+
+    try:
+        conn = _connect(config)
+    except Exception as e:
+        logger.warning("AD Connector: bind failed during SID lookup: %s", e)
+        return None
+
+    try:
+        safe_sam = escape_filter_chars(sam_account_name)
+        conn.search(
+            config.base_dn,
+            f'(sAMAccountName={safe_sam})',
+            attributes=['objectSid'],
+        )
+        if not conn.entries:
+            return None
+        entry = conn.entries[0]
+        if 'objectSid' not in entry or not entry.objectSid.raw_values:
+            return None
+        return _sid_bytes_to_string(entry.objectSid.raw_values[0])
+    except Exception as e:
+        logger.warning("AD Connector: SID lookup failed: %s", e)
+        return None
+    finally:
+        try:
+            conn.unbind()
+        except Exception:
+            pass
+
+
 def lookup_user_ad_identity(sam_account_name):
     """The AD user object's directory path (as ordered RDN components, for
     building an x509.Name matching real ADCS's directory-path subject),

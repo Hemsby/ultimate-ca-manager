@@ -46,6 +46,7 @@ class CASigningMixin:
         ms_certificate_template_oid: str = None,
         override_subject: x509.Name = None,
         override_san: list = None,
+        requester_sid: str = None,
         cert_type: str = 'server_cert',
         extra_ekus: list = None,
     ) -> Tuple[str, str]:
@@ -68,6 +69,8 @@ class CASigningMixin:
             override_subject: forwarded to TrustStoreService.sign_csr — see
                 its docstring. Only WSTEP's Kerberos binding passes this.
             override_san: forwarded to TrustStoreService.sign_csr — see its
+                docstring. Only WSTEP's Kerberos binding passes this.
+            requester_sid: forwarded to TrustStoreService.sign_csr — see its
                 docstring. Only WSTEP's Kerberos binding passes this.
             cert_type: Signing profile for TrustStoreService.sign_csr —
                 decides the EKU ceiling. EST passes 'device_cert'; WSTEP
@@ -118,6 +121,7 @@ class CASigningMixin:
             ms_certificate_template_oid=ms_certificate_template_oid,
             override_subject=override_subject,
             override_san=override_san,
+            requester_sid=requester_sid,
             extra_ekus=extra_ekus,
         )
 

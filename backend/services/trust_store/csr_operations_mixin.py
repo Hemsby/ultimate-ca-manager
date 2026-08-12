@@ -51,6 +51,47 @@ def _certificate_template_extension(template_oid, major=100, minor=0):
     return x509.UnrecognizedExtension(_MS_CERTIFICATE_TEMPLATE_OID, der)
 
 
+_SID_SECURITY_EXT_OID = x509.ObjectIdentifier('1.3.6.1.4.1.311.25.2')
+_NTDS_OBJECT_SID_OID = '1.3.6.1.4.1.311.25.2.1'
+
+
+def _ad_security_extension(sid_string):
+    """Build the Microsoft SID security extension
+    (``szOID_NTDS_CA_SECURITY_EXT``, 1.3.6.1.4.1.311.25.2) real ADCS embeds
+    on AD-authenticated issuances for KB5014754 strong certificate mapping:
+    ``SEQUENCE OF [0] { type OBJECT IDENTIFIER, value [0] EXPLICIT OCTET
+    STRING }``, one entry, the OCTET STRING holding the requester's SID in
+    its ``"S-1-5-21-..."`` string form (not raw binary -- confirmed by
+    capturing a real cert's extension in the lab). ``cryptography`` has no
+    native type for this either, so hand-built with asn1crypto and wrapped
+    as UnrecognizedExtension -- same approach as
+    ``_certificate_template_extension`` above. Byte-for-byte verified
+    against a real ADCS-issued certificate's own extension for the same
+    SID (see test_ad_security_extension.py)."""
+    from asn1crypto import core as asn1_core
+
+    class _SidValue(asn1_core.OctetString):
+        pass
+
+    class _SecurityExtEntry(asn1_core.Sequence):
+        class_ = 2  # context
+        tag = 0
+        _fields = [
+            ('type', asn1_core.ObjectIdentifier),
+            ('value', _SidValue, {'explicit': 0}),
+        ]
+
+    class _SecurityExt(asn1_core.SequenceOf):
+        _child_spec = _SecurityExtEntry
+
+    entry = _SecurityExtEntry({
+        'type': _NTDS_OBJECT_SID_OID,
+        'value': sid_string.encode('ascii'),
+    })
+    der = _SecurityExt([entry]).dump()
+    return x509.UnrecognizedExtension(_SID_SECURITY_EXT_OID, der)
+
+
 _LEAF_CA_ONLY_EXTENSION_OIDS = frozenset({
     ExtensionOID.NAME_CONSTRAINTS,
     ExtensionOID.POLICY_CONSTRAINTS,
@@ -416,6 +457,7 @@ class CSROperationsMixin:
         ms_certificate_template_oid: Optional[str] = None,
         override_subject: Optional[x509.Name] = None,
         override_san: Optional[List[x509.GeneralName]] = None,
+        requester_sid: Optional[str] = None,
     ) -> bytes:
         """Sign a CSR with a CA. ``renewal_of``: existing certificate this
         signing renews — its names are graced by NameConstraints validation.
@@ -447,7 +489,13 @@ class CSROperationsMixin:
         DNS name or email address, so synthesis would build a nonsensical
         DNSName SAN entry — real ADCS instead puts the user's UPN in SAN as
         a Microsoft OtherName, which the caller (wstep_service) builds and
-        passes here directly."""
+        passes here directly.
+        ``requester_sid``: the authenticated requester's AD SID (
+        ``"S-1-5-21-..."`` string form), embedded as the SID security
+        extension (KB5014754 strong certificate mapping) — only WSTEP's
+        Kerberos binding passes this, independent of ``override_subject``
+        (applies to naked and normal CSRs alike, since it identifies who
+        authenticated, not what subject was requested)."""
         from utils.eku_validation import normalize_extra_ekus, to_object_identifiers, merge_eku_lists
 
         # Load CSR
@@ -799,6 +847,18 @@ class CSROperationsMixin:
         if ms_certificate_template_oid:
             builder = builder.add_extension(
                 _certificate_template_extension(ms_certificate_template_oid),
+                critical=False,
+            )
+
+        # Microsoft SID security extension (szOID_NTDS_CA_SECURITY_EXT,
+        # 1.3.6.1.4.1.311.25.2) for KB5014754 strong certificate mapping —
+        # only WSTEP's Kerberos binding passes this, with the requester's
+        # own AD SID once resolved via the AD Connector. Non-critical,
+        # matching real ADCS's own issuance (confirmed against a captured
+        # real cert — see _ad_security_extension's docstring).
+        if requester_sid:
+            builder = builder.add_extension(
+                _ad_security_extension(requester_sid),
                 critical=False,
             )
 
