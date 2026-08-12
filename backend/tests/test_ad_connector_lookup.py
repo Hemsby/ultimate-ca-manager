@@ -7,6 +7,9 @@ Tests for services/ad_connector/lookup.py:
   failure, not found, empty attribute) must return None, never raise --
   the WSTEP naked-CSR fallback depends on that to fail safely closed
   (falling back to the existing rejection, never issuing something wrong).
+- _sid_bytes_to_string / lookup_object_sid: same fail-closed shape, for
+  KB5014754 strong certificate mapping. The golden case uses a REAL SID
+  captured this session from the lab, not a synthetic example.
 """
 import pytest
 
@@ -105,8 +108,9 @@ class TestRealmMatchesConnector:
 
 
 class _FakeAttr:
-    def __init__(self, value):
+    def __init__(self, value, raw_values=None):
         self.value = value
+        self.raw_values = raw_values if raw_values is not None else ([value] if value else [])
 
 
 class _FakeEntry:
@@ -198,6 +202,114 @@ class TestLookupComputerDnsHostname:
         monkeypatch.setattr(lookup, '_connect', lambda config: _FakeConnection(entries=[entry]))
         with app.app_context():
             assert lookup.lookup_computer_dns_hostname('WIN11$') == 'win11.hagland.domain'
+
+
+class TestSidBytesToString:
+    """Pure-function coverage of _sid_bytes_to_string -- no DB/Flask app
+    needed. The golden case is a REAL SID captured this session via a live
+    LDAP query against the lab's WIN11$ machine account (raw_values), not
+    a synthetic example -- cross-validated against a real ADCS-issued
+    certificate's own SID security extension sharing the same domain-SID
+    prefix (see test_ad_security_extension.py)."""
+
+    _WIN11_RAW_SID = bytes([
+        0x01, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05,
+        0x15, 0x00, 0x00, 0x00,
+        0xd1, 0xba, 0xd9, 0x5f,
+        0x3d, 0xff, 0x98, 0x25,
+        0x71, 0x1a, 0xd2, 0x57,
+        0x51, 0x04, 0x00, 0x00,
+    ])
+
+    def test_real_captured_sid(self):
+        assert lookup._sid_bytes_to_string(self._WIN11_RAW_SID) == \
+            'S-1-5-21-1608104657-630783805-1473387121-1105'
+
+    def test_empty_bytes_returns_none(self):
+        assert lookup._sid_bytes_to_string(b'') is None
+
+    def test_none_returns_none(self):
+        assert lookup._sid_bytes_to_string(None) is None
+
+    def test_too_short_returns_none(self):
+        assert lookup._sid_bytes_to_string(b'short') is None
+
+    def test_length_mismatch_for_declared_sub_authority_count_returns_none(self):
+        """byte[1] claims 5 sub-authorities but only 4 are present --
+        malformed/truncated directory data must fail closed, not parse
+        partial garbage."""
+        truncated = self._WIN11_RAW_SID[:-4]
+        assert lookup._sid_bytes_to_string(truncated) is None
+
+
+class TestLookupObjectSid:
+    """Mirrors TestLookupComputerDnsHostname's exact fail-closed shape --
+    every failure mode returns None, never raises."""
+
+    def test_not_configured_returns_none(self, app):
+        with app.app_context():
+            ADConnectorConfig.query.delete()
+            db.session.commit()
+            assert lookup.lookup_object_sid('WIN11$') is None
+
+    def test_disabled_returns_none(self, app):
+        _configure(None, app, enabled=False)
+        with app.app_context():
+            assert lookup.lookup_object_sid('WIN11$') is None
+
+    def test_bind_failure_returns_none(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        monkeypatch.setattr(lookup, '_connect', lambda config: (_ for _ in ()).throw(RuntimeError('bind failed')))
+        with app.app_context():
+            assert lookup.lookup_object_sid('WIN11$') is None
+
+    def test_not_found_returns_none(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        monkeypatch.setattr(lookup, '_connect', lambda config: _FakeConnection(entries=[]))
+        with app.app_context():
+            assert lookup.lookup_object_sid('WIN11$') is None
+
+    def test_missing_attribute_returns_none(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        entry = _FakeEntry({})
+        monkeypatch.setattr(lookup, '_connect', lambda config: _FakeConnection(entries=[entry]))
+        with app.app_context():
+            assert lookup.lookup_object_sid('WIN11$') is None
+
+    def test_empty_raw_values_returns_none(self, app, monkeypatch):
+        # _FakeEntry wraps every dict value in _FakeAttr itself (see its
+        # __init__) -- passing b'' here (not an already-built _FakeAttr)
+        # lets _FakeAttr's own default (raw_values=[value] if value else
+        # []) produce a genuinely empty raw_values list, matching what a
+        # real empty/missing objectSid attribute would look like.
+        _configure(None, app, enabled=True)
+        entry = _FakeEntry({'objectSid': b''})
+        monkeypatch.setattr(lookup, '_connect', lambda config: _FakeConnection(entries=[entry]))
+        with app.app_context():
+            assert lookup.lookup_object_sid('WIN11$') is None
+
+    def test_search_exception_returns_none(self, app, monkeypatch):
+        _configure(None, app, enabled=True)
+        monkeypatch.setattr(
+            lookup, '_connect',
+            lambda config: _FakeConnection(search_raises=RuntimeError('search failed')),
+        )
+        with app.app_context():
+            assert lookup.lookup_object_sid('WIN11$') is None
+
+    def test_success_returns_sid_string(self, app, monkeypatch):
+        """Reads raw_values (the real binary SID), not .value -- ldap3
+        does not auto-format objectSid (confirmed empirically against the
+        lab), so .value would give mangled bytes-as-string garbage."""
+        _configure(None, app, enabled=True)
+        raw_sid = TestSidBytesToString._WIN11_RAW_SID
+        # Passing the raw bytes directly (not a pre-built _FakeAttr) --
+        # _FakeEntry wraps it in _FakeAttr(raw_sid) itself, whose default
+        # raw_values=[raw_sid] matches what ldap3's real raw_values gives.
+        entry = _FakeEntry({'objectSid': raw_sid})
+        monkeypatch.setattr(lookup, '_connect', lambda config: _FakeConnection(entries=[entry]))
+        with app.app_context():
+            assert lookup.lookup_object_sid('WIN11$') == 'S-1-5-21-1608104657-630783805-1473387121-1105'
 
 
 class _FakeSequentialConnection:

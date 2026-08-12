@@ -156,6 +156,11 @@ def test_issue_succeeds_with_authenticated_negotiation(client, app, wstep_kerber
         negotiate_auth, 'authenticate_negotiate',
         lambda auth_header, connection_key: _authenticated_result('bXV0dWFsLXRva2Vu'),
     )
+    # Strong cert mapping (KB5014754) is unconditional whenever AD Connector
+    # is configured+enabled -- this test doesn't configure it itself, but
+    # module-scoped app/db state can leak an enabled connector in from an
+    # earlier test in this file, so mock defensively regardless.
+    monkeypatch.setattr(ad_lookup, 'lookup_object_sid', lambda sam_account_name: 'S-1-5-21-1-2-3-1000')
 
     csr, key = _make_csr()
     r = client.post(
@@ -234,6 +239,7 @@ class TestNakedCsrSubjectDerivation:
             ad_lookup, 'lookup_computer_dns_hostname',
             lambda sam_account_name: 'win11.hagland.domain',
         )
+        monkeypatch.setattr(ad_lookup, 'lookup_object_sid', lambda sam_account_name: 'S-1-5-21-1-2-3-1000')
 
         csr, key = _make_naked_csr()
         r = client.post(
@@ -335,6 +341,7 @@ class TestNakedCsrSubjectDerivation:
                 'upn': self._GOLDEN_USER_UPN,
             },
         )
+        monkeypatch.setattr(ad_lookup, 'lookup_object_sid', lambda sam_account_name: 'S-1-5-21-1-2-3-1000')
 
         csr, key = _make_naked_csr()
         r = client.post(
@@ -387,6 +394,7 @@ class TestNakedCsrSubjectDerivation:
                 'mail': self._GOLDEN_USER_UPN,
             },
         )
+        monkeypatch.setattr(ad_lookup, 'lookup_object_sid', lambda sam_account_name: 'S-1-5-21-1-2-3-1000')
 
         csr, key = _make_naked_csr()
         r = client.post(
@@ -547,6 +555,7 @@ class TestEnrollAcl:
             ad_lookup, 'is_member_of_group',
             lambda sam_account_name, group: (sam_account_name, group) == ('HOST$', 'VPN-Enroll'),
         )
+        monkeypatch.setattr(ad_lookup, 'lookup_object_sid', lambda sam_account_name: 'S-1-5-21-1-2-3-1000')
 
         try:
             csr, key = _make_csr()
@@ -625,6 +634,7 @@ class TestEnrollAcl:
             raise AssertionError('is_member_of_group must not be called when nothing is restricted')
 
         monkeypatch.setattr(ad_lookup, 'is_member_of_group', _fail_if_called)
+        monkeypatch.setattr(ad_lookup, 'lookup_object_sid', lambda sam_account_name: 'S-1-5-21-1-2-3-1000')
 
         try:
             csr, key = _make_csr()
@@ -694,6 +704,7 @@ class TestEnrollAcl:
             ad_lookup, 'is_member_of_group',
             lambda sam_account_name, group: (sam_account_name, group) == ('HOST$', 'VPN-Enroll'),
         )
+        monkeypatch.setattr(ad_lookup, 'lookup_object_sid', lambda sam_account_name: 'S-1-5-21-1-2-3-1000')
 
         try:
             csr, key = _make_naked_csr()
