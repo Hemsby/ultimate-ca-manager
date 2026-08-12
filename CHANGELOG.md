@@ -10,6 +10,15 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+## [2.208] - 2026-08-12
+
+### Added
+- WSTEP: per-template pinned subject fields (C/ST/L/O/OU) — CSR/AD-supplied values overridden, CN/SAN stay dynamic (#274, contributed by @Hemsby)
+- WSTEP: AD SID security extension (szOID_NTDS_CA_SECURITY_EXT) on Kerberos-bound issuance for KB5014754 strong certificate mapping (#275, contributed by @Hemsby)
+
+### Fixed
+- Kerberos availability check now requires the gssapi backend, not just importable spnego (which ships transitively) — XCEP no longer advertises/attempts a broken Kerberos binding (#273, contributed by @Hemsby)
+
 ## [2.207] - 2026-08-11
 
 ### Added
