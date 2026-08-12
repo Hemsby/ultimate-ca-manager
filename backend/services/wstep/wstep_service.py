@@ -398,6 +398,102 @@ def _required_enroll_acl_groups(ca, matched_template):
     return groups
 
 
+_PINNED_FIELD_OIDS = {
+    'C': NameOID.COUNTRY_NAME,
+    'ST': NameOID.STATE_OR_PROVINCE_NAME,
+    'L': NameOID.LOCALITY_NAME,
+    'O': NameOID.ORGANIZATION_NAME,
+    'OU': NameOID.ORGANIZATIONAL_UNIT_NAME,
+}
+# Conventional root-to-leaf order (x509.Name's own storage/DER order --
+# see _x509_name_from_dn_components's docstring) for the pinned block,
+# ahead of whatever CN/DC/E= attributes remain.
+_PINNED_FIELD_ORDER = ['C', 'ST', 'L', 'O', 'OU']
+
+
+def _template_pinned_fields(template):
+    """``{field: value}`` for a template's ``pinned_subject_fields`` JSON
+    column, filtered to the known pinnable keys (O/OU/C/ST/L -- never CN)
+    with a truthy value. ``{}`` for no template, no column value, or
+    unparseable JSON -- never raises."""
+    if not template or not template.pinned_subject_fields:
+        return {}
+    try:
+        import json
+        raw = json.loads(template.pinned_subject_fields)
+    except (TypeError, ValueError):
+        return {}
+    return {k: v for k, v in raw.items() if k in _PINNED_FIELD_OIDS and v}
+
+
+def _required_pinned_subject_fields(ca, matched_template):
+    """Pinned O/OU/C/ST/L values to force onto this WSTEP issuance's
+    subject, overriding whatever the client's CSR (or AD-derivation)
+    supplied for that specific field -- CN/SAN are never touched here.
+
+    Mirrors ``_required_enroll_acl_groups``'s template-resolution shape: a
+    confident ``_match_template`` result trusts only that template's own
+    pins, while an unmatched CSR (typically naked -- see that function's
+    docstring for why this is the common case for GPO autoenrollment, not
+    an edge case) falls back to every template resolvable for this CA.
+
+    Unlike Enroll ACL's groups, though, pinned field *values* can't be
+    OR'd across multiple fallback candidates -- there's no "any of these
+    satisfies" semantics for "what should O actually be." If two
+    CA-resolvable candidates pin the same field to different values, that
+    field is skipped (not enforced) and a warning is logged, rather than
+    silently picking a winner an admin never chose. Non-conflicting
+    fields, and CN/SAN, still apply normally.
+    """
+    if matched_template is not None:
+        return _template_pinned_fields(matched_template)
+
+    try:
+        from models import CertificateTemplate
+        from services.xcep.policy_builder import _resolve_templates_for_ca
+    except Exception:
+        return {}
+
+    all_active = CertificateTemplate.query.filter_by(is_active=True).all()
+    candidates = _resolve_templates_for_ca(ca, all_active)
+
+    seen = {}
+    for template in candidates:
+        for field, value in _template_pinned_fields(template).items():
+            seen.setdefault(field, set()).add(value)
+
+    result = {}
+    for field, values in seen.items():
+        if len(values) == 1:
+            result[field] = next(iter(values))
+        else:
+            logger.warning(
+                "WSTEP pinned subject fields: conflicting values for %r "
+                "across CA-wide candidate templates (%r) -- skipping",
+                field, sorted(values),
+            )
+    return result
+
+
+def _merge_pinned_subject_fields(subject, pinned_fields):
+    """Rebuilds ``subject`` (an ``x509.Name``) with ``pinned_fields``' RDNs
+    forced in, replacing any existing attribute of the same type and
+    leaving everything else (CN, DC components, E=...) untouched and in
+    its existing relative position. ``x509.Name`` is immutable, so this
+    always rebuilds the full attribute list -- same approach as
+    ``_x509_name_from_dn_components``. No-op (returns ``subject``
+    unchanged) when ``pinned_fields`` is empty."""
+    if not pinned_fields:
+        return subject
+    pinned_oids = {_PINNED_FIELD_OIDS[f] for f in pinned_fields}
+    remaining = [attr for attr in subject if attr.oid not in pinned_oids]
+    pinned_attrs = [
+        x509.NameAttribute(_PINNED_FIELD_OIDS[f], pinned_fields[f])
+        for f in _PINNED_FIELD_ORDER if f in pinned_fields
+    ]
+    return x509.Name(pinned_attrs + remaining)
+
+
 def _user_ad_derivation_enabled(ca):
     """Whether any template resolvable for ``ca`` has opted into
     AD-derived user subjects (``CertificateTemplate.ad_derived_subject``).
@@ -561,6 +657,21 @@ def issue(ca, csr_der, validity_days, source='wstep', require_pop=True, kerberos
     if matched_template is not None:
         from services.xcep.policy_builder import _policy_oid_for_template
         template_oid = _policy_oid_for_template(ca, matched_template)
+
+    # Pinned subject fields ("hybrid subject template"): O/OU/C/ST/L an
+    # admin has forced onto this template, overriding whatever the client's
+    # own CSR (or the AD-derivation above) supplied for that specific
+    # field -- CN/SAN stay dynamic either way. Applies to every WSTEP
+    # issuance path (Kerberos-bound naked or manually-typed CSR, and
+    # UsernamePassword-bound alike), unlike Enroll ACL, since pinning
+    # doesn't need a per-request AD identity, just the matched template's
+    # own static config. Runs after _validate_csr above, so it can never
+    # rescue an otherwise-rejected fully-naked CSR into being issuable --
+    # it only ever overlays onto a request whose subject is already valid.
+    pinned_fields = _required_pinned_subject_fields(ca, matched_template)
+    if pinned_fields:
+        base_subject = override_subject if override_subject is not None else csr.subject
+        override_subject = _merge_pinned_subject_fields(base_subject, pinned_fields)
 
     # Enroll ACL: only gates the Kerberos-bound path -- the UsernamePassword
     # path authenticates a single shared SystemConfig credential, not a

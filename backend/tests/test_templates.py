@@ -377,6 +377,97 @@ class TestUpdateTemplate:
 
 
 # ============================================================
+# 5b. Pinned Subject Fields ("hybrid subject template")
+# ============================================================
+
+class TestPinnedSubjectFields:
+    """create/update/duplicate round-trip + validation for
+    pinned_subject_fields (see wstep_service.py for the actual WSTEP
+    issuance-time enforcement, covered in test_wstep_pinned_subject_fields.py)."""
+
+    def test_create_with_pinned_fields(self, auth_client):
+        r, data = _create_template(
+            auth_client, name='Pinned Create Tpl',
+            pinned_subject_fields={'O': 'Acme Corp', 'OU': 'IT'},
+        )
+        assert r.status_code in (200, 201)
+        assert data['pinned_subject_fields'] == {'O': 'Acme Corp', 'OU': 'IT'}
+
+    def test_create_without_pinned_fields_defaults_empty(self, auth_client):
+        r, data = _create_template(auth_client, name='Pinned Default Tpl')
+        assert r.status_code in (200, 201)
+        assert data['pinned_subject_fields'] == {}
+
+    def test_create_rejects_unknown_field(self, auth_client):
+        r, _ = _create_template(
+            auth_client, name='Pinned Unknown Field Tpl',
+            pinned_subject_fields={'CN': 'not-allowed'},
+        )
+        assert_error(r, 400)
+
+    def test_create_rejects_invalid_country_code(self, auth_client):
+        r, _ = _create_template(
+            auth_client, name='Pinned Bad Country Tpl',
+            pinned_subject_fields={'C': 'USA'},  # must be exactly 2 letters
+        )
+        assert_error(r, 400)
+
+    def test_create_uppercases_country_code(self, auth_client):
+        r, data = _create_template(
+            auth_client, name='Pinned Lowercase Country Tpl',
+            pinned_subject_fields={'C': 'us'},
+        )
+        assert r.status_code in (200, 201)
+        assert data['pinned_subject_fields']['C'] == 'US'
+
+    def test_create_rejects_non_object_payload(self, auth_client):
+        r, _ = _create_template(
+            auth_client, name='Pinned Non Object Tpl',
+            pinned_subject_fields='not-an-object',
+        )
+        assert_error(r, 400)
+
+    def test_update_sets_pinned_fields(self, auth_client):
+        r, created = _create_template(auth_client, name='Pinned Update Tpl')
+        tid = created['id']
+        r = auth_client.put(f'/api/v2/templates/{tid}',
+                            data=json.dumps({'pinned_subject_fields': {'O': 'Acme Corp'}}),
+                            content_type='application/json')
+        data = assert_success(r)
+        assert data['pinned_subject_fields'] == {'O': 'Acme Corp'}
+
+    def test_update_clears_pinned_fields(self, auth_client):
+        r, created = _create_template(
+            auth_client, name='Pinned Clear Tpl',
+            pinned_subject_fields={'O': 'Acme Corp'},
+        )
+        tid = created['id']
+        r = auth_client.put(f'/api/v2/templates/{tid}',
+                            data=json.dumps({'pinned_subject_fields': {}}),
+                            content_type='application/json')
+        data = assert_success(r)
+        assert data['pinned_subject_fields'] == {}
+
+    def test_update_rejects_unknown_field(self, auth_client):
+        r, created = _create_template(auth_client, name='Pinned Update Bad Tpl')
+        tid = created['id']
+        r = auth_client.put(f'/api/v2/templates/{tid}',
+                            data=json.dumps({'pinned_subject_fields': {'CN': 'nope'}}),
+                            content_type='application/json')
+        assert_error(r, 400)
+
+    def test_duplicate_preserves_pinned_fields(self, auth_client):
+        r, created = _create_template(
+            auth_client, name='Pinned Duplicate Tpl',
+            pinned_subject_fields={'O': 'Acme Corp', 'C': 'US'},
+        )
+        tid = created['id']
+        r = auth_client.post(f'/api/v2/templates/{tid}/duplicate')
+        clone = get_json(r)['data']
+        assert clone['pinned_subject_fields'] == {'O': 'Acme Corp', 'C': 'US'}
+
+
+# ============================================================
 # 6. Delete Template
 # ============================================================
 

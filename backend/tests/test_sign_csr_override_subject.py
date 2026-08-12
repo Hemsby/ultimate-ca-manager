@@ -116,3 +116,58 @@ class TestOverrideSubject:
         with app.app_context():
             cert = _sign(csr, ca_cert, ca_key)
         assert cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == 'normal.example.com'
+
+
+class TestPinnedSubjectFieldsNameConstraints:
+    """The "hybrid subject template" feature (wstep_service._merge_pinned_
+    subject_fields) merges pinned O/OU/C/ST/L into override_subject before
+    it reaches sign_csr, same as every other override_subject caller --
+    see wstep_service.issue()'s docstring for why that ordering matters.
+
+    NameConstraints validation in this codebase (constraints_mixin.py's
+    validate_name_constraints) only ever checks the subject's CN (mapped to
+    DNSName/RFC822Name) and SAN entries -- never O/OU/C/ST/L directly, since
+    RFC 5280 DirectoryName subtree matching isn't implemented here. So
+    pinning org fields can't itself trigger a NameConstraints violation;
+    what actually matters is that merging pinned fields into the subject
+    doesn't corrupt or bypass the *existing* CN check -- these tests prove
+    that, rather than a DirectoryName-subtree scenario this codebase
+    doesn't implement."""
+
+    def test_pinned_org_fields_do_not_bypass_cn_name_constraints(self, app):
+        """A CN outside the CA's permitted DNSName subtree must still be
+        rejected even when a pinned org field is merged into the same
+        subject -- proves the merge doesn't accidentally skip or break the
+        existing CN check."""
+        from services.wstep.wstep_service import _merge_pinned_subject_fields
+
+        constraints = x509.NameConstraints(
+            permitted_subtrees=[x509.DNSName('corp.example')],
+            excluded_subtrees=None,
+        )
+        ca_cert, ca_key = _test_ca(name_constraints=constraints)
+        csr = _naked_csr()
+        base = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'win11.hagland.domain')])
+        merged = _merge_pinned_subject_fields(base, {'O': 'Acme Corp'})
+        with app.app_context():
+            with pytest.raises(ValueError):
+                _sign(csr, ca_cert, ca_key, override_subject=merged)
+
+    def test_pinned_org_fields_preserved_alongside_permitted_cn(self, app):
+        """Within the permitted subtree, both the AD-derived/CSR-derived CN
+        and the pinned org fields land on the issued certificate together."""
+        from services.wstep.wstep_service import _merge_pinned_subject_fields
+
+        constraints = x509.NameConstraints(
+            permitted_subtrees=[x509.DNSName('hagland.domain')],
+            excluded_subtrees=None,
+        )
+        ca_cert, ca_key = _test_ca(name_constraints=constraints)
+        csr = _naked_csr()
+        base = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'win11.hagland.domain')])
+        merged = _merge_pinned_subject_fields(base, {'O': 'Acme Corp', 'OU': 'IT'})
+        with app.app_context():
+            cert = _sign(csr, ca_cert, ca_key, override_subject=merged)
+        assert cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == 'win11.hagland.domain'
+        assert cert.subject.get_attributes_for_oid(NameOID.ORGANIZATION_NAME)[0].value == 'Acme Corp'
+        assert cert.subject.get_attributes_for_oid(NameOID.ORGANIZATIONAL_UNIT_NAME)[0].value == 'IT'
