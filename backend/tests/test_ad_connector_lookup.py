@@ -277,8 +277,13 @@ class TestLookupObjectSid:
             assert lookup.lookup_object_sid('WIN11$') is None
 
     def test_empty_raw_values_returns_none(self, app, monkeypatch):
+        # _FakeEntry wraps every dict value in _FakeAttr itself (see its
+        # __init__) -- passing b'' here (not an already-built _FakeAttr)
+        # lets _FakeAttr's own default (raw_values=[value] if value else
+        # []) produce a genuinely empty raw_values list, matching what a
+        # real empty/missing objectSid attribute would look like.
         _configure(None, app, enabled=True)
-        entry = _FakeEntry({'objectSid': _FakeAttr('', raw_values=[])})
+        entry = _FakeEntry({'objectSid': b''})
         monkeypatch.setattr(lookup, '_connect', lambda config: _FakeConnection(entries=[entry]))
         with app.app_context():
             assert lookup.lookup_object_sid('WIN11$') is None
@@ -298,7 +303,10 @@ class TestLookupObjectSid:
         lab), so .value would give mangled bytes-as-string garbage."""
         _configure(None, app, enabled=True)
         raw_sid = TestSidBytesToString._WIN11_RAW_SID
-        entry = _FakeEntry({'objectSid': _FakeAttr('garbage-if-used', raw_values=[raw_sid])})
+        # Passing the raw bytes directly (not a pre-built _FakeAttr) --
+        # _FakeEntry wraps it in _FakeAttr(raw_sid) itself, whose default
+        # raw_values=[raw_sid] matches what ldap3's real raw_values gives.
+        entry = _FakeEntry({'objectSid': raw_sid})
         monkeypatch.setattr(lookup, '_connect', lambda config: _FakeConnection(entries=[entry]))
         with app.app_context():
             assert lookup.lookup_object_sid('WIN11$') == 'S-1-5-21-1608104657-630783805-1473387121-1105'
