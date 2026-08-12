@@ -66,6 +66,16 @@ class CertificateTemplate(db.Model):
     # services/wstep/wstep_service.py's issue().
     allowed_ad_group = db.Column(db.String(255))
 
+    # Optional per-field subject pins (O/OU/C/ST/L only -- never CN) that
+    # override whatever a client's CSR or AD-derivation supplies for that
+    # field on WSTEP issuance. JSON dict of only the fields actually pinned,
+    # e.g. {"O": "Acme Corp", "OU": "IT"} -- unset/empty means no override,
+    # matching every other per-template WSTEP opt-in here. Deliberately a
+    # separate column from dn_template, which is a UI-only prefill suggestion
+    # (see IssueCertificateForm.jsx) an admin can freely edit, not an
+    # enforced value.
+    pinned_subject_fields = db.Column(db.Text)
+
     # Metadata
     created_at = db.Column(db.DateTime, default=utc_now)
     created_by = db.Column(db.String(80))
@@ -90,6 +100,7 @@ class CertificateTemplate(db.Model):
             "ad_derived_subject": bool(self.ad_derived_subject),
             "autoenroll_enabled": bool(self.autoenroll_enabled),
             "allowed_ad_group": self.allowed_ad_group,
+            "pinned_subject_fields": json.loads(self.pinned_subject_fields) if self.pinned_subject_fields else {},
             "created_at": utc_isoformat(self.created_at),
             "created_by": self.created_by,
             "updated_at": utc_isoformat(self.updated_at),

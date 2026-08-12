@@ -219,6 +219,11 @@ export default function TemplatesPage() {
                 {t('templates.enrollAclBadge')}
               </Badge>
             )}
+            {Object.keys(row.pinned_subject_fields || {}).length > 0 && (
+              <Badge variant="amber" size="sm" title={t('templates.pinnedSubjectBadgeTooltip')}>
+                {t('templates.pinnedSubjectBadge')}
+              </Badge>
+            )}
           </div>
         )
       },
@@ -376,6 +381,11 @@ export default function TemplatesPage() {
                 {t('templates.enrollAclBadge')}
               </Badge>
             )}
+            {Object.keys(selectedTemplate.pinned_subject_fields || {}).length > 0 && (
+              <Badge variant="amber" size="sm" title={t('templates.pinnedSubjectBadgeTooltip')}>
+                {t('templates.pinnedSubjectBadge')}
+              </Badge>
+            )}
           </div>
         }
       />
@@ -442,6 +452,15 @@ export default function TemplatesPage() {
         <CompactGrid columns={2}>
           <CompactField autoIcon="default" label={t('templates.autoenrollEnabled')} value={selectedTemplate.autoenroll_enabled ? t('common.enabled') : t('common.disabled')} />
           <CompactField autoIcon="default" label={t('templates.allowedAdGroup')} value={selectedTemplate.allowed_ad_group || t('templates.allowedAdGroupUnset')} />
+          <CompactField
+            autoIcon="default"
+            label={t('templates.pinnedSubjectFields')}
+            value={
+              Object.entries(selectedTemplate.pinned_subject_fields || {}).length > 0
+                ? Object.entries(selectedTemplate.pinned_subject_fields).map(([k, v]) => `${k}=${v}`).join(', ')
+                : t('templates.pinnedSubjectFieldsUnset')
+            }
+          />
         </CompactGrid>
       </CompactSection>
 
@@ -676,11 +695,13 @@ function buildInitialState(template) {
       san_types: ['dns', 'ip'],
       ad_derived_subject: false,
       autoenroll_enabled: false,
-      allowed_ad_group: ''
+      allowed_ad_group: '',
+      pinned_subject_fields: { O: '', OU: '', C: '', ST: '', L: '' }
     }
   }
   const dn = template.dn_template || {}
   const ext = template.extensions_template || {}
+  const pinned = template.pinned_subject_fields || {}
   return {
     name: template.name || '',
     description: template.description || '',
@@ -698,7 +719,11 @@ function buildInitialState(template) {
     san_types: ext.san_types || [],
     ad_derived_subject: template.ad_derived_subject || false,
     autoenroll_enabled: template.autoenroll_enabled || false,
-    allowed_ad_group: template.allowed_ad_group || ''
+    allowed_ad_group: template.allowed_ad_group || '',
+    pinned_subject_fields: {
+      O: pinned.O || '', OU: pinned.OU || '', C: pinned.C || '',
+      ST: pinned.ST || '', L: pinned.L || ''
+    }
   }
 }
 
@@ -714,6 +739,8 @@ function TemplateForm({ template, onSubmit, onCancel }) {
   const set = (field, value) => setFormData(p => ({ ...p, [field]: value }))
   const updateSubject = (field, value) =>
     setFormData(p => ({ ...p, subject: { ...p.subject, [field]: value } }))
+  const updatePinned = (field, value) =>
+    setFormData(p => ({ ...p, pinned_subject_fields: { ...p.pinned_subject_fields, [field]: value } }))
 
   const toggleCheckbox = (field, item) => {
     setFormData(p => {
@@ -744,7 +771,12 @@ function TemplateForm({ template, onSubmit, onCancel }) {
         },
         ad_derived_subject: formData.ad_derived_subject,
         autoenroll_enabled: formData.autoenroll_enabled,
-        allowed_ad_group: formData.allowed_ad_group.trim()
+        allowed_ad_group: formData.allowed_ad_group.trim(),
+        pinned_subject_fields: Object.fromEntries(
+          Object.entries(formData.pinned_subject_fields)
+            .map(([k, v]) => [k, v.trim()])
+            .filter(([, v]) => v)
+        )
       })
     } finally {
       setLoading(false)
@@ -861,6 +893,18 @@ function TemplateForm({ template, onSubmit, onCancel }) {
           className="mt-3"
         />
         <p className="text-xs text-text-secondary mt-1">{t('templates.allowedAdGroupDescription')}</p>
+
+        <div className="mt-4">
+          <p className="text-xs font-medium text-text-primary">{t('templates.pinnedSubjectFields')}</p>
+          <p className="text-xs text-text-secondary mt-1 mb-2">{t('templates.pinnedSubjectFieldsDescription')}</p>
+          <div className="grid grid-cols-3 gap-4">
+            <Input label={t('templates.pinnedCountry')} value={formData.pinned_subject_fields.C} onChange={(e) => updatePinned('C', e.target.value)} placeholder="US" />
+            <Input label={t('templates.pinnedState')} value={formData.pinned_subject_fields.ST} onChange={(e) => updatePinned('ST', e.target.value)} placeholder="California" />
+            <Input label={t('templates.pinnedLocality')} value={formData.pinned_subject_fields.L} onChange={(e) => updatePinned('L', e.target.value)} placeholder="San Francisco" />
+            <Input label={t('templates.pinnedOrganization')} value={formData.pinned_subject_fields.O} onChange={(e) => updatePinned('O', e.target.value)} placeholder={t('templates.orgPlaceholder')} />
+            <Input label={t('templates.pinnedOrganizationalUnit')} value={formData.pinned_subject_fields.OU} onChange={(e) => updatePinned('OU', e.target.value)} placeholder="IT Department" />
+          </div>
+        </div>
       </div>
 
       {/* Extensions */}

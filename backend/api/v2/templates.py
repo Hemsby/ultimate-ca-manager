@@ -15,6 +15,7 @@ from models.certificate_template import CertificateTemplate
 from models.policy import CertificatePolicy
 from services.audit_service import AuditService
 from services.template_service import TemplateService
+from utils.dn_validation import validate_dn_field
 from datetime import datetime
 import traceback
 
@@ -54,8 +55,40 @@ _VALID_TEMPLATE_TYPES = {
 }
 
 
+_PINNABLE_SUBJECT_FIELDS = {'O', 'OU', 'C', 'ST', 'L'}
+
+
+def _clean_pinned_subject_fields(raw):
+    """Returns (cleaned_dict, err_msg). Uppercases C, validates each present
+    field via validate_dn_field (same check cert_create.py's manual-issuance
+    path already applies to these same five DN keys), rejects unknown keys
+    (including CN -- pinning never touches CN, only WSTEP's dynamic-CN/SAN
+    contract stays intact)."""
+    if not raw:
+        return {}, None
+    if not isinstance(raw, dict):
+        return None, 'pinned_subject_fields must be an object'
+    cleaned = {}
+    for key, value in raw.items():
+        if key not in _PINNABLE_SUBJECT_FIELDS:
+            return None, f'Unsupported pinned subject field: {key}'
+        if not value:
+            continue
+        value = value.strip().upper() if key == 'C' else value.strip()
+        ok, err = validate_dn_field(key, value)
+        if not ok:
+            return None, err
+        cleaned[key] = value
+    return cleaned, None
+
+
 def _validate_template_payload(data, *, partial=False):
     """Returns (ok, err_msg). Sanitises validity_days/key_type/digest/template_type."""
+    if 'pinned_subject_fields' in data:
+        cleaned, err = _clean_pinned_subject_fields(data['pinned_subject_fields'])
+        if err:
+            return False, err
+        data['pinned_subject_fields'] = cleaned
     if 'validity_days' in data:
         try:
             v = int(data['validity_days'])
@@ -244,6 +277,7 @@ def create_template():
         ad_derived_subject=bool(data.get('ad_derived_subject', False)),
         autoenroll_enabled=bool(data.get('autoenroll_enabled', False)),
         allowed_ad_group=(data.get('allowed_ad_group') or '').strip()[:255] or None,
+        pinned_subject_fields=json.dumps(data.get('pinned_subject_fields') or {}),
         created_by=g.current_user.username
     )
 
@@ -356,6 +390,9 @@ def update_template(template_id):
 
     if 'allowed_ad_group' in data:
         template.allowed_ad_group = (data['allowed_ad_group'] or '').strip()[:255] or None
+
+    if 'pinned_subject_fields' in data:
+        template.pinned_subject_fields = json.dumps(data['pinned_subject_fields'] or {})
 
     template.updated_by = g.current_user.username
     template.updated_at = utc_now()
@@ -515,6 +552,7 @@ def duplicate_template(template_id):
         ad_derived_subject=template.ad_derived_subject,
         autoenroll_enabled=template.autoenroll_enabled,
         allowed_ad_group=template.allowed_ad_group,
+        pinned_subject_fields=template.pinned_subject_fields,
         created_by=g.current_user.username
     )
 
