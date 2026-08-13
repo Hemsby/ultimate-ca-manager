@@ -22,10 +22,20 @@ export default {
           { label: 'Importer/Exporter', text: 'Partager des modèles sous forme de fichiers JSON entre instances UCM' },
         ]
       },
+      {
+        title: 'Autoenrollment Windows',
+        items: [
+          { label: 'Autoriser l\'autoenrollment', text: 'Annonce le modèle avec autoEnroll=true dans la Certificate Enrollment Policy afin que les clients GPO/Kerberos le demandent automatiquement à l\'ouverture de session. Désactivé par défaut — l\'enrôlement manuel reste possible sans lui' },
+          { label: 'Construire le sujet depuis Active Directory', text: 'Dériver le sujet et les SAN depuis l\'objet AD du demandeur (via le connecteur AD) au lieu d\'exiger que le client les fournisse — pour l\'autoenrollment GPO sans intervention' },
+          { label: 'Restreindre l\'enrôlement à un groupe AD', text: 'Seuls les membres du groupe AD configuré (appartenance imbriquée incluse) peuvent enrôler via le point de terminaison Kerberos. Vide = tout principal authentifié. Non appliqué sur le point de terminaison Username/Password' },
+          { label: 'Champs de sujet épinglés', text: 'Force les valeurs C/ST/L/O/OU sur chaque certificat émis via WSTEP, en écrasant le CSR ou la dérivation AD pour ces champs. Le CN et les SAN ne sont jamais affectés — laissez un champ vide pour le garder dynamique' },
+        ]
+      },
     ],
     tips: [
       'Créez des modèles séparés pour les serveurs TLS, les clients et la signature de code',
       'Utilisez l\'action Dupliquer pour créer rapidement des variantes d\'un modèle',
+      'Les modèles avec indicateurs d\'autoenrollment affichent des badges AD / Auto / ACL / Épinglé dans la liste',
     ],
   },
   helpGuides: {
@@ -64,6 +74,26 @@ Lors de l'émission d'un certificat ou de la signature d'une CSR, sélectionnez 
 - Les champs du sujet (vous pouvez les modifier)
 - L'utilisation de la clé et l'utilisation étendue de la clé
 - La période de validité
+
+## Indicateurs d'autoenrollment Windows
+
+Les modèles portent trois indicateurs opt-in utilisés par les protocoles d'autoenrollment Windows (XCEP/WSTEP, configurés dans **Paramètres → Autoenrollment Windows**) :
+
+- **Autoriser l'autoenrollment** — Annonce le modèle avec \`autoEnroll=true\` dans la Certificate Enrollment Policy, afin que les clients authentifiés GPO/Kerberos le demandent automatiquement à l'ouverture de session, sans action de l'utilisateur. Désactivé par défaut — comme sur un vrai ADCS, un modèle peut toujours être enrôlé manuellement (MMC « Demander un nouveau certificat », \`certreq\`) sans cet indicateur, puisque Enroll et Autoenroll sont des permissions distinctes.
+- **Construire le sujet depuis Active Directory** — Pour l'autoenrollment GPO sans intervention : dérive le sujet et les SAN du certificat depuis l'objet AD du demandeur (via le connecteur AD) au lieu d'exiger que le client les fournisse.
+- **Restreindre l'enrôlement à un groupe AD** — Seuls les principaux appartenant au groupe Active Directory configuré (appartenance imbriquée incluse) peuvent enrôler avec ce modèle via le point de terminaison authentifié Kerberos. Saisissez un nom de groupe ou un DN complet ; laissez vide pour autoriser tout principal authentifié, comme le défaut d'un vrai ADCS. Non appliqué sur le point de terminaison Username/Password, qui n'a pas d'identité par requête à vérifier.
+
+Les modèles portant ces indicateurs affichent des badges **AD**, **Auto** et **ACL** dans la liste des modèles.
+
+## Champs de sujet épinglés
+
+Un modèle peut **épingler** les champs organisationnels du sujet — **C, ST, L, O, OU** — pour les certificats émis via WSTEP. Une valeur épinglée est imposée sur chaque certificat émis, quelle que soit la valeur fournie par le CSR du client ou par la dérivation Active Directory pour ce champ.
+
+- **Le Common Name et les Subject Alternative Names ne sont jamais affectés** — ils restent dynamiques par demandeur
+- Laissez un champ vide pour le garder dynamique
+- Les modèles avec champs épinglés affichent un badge **Épinglé**, et les valeurs épinglées apparaissent dans le panneau de détails du modèle
+
+Utilisez cette fonction pour garantir une identité organisationnelle uniforme (p. ex. un \`O\` et un \`C\` fixes) sur un parc autoenrôlé, indépendamment de ce que chaque client Windows soumet.
 
 ## Dupliquer des modèles
 

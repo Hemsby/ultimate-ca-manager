@@ -17,6 +17,7 @@ export default {
           { label: 'Signierende CA', text: 'Die CA, deren privater Schlüssel Zeitstempel-Token signiert — muss eine gültige, nicht abgelaufene CA sein' },
           { label: 'Richtlinien-OID', text: 'Object Identifier für die TSA-Richtlinie (z.B. 1.2.3.4.1) — in jeder Zeitstempel-Antwort enthalten' },
           { label: 'Aktivieren/Deaktivieren', text: 'Den TSA-Endpunkt ein- oder ausschalten, ohne die Konfiguration zu verlieren' },
+          { label: 'Dediziertes Zertifikat erforderlich', text: 'Opt-in: Zeitstempel nicht mit dem CA-Zertifikat selbst signieren — erfordert ein dediziertes End-Entity-Signaturzertifikat mit kritischer timeStamping-EKU (RFC 3161)' },
         ]
       },
       {

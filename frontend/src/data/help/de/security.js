@@ -5,6 +5,15 @@ export default {
     overview: 'Konfigurieren Sie Passwortrichtlinien, Sitzungsverwaltung, Ratenbegrenzung und Netzwerksicherheit. Diese Einstellungen gelten systemweit und betreffen alle Benutzerkonten.',
     sections: [
       {
+        title: 'Verschlüsselung privater Schlüssel',
+        items: [
+          { label: 'Status & Zähler', text: 'Zeigt, ob die Verschlüsselung aktiviert ist und wie viele gespeicherte private Schlüssel verschlüsselt bzw. unverschlüsselt sind' },
+          { label: 'Aktivieren / Deaktivieren', text: 'Alle privaten Schlüssel von CAs und Zertifikaten mit AES-256 unter einer Master-Key-Datei verschlüsseln — sichern Sie die Schlüsseldatei sofort, oder deaktivieren Sie die Verschlüsselung, um zur Klartextspeicherung zurückzukehren' },
+          { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: 'Opt-in-Umgebungsvariable: Start ohne expliziten Datenbank-Verschlüsselungsschlüssel verweigern' },
+          { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: 'Opt-in-Umgebungsvariable: Start verweigern, solange die Verschlüsselung privater Schlüssel nicht aktiviert ist' },
+        ]
+      },
+      {
         title: 'Passwortrichtlinie',
         items: [
           { label: 'Mindestlänge', text: 'Mindestanzahl erforderlicher Zeichen' },
@@ -22,6 +31,13 @@ export default {
           { label: '2FA-Durchsetzung', text: 'Zwei-Faktor-Authentifizierung für alle Benutzer erfordern' },
         ]
       },
+      {
+        title: 'mTLS-Authentifizierung',
+        items: [
+          { label: 'Vertrauenswürdige CA', text: 'Die CA auswählen, die mTLS-Client-Anmeldezertifikate ausstellt und validiert' },
+          { label: 'Client-Zertifikat erfordern', text: 'mTLS optional für die Web-UI verpflichtend machen — das Ändern der mTLS-Einstellungen erfordert einen Dienstneustart' },
+        ]
+      },
     ],
     tips: [
       'Aktivieren Sie die Ratenbegrenzung zum Schutz vor automatisierten Angriffswerkzeugen',
@@ -30,6 +46,7 @@ export default {
     warnings: [
       'Zu strenge Passwortrichtlinien können Benutzer frustrieren',
       'Stellen Sie immer sicher, dass mindestens ein Admin auf das System zugreifen kann, bevor Sie IP-Einschränkungen aktivieren',
+      'Sicherheitskritische Einstellungen (Sitzung, Sperrung, HSTS, öffentliche URL, Passwortrichtlinie) erfordern admin:settings — die Felder sind für Operatoren gesperrt',
     ],
   },
   helpGuides: {
@@ -38,6 +55,23 @@ export default {
 ## Übersicht
 
 Systemweite Sicherheitskonfiguration, die alle Benutzerkonten und Zugriffsmuster betrifft.
+
+## Verschlüsselung privater Schlüssel
+
+Alle in der Datenbank gespeicherten privaten Schlüssel von CAs und Zertifikaten mit AES-256 verschlüsseln, geschützt durch eine außerhalb der Datenbank aufbewahrte Master-Key-Datei.
+
+- **Status und Zähler** — Der Bereich zeigt, ob die Verschlüsselung aktiviert ist und wie viele Schlüssel derzeit **verschlüsselt** bzw. **unverschlüsselt** sind
+- **Verschlüsselung aktivieren** — Erzeugt die Master-Key-Datei und verschlüsselt alle gespeicherten privaten Schlüssel. Sichern Sie die Schlüsseldatei sofort: Ohne sie sind verschlüsselte Schlüssel unwiederbringlich verloren
+- **Verschlüsselung deaktivieren** — Entschlüsselt alle privaten Schlüssel zurück in die Klartextspeicherung (Bestätigung erforderlich)
+
+### Durchsetzung beim Start
+
+Ohne konfigurierten Verschlüsselungsschlüssel protokolliert UCM beim Start eine Warnung, läuft aber weiter. Zwei **Opt-in-Umgebungsvariablen** machen daraus einen harten Fehler:
+
+- \`UCM_REQUIRE_DB_ENCRYPTION_KEY\` — Start ohne expliziten Datenbank-Verschlüsselungsschlüssel verweigern (andernfalls greifen Integrationsgeheimnisse auf einen aus der Maschinen-ID abgeleiteten Schlüssel zurück)
+- \`UCM_REQUIRE_KEY_ENCRYPTION\` — Start verweigern, solange die Verschlüsselung privater Schlüssel nicht aktiviert ist
+
+Beide akzeptieren \`1\`/\`true\`/\`yes\`/\`on\`. Ein ungültiger Schlüssel wird als fataler Fehler behandelt, statt stillschweigend auf Klartext zurückzufallen.
 
 ## Passwortrichtlinie
 
@@ -90,6 +124,18 @@ Verlangt von allen Benutzern, 2FA zu aktivieren. Benutzer, die 2FA nicht eingeri
 - **WebAuthn** — Hardware-Sicherheitsschlüssel und Biometrie
 
 > 💡 Erzwingen Sie 2FA mindestens für Admin-Konten. Erwägen Sie die Durchsetzung für alle Benutzer in sicherheitskritischen Umgebungen.
+
+## mTLS-Authentifizierung
+
+Benutzer können sich mit einem Client-Zertifikat statt mit einem Passwort anmelden:
+
+- **Vertrauenswürdige CA** — Die CA auswählen, die mTLS-Client-Zertifikate ausstellt und validiert
+- **Client-Zertifikat erfordern** — mTLS optional für die Web-UI verpflichtend machen
+- Das Ändern der mTLS-Einstellungen erfordert einen Dienstneustart
+
+## Erforderliche Berechtigungen
+
+Sicherheitskritische Einstellungen — Sitzung, Sperrung, HSTS, öffentliche URL und Passwortrichtlinie — erfordern die Berechtigung **admin:settings**. Für Operatoren (nur write:settings) werden diese Felder gesperrt angezeigt; der Rest der Karte lässt sich weiterhin normal speichern.
 `
   }
 }

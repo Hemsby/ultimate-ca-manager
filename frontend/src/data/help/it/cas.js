@@ -47,10 +47,9 @@ export default {
     ],
     tips: [
       'Le CA con l\'icona della chiave (🔑) hanno una chiave privata e possono firmare certificati',
-      'Usa CA intermedie per la firma quotidiana, mantieni la CA root offline quando possibile',
-      'L\'esportazione PKCS#12 include la catena completa ed è ideale per il backup',
       'Porta la CA root offline non appena le tue intermedie sono operative',
       'Usa «Esportata su file» per il massimo isolamento air-gap; «Protetta da password» per un ripristino rapido in loco',
+      'L\'esportazione PKCS#12 include la catena completa ed è ideale per il backup',
     ],
     warnings: [
       'L\'eliminazione di una CA NON revoca i certificati che ha emesso — revocali prima',

@@ -1,41 +1,38 @@
 export default {
   helpContent: {
     title: 'Politiques de certificat',
-    subtitle: 'Gouvernance et conformité',
-    overview: 'Définissez les règles et contraintes appliquées lors de l\'émission, du renouvellement ou de la révocation de certificats. Les politiques peuvent restreindre les types de clés, les périodes de validité, les SAN et imposer des flux d\'approbation.',
+    subtitle: 'Règles d\'émission et application de la conformité',
+    overview: 'Définissez et gérez les politiques de certificat qui contrôlent les règles d\'émission, les exigences de clés, les limites de validité et les flux d\'approbation. Les politiques sont évaluées par ordre de priorité lors des demandes de certificats.',
     sections: [
       {
         title: 'Types de politiques',
-        definitions: [
-          { term: 'Émission', description: 'Règles appliquées lors de la création de nouveaux certificats' },
-          { term: 'Renouvellement', description: 'Règles appliquées lors du renouvellement de certificats' },
-          { term: 'Révocation', description: 'Règles appliquées lors de la révocation de certificats' },
+        items: [
+          { label: 'Émission', text: 'Règles appliquées lors de la création de nouveaux certificats' },
+          { label: 'Renouvellement', text: 'Règles appliquées lors du renouvellement de certificats' },
+          { label: 'Révocation', text: 'Règles appliquées lors de la révocation de certificats' },
         ]
       },
       {
-        title: 'Configuration des règles',
+        title: 'Règles',
         items: [
           { label: 'Validité maximale', text: 'Durée de vie maximale du certificat en jours' },
-          { label: 'Types de clés autorisés', text: 'Restreindre les algorithmes de clé : RSA-2048, RSA-4096, EC-P256, EC-P384' },
-          { label: 'Restrictions SAN', text: 'Nombre maximum de noms DNS et restrictions de motifs de domaine' },
-          { label: 'Approbation requise', text: 'Activer les flux d\'approbation avec un nombre minimum d\'approbateurs' },
-          { label: 'Notifications', text: 'Alerter les administrateurs lors de violations de politique' },
+          { label: 'Types de clés autorisés', text: 'Restreindre les algorithmes et tailles de clés pouvant être utilisés' },
+          { label: 'Restrictions SAN', text: 'Limiter le nombre de SAN et imposer des motifs de noms DNS' },
         ]
       },
       {
-        title: 'Priorité',
-        content: 'Les politiques sont évaluées par ordre de priorité. Les nombres plus bas ont une priorité plus élevée :',
+        title: 'Flux d\'approbation',
         items: [
-          '1-10 : Politiques de sécurité critiques (signature de code, certificats génériques)',
-          '10-20 : Conformité standard (TLS public, PKI interne)',
-          '20+ : Valeurs par défaut permissives',
+          { label: 'Groupes d\'approbation', text: 'Assigner un groupe d\'utilisateurs responsable de l\'approbation des demandes' },
+          { label: 'Approbateurs min', text: 'Nombre d\'approbations requises avant l\'émission' },
+          { label: 'Notifications', text: 'Alerter les administrateurs lors de violations de politique' },
         ]
       },
     ],
     tips: [
-      'Utilisez des flux d\'approbation pour les certificats de haute valeur comme la signature de code et les certificats génériques',
-      'Scopez les politiques à des CA spécifiques ou appliquez-les à l\'ensemble du système',
-      'UCM inclut 5 politiques par défaut intégrées reflétant les meilleures pratiques PKI du monde réel',
+      'Nombre de priorité plus bas = précédence plus élevée. Utilisez 1–10 pour les politiques critiques.',
+      'Scopez les politiques à des CA spécifiques pour un contrôle granulaire.',
+      'Activez les notifications pour détecter tôt les violations de politique.',
     ],
   },
   helpGuides: {

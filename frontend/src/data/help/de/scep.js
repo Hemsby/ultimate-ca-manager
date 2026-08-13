@@ -9,9 +9,9 @@ export default {
         items: [
           { label: 'Anfragen', text: 'Ausstehende, genehmigte und abgelehnte SCEP-Registrierungsanfragen' },
           { label: 'Konfiguration', text: 'SCEP-Servereinstellungen: CA-Auswahl, CA-Kennung, Auto-Genehmigung' },
+          { label: 'Profile', text: 'Benannte Enrollment-Endpunkte, jeder mit eigener URL, CA, Vorlage und Challenge' },
           { label: 'Challenge-Passwörter', text: 'Pro-CA-Challenge-Passwörter für die Geräteregistrierung verwalten' },
           { label: 'Information', text: 'SCEP-Endpunkt-URLs und Integrationsanweisungen' },
-          { label: 'Profile', text: 'Benannte Enrollment-Endpunkte, jeder mit eigener URL, CA, Vorlage und Challenge' },
         ]
       },
       {
@@ -63,6 +63,21 @@ Den SCEP-Server konfigurieren:
 - **CA-Kennung** — Die Kennung, die Geräte verwenden, um die richtige CA zu finden
 - **Auto-Genehmigung** — Anfragen mit gültigem Challenge-Passwort automatisch genehmigen
 
+### Profile
+Benannte Enrollment-Endpunkte, jeder unter seiner eigenen URL bereitgestellt:
+
+\`\`\`
+https://ihr-server:8443/scep/<profil>/pkiclient.exe
+\`\`\`
+
+Jedes Profil ist gebunden an:
+- **Seine eigene CA** — verschiedene Geräteflotten können sich gegen verschiedene CAs registrieren
+- **Eine optionale Zertifikatsvorlage** — ist eine Vorlage gebunden, bestimmen deren Key Usage, Extended Key Usage und Gültigkeit jedes über das Profil ausgestellte Zertifikat
+- **Ein Challenge-Passwort pro Profil** — verschlüsselt gespeichert, mit demselben Ablauffenster wie die globale Challenge
+- **Eine Genehmigungsrichtlinie** — Auto-Genehmigung oder manuelle Prüfung pro Profil
+
+Lassen Sie jede Geräteflotte, jedes MDM-Profil oder jeden Mandanten auf die eigene Profil-URL zeigen. Der Endpunkt \`/scep/pkiclient.exe\` ohne Segment bedient weiterhin unverändert die globale Konfiguration.
+
 ### Challenge-Passwörter
 Pro-CA-Challenge-Passwörter verwalten. Geräte müssen ein gültiges Challenge-Passwort in ihrer Registrierungsanfrage zur Authentifizierung angeben.
 
@@ -81,13 +96,14 @@ Zeigt die SCEP-Endpunkt-URL und Integrationsanweisungen an.
 5. Wenn Auto-Genehmigung aktiv ist, signiert UCM das Zertifikat und gibt es zurück
 6. Wenn Auto-Genehmigung deaktiviert ist, prüft ein Admin die Anfrage und genehmigt/lehnt ab
 
-## SCEP-URL
+## SCEP-URLs
 
 \`\`\`
-https://ihr-server:8443/scep
+https://ihr-server:8443/scep                          (globaler Endpunkt)
+https://ihr-server:8443/scep/<profil>/pkiclient.exe   (Endpunkt pro Profil)
 \`\`\`
 
-Geräte benötigen diese URL plus die CA-Kennung für die Registrierung.
+Geräte benötigen die URL plus die CA-Kennung für die Registrierung. Verwenden Sie eine Profil-URL, um die CA, Vorlage und das Challenge-Passwort dieses Profils anzusprechen.
 
 ## Anfragen genehmigen/ablehnen
 

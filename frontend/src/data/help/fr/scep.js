@@ -9,9 +9,9 @@ export default {
         items: [
           { label: 'Requêtes', text: 'Requêtes d\'inscription SCEP en attente, approuvées et rejetées' },
           { label: 'Configuration', text: 'Paramètres du serveur SCEP : sélection de CA, identifiant CA, approbation automatique' },
+          { label: 'Profils', text: 'Endpoints d\'enrôlement nommés, chacun avec sa propre URL, CA, template et challenge' },
           { label: 'Mots de passe de défi', text: 'Gérer les mots de passe de défi par CA pour l\'inscription des appareils' },
           { label: 'Informations', text: 'URL des points de terminaison SCEP et instructions d\'intégration' },
-          { label: 'Profils', text: 'Endpoints d\'enrôlement nommés, chacun avec sa propre URL, CA, template et challenge' },
         ]
       },
       {
@@ -63,6 +63,21 @@ Configurer le serveur SCEP :
 - **Identifiant CA** — L'identifiant que les appareils utilisent pour localiser la bonne CA
 - **Approbation automatique** — Approuver automatiquement les requêtes avec des mots de passe de défi valides
 
+### Profils
+Endpoints d'enrôlement nommés, chacun servi sur sa propre URL :
+
+\`\`\`
+https://votre-serveur:8443/scep/<profil>/pkiclient.exe
+\`\`\`
+
+Chaque profil est lié à :
+- **Sa propre CA** — différentes flottes d'appareils peuvent s'enrôler auprès de CAs différentes
+- **Un template de certificat optionnel** — quand un template est lié, ses usages de clé (KU/EKU) et sa validité gouvernent chaque certificat émis via le profil
+- **Un mot de passe de défi par profil** — stocké chiffré, avec la même fenêtre d'expiration que le challenge global
+- **Une politique d'approbation** — approbation automatique ou revue manuelle par profil
+
+Pointez chaque flotte d'appareils, profil MDM ou tenant vers sa propre URL de profil. L'endpoint \`/scep/pkiclient.exe\` sans segment continue de servir la configuration globale sans changement.
+
 ### Mots de passe de défi
 Gérer les mots de passe de défi par CA. Les appareils doivent inclure un mot de passe de défi valide dans leur requête d'inscription pour s'authentifier.
 
@@ -84,10 +99,11 @@ Affiche l'URL du point de terminaison SCEP et les instructions d'intégration.
 ## URL SCEP
 
 \`\`\`
-https://votre-serveur:8443/scep
+https://votre-serveur:8443/scep                         (endpoint global)
+https://votre-serveur:8443/scep/<profil>/pkiclient.exe  (endpoint par profil)
 \`\`\`
 
-Les appareils ont besoin de cette URL plus l'identifiant CA pour s'inscrire.
+Les appareils ont besoin de l'URL plus l'identifiant CA pour s'inscrire. Utilisez une URL de profil pour cibler la CA, le template et le mot de passe de défi de ce profil.
 
 ## Approuver/Rejeter des requêtes
 

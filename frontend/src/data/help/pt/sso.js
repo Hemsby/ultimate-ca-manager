@@ -26,6 +26,15 @@ export default {
         ]
       },
       {
+        title: 'Provisionamento de Funções (#81)',
+        items: [
+          { label: 'Função Padrão', text: 'Aplicada APENAS quando um usuário é criado automaticamente no primeiro login SSO. Alterações de função feitas depois no UCM são preservadas.' },
+          { label: 'Mapeamento de Funções', text: 'Mapear grupos externos (Azure AD, Okta, LDAP) → funções UCM (admin / operator / viewer). Usado na criação do usuário e a cada login quando a sincronização de funções está ativada. Quando vários grupos correspondem, a função de maior privilégio vence (admin > operator > auditor > viewer) — a ordem das entradas não importa (#221).' },
+          { label: 'Sincronizar função a cada login', text: 'DESATIVADO (padrão): o SSO nunca sobrescreve funções gerenciadas no UCM. ATIVADO: a função é ressincronizada a partir de role_mapping a cada login; usuários sem correspondência no mapeamento mantêm sua função armazenada (default_role nunca é reaplicada).' },
+          { label: 'Atualização Automática de Usuários', text: 'Atualiza e-mail e nome completo a cada login. NÃO altera a função.' },
+        ]
+      },
+      {
         title: 'LDAP',
         items: [
           { label: 'Servidor', text: 'Hostname e porta do servidor LDAP (389 ou 636 para SSL)' },

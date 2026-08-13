@@ -17,6 +17,7 @@ export default {
           { label: 'CA de signature', text: 'La CA dont la clé privée signe les jetons d\'horodatage — doit être une CA valide et non expirée' },
           { label: 'OID de politique', text: 'Identifiant d\'objet pour la politique TSA (par ex. 1.2.3.4.1) — inclus dans chaque réponse d\'horodatage' },
           { label: 'Activer/Désactiver', text: 'Basculer le point de terminaison TSA sans perdre la configuration' },
+          { label: 'Exiger un certificat dédié', text: 'Opt-in : refuser de signer les horodatages avec le certificat de la CA lui-même — exige un certificat de signature d\'entité finale dédié avec une EKU timeStamping critique (RFC 3161)' },
         ]
       },
       {

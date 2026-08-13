@@ -27,6 +27,7 @@ export default {
           { label: 'Crea chiave', text: 'Genera una nuova chiave API con scadenza opzionale' },
           { label: 'Permessi', text: 'Le chiavi API ereditano i permessi del tuo ruolo' },
           { label: 'Revoca', text: 'Invalida immediatamente una chiave API' },
+          { label: 'Utenti disattivati', text: 'Le chiavi API appartenenti a un utente disattivato vengono rifiutate anche se la chiave stessa è ancora valida' },
         ]
       },
       {

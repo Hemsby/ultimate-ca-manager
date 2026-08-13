@@ -27,6 +27,7 @@ export default {
           { label: 'Créer une clé', text: 'Générer une nouvelle clé API avec expiration optionnelle' },
           { label: 'Permissions', text: 'Les clés API héritent des permissions de votre rôle' },
           { label: 'Révoquer', text: 'Invalider immédiatement une clé API' },
+          { label: 'Utilisateurs désactivés', text: 'Les clés API appartenant à un utilisateur désactivé sont rejetées même si la clé elle-même est encore valide' },
         ]
       },
       {

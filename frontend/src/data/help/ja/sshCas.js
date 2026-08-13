@@ -22,7 +22,10 @@ export default {
       {
         title: 'サーバー設定',
         items: [
-          { label: 'セットアップスクリプト', text: 'このCAを信頼するようにsshdを自動設定するPOSIXシェルスクリプトをダウンロードします。主要なLinuxディストリビューションすべてに対応しています。' },
+          { label: 'Linux/macOSセットアップスクリプト', text: 'このCAを信頼するようにsshdを自動設定するPOSIXシェルスクリプト（.sh）をダウンロードします。クイックインストール：curl -fsSL <url> | bash' },
+          { label: 'Windowsセットアップスクリプト', text: 'Windows OpenSSHサーバーを設定するPowerShellスクリプト（.ps1）をダウンロードします（CA公開鍵を%ProgramData%\\sshに書き込み、ACLをロックダウンし、sshd_configにTrustedUserCAKeys / HostCertificateを追加し、sshd -Tで検証し、sshdを再起動）。クイックインストール：iwr <url> | iex' },
+          { label: '診断ブロック', text: 'Add-WindowsCapabilityが失敗した場合（WSUS / ドメイン参加環境）、スクリプトはポリシーの状態と3つの対処方法を説明するラベル付きブロックを出力します — WSUS / WUポリシー自体を変更することはありません' },
+          { label: 'ドライラン', text: '両スクリプトとも -DryRun / --dry-run フラグに対応しており、変更を適用せずにプレビューできます' },
           { label: '手動セットアップ', text: 'CAの公開鍵をコピーし、sshd_configにTrustedUserCAKeys（User CA）またはHostCertificate（Host CA）を追加します。' },
         ]
       },
@@ -31,6 +34,14 @@ export default {
         items: [
           { label: 'KRL (Key Revocation List)', text: '個別の証明書を失効させるためのコンパクトなバイナリ形式。sshd_configのRevokedKeysで設定します。' },
           { label: 'KRLのダウンロード', text: 'CA詳細パネルから現在のKRLファイルをダウンロードします。' },
+        ]
+      },
+      {
+        title: 'TTLフォーマット',
+        items: [
+          { label: 'サフィックス付き期間', text: 'デフォルトTTLと最大TTLは 24h、7d、365d を受け付けます — サフィックスは s、m、h、d、w、y' },
+          { label: '数値のみ', text: '数値のみの場合は秒として解釈されます（例：3600 = 1時間）' },
+          { label: '検証', text: '不正な値は、受け付けられるフォーマットを示すエラーとともに拒否されます' },
         ]
       },
     ],
@@ -84,6 +95,15 @@ Host CAは**サーバーをクライアントに対して認証する**証明書
    - **RSA 2048/4096** — 最も広い互換性、鍵サイズが大きい。
 5. 必要に応じて最大有効期間とデフォルト拡張を設定
 6. **作成**をクリック
+
+### TTLフォーマット
+
+**デフォルトTTL**と**最大TTL**フィールドは、人間が読みやすい期間表記を受け付けます：
+
+- サフィックス付きの値 — \`24h\`、\`7d\`、\`365d\`（受け付けられるサフィックス：\`s\`、\`m\`、\`h\`、\`d\`、\`w\`、\`y\`）
+- 数値のみ — **秒**として解釈されます（例：\`3600\` = 1時間）
+
+不正な値は、受け付けられるフォーマットを示すエラーとともに拒否されます。
 
 > 💡 ユーザー証明書とホスト証明書には別々のCAを使用してください。1つのCAを両方の目的に使用しないでください。
 

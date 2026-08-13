@@ -20,6 +20,7 @@ export default {
           { label: "管理", text: "admin.ucm.example.com — GUI 和 API（按策略 mTLS）" },
           { label: "ACME", text: "acme.ucm.example.com — /acme/* 和 /acme/proxy/*（无客户端 mTLS）" },
           { label: "通配符 TLS", text: "具体主机名（如 acme.ucm.example.com）。证书 SAN *.ucm.example.com 覆盖 admin/ACME 的 TLS — 不可将 *.ucm.example.com 填为 vhost" },
+          { label: "保存之前", text: "先确保 ACME vhost 的 DNS 和 TLS 正常工作——重新读取 directory 的客户端会立即切换 URL，若 vhost 不可达，续期将失败" },
           { label: "TLS 证书 ID", text: "部署在 ACME vhost 上的证书元数据（如通配符）" },
         ]
       },
@@ -65,7 +66,7 @@ export default {
         items: [
           { label: '通用', text: '实例名称、主机名和全系统默认值' },
           { label: '外观', text: '主题选择（亮色/暗色/系统）、强调色、桌面模式' },
-          { label: '电子邮件 (SMTP)', text: 'SMTP 服务器、凭据、邮件模板编辑器和到期提醒通知' },
+          { label: '电子邮件 (SMTP)', text: 'SMTP 服务器、凭据、邮件模板编辑器和到期提醒通知。除传统密码认证外，还支持 Gmail、Outlook.com 和 Microsoft 365 的 OAuth2 (XOAUTH2)' },
           { label: '安全', text: '密码策略、会话超时、频率限制、IP 限制' },
           { label: 'SSO', text: 'SAML 2.0、OAuth2/OIDC 和 LDAP 单点登录集成' },
           { label: '备份', text: '手动和计划的数据库备份' },
@@ -193,6 +194,11 @@ export default {
 
 ### 2FA 强制
 要求所有用户启用双因素认证。
+
+### 私钥加密
+使用 AES-256 加密数据库中存储的所有私钥，由主密钥文件保护。该部分显示加密状态以及**已加密 / 未加密**密钥计数器。两个可选启用的环境变量可使缺失密钥在启动时直接失败：\`UCM_REQUIRE_DB_ENCRYPTION_KEY\`（集成密钥加密）和 \`UCM_REQUIRE_KEY_ENCRYPTION\`（私钥加密）。
+
+> 💡 安全敏感设置（会话、锁定、HSTS、公共 URL、密码策略）需要 **admin:settings** 权限——这些字段对操作员锁定。
 
 > ⚠ 应用 IP 限制前请仔细测试。不正确的规则可能会锁定所有用户。
 
@@ -401,6 +407,14 @@ UCM 自身与 Active Directory 的 LDAP 连接，独立于在 SSO 下配置的�
 
 - **用户名/密码** — 需要输入凭据；用于交互式的“申请新证书”注册，不需要 Active Directory
 - **Kerberos** — 无需凭据提示；需要已加入域的客户端和 GPO 配置
+
+### 证书续订绑定
+
+除用户名/密码和 Kerberos 外，WSTEP 还支持**客户端证书续订**，与真实 ADCS CES 端点一致：续订请求 (RST) 必须使用 **UCM 自身签发**的证书的私钥进行 XML-DSig 签名。出示的证书会与所配置 CA 存储的证书进行**逐字节**比对——仅凭序列号或主题永远不够。这使 Windows 客户端可以使用其当前证书无人值守地续订，无需凭据或 Kerberos 票证。
+
+### SID 安全扩展 (KB5014754)
+
+在**经 Kerberos 身份验证的签发**中，UCM 会在签发证书的 Microsoft SID 安全扩展（\`szOID_NTDS_CA_SECURITY_EXT\`）中嵌入请求者的 AD SID。域控制器将其用于**强证书映射**（KB5014754）——自 AD 对基于证书的身份验证（智能卡登录、PKINIT）强制执行强映射以来，这是必需项。
 
 ### AD 派生主题
 

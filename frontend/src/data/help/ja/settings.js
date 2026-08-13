@@ -20,6 +20,7 @@ export default {
           { label: "管理", text: "admin.ucm.example.com — GUI と API（ポリシーに応じた mTLS）" },
           { label: "ACME", text: "acme.ucm.example.com — /acme/* と /acme/proxy/*（クライアント mTLS なし）" },
           { label: "ワイルドカード TLS", text: "具体ホスト名（例: acme.ucm.example.com）。証明書 SAN の *.ucm.example.com は admin/ACME の TLS をカバー — vhost に *. は不可" },
+          { label: "保存前に", text: "先に ACME vhost の DNS と TLS を動作させてください — directory を再読込したクライアントは即座に URL を切り替えるため、vhost に到達できないと更新が失敗します" },
           { label: "TLS 証明書 ID", text: "ACME vhost に配置する証明書のメタデータ（例: ワイルドカード）" },
         ]
       },
@@ -65,7 +66,7 @@ export default {
         items: [
           { label: '一般', text: 'インスタンス名、ホスト名、システム全体のデフォルト' },
           { label: '外観', text: 'テーマ選択（ライト/ダーク/システム）、アクセントカラー、デスクトップモード' },
-          { label: 'メール (SMTP)', text: 'SMTPサーバー、資格情報、メールテンプレートエディター、有効期限アラート通知' },
+          { label: 'メール (SMTP)', text: 'SMTPサーバー、資格情報、メールテンプレートエディター、有効期限アラート通知。レガシーなパスワード認証に加え、Gmail、Outlook.com、Microsoft 365 向けの OAuth2 (XOAUTH2) をサポート' },
           { label: 'セキュリティ', text: 'パスワードポリシー、セッションタイムアウト、レート制限、IP制限' },
           { label: 'SSO', text: 'SAML 2.0、OAuth2/OIDC、LDAPシングルサインオン統合' },
           { label: 'バックアップ', text: '手動およびスケジュールされたデータベースバックアップ' },
@@ -73,7 +74,7 @@ export default {
           { label: 'データベース', text: 'アクティブなバックエンド（SQLiteまたはPostgreSQL）、サイズ、テーブル数、バックエンド間のテスト/切り替え/移行' },
           { label: 'HTTPS', text: 'UCM WebインターフェースのTLS証明書' },
           { label: '更新', text: '新バージョンの確認、変更ログの表示、自動更新（DEB/RPM）' },
-          { label: 'Webhook', text: '証明書イベント（発行、失効、期限切れ）のHTTP Webhook' },
+          { label: 'Webhook', text: '証明書イベント（発行、失効、期限切れ）のHTTP Webhook — 内部LANのURLは許可、クラウドメタデータIPはブロック。オプションの送信認証：Bearer、Basic、APIキー、カスタムヘッダー' },
           { label: 'Active Directory', text: '証明書関連の参照 (Kerberos プリンシパルの解決、AD 由来のサブジェクト) のための UCM 独自の AD/LDAP 接続' },
           { label: 'Windows 自動登録', text: 'MS-XCEP/MS-WSTEP によるネイティブ Windows 登録: ポリシー検出、証明書発行、Kerberos/SPNEGO バインディング' },
         ]
@@ -136,6 +137,7 @@ export default {
 - **ホスト名** — サーバーの完全修飾ドメイン名
 - **デフォルト有効期間** — デフォルトの証明書有効期間（日数）
 - **有効期限警告しきい値** — 警告をトリガーする期限切れまでの日数
+- **公開 ACME vhost** — ACME directory URL に使用する具体的なホスト名（例：\`acme.ucm.example.com\` — \`*.ucm.example.com\` は不可）。ワイルドカード \`*.ucm.example.com\` の **TLS 証明書 SAN** は \`admin.ucm.example.com\` と \`acme.ucm.example.com\` の両方をカバーします。保存する**前に** ACME vhost の DNS と TLS を構成してください — directory を再読込したクライアントは即座に URL を切り替えます。
 
 ## 外観
 
@@ -193,6 +195,11 @@ SMTPが設定されている場合、証明書の有効期限アラートの自�
 
 ### 2FA強制
 すべてのユーザーに二要素認証の有効化を要求。
+
+### 秘密鍵の暗号化
+データベースに保存されるすべての秘密鍵を、マスターキーファイルで保護されたAES-256で暗号化します。このセクションには暗号化ステータスと**暗号化済み / 未暗号化**の鍵カウンターが表示されます。2つのオプトイン環境変数により、キーが無い場合に起動を失敗させることができます：\`UCM_REQUIRE_DB_ENCRYPTION_KEY\`（統合シークレットの暗号化）と \`UCM_REQUIRE_KEY_ENCRYPTION\`（秘密鍵の暗号化）。
+
+> 💡 セキュリティに関わる設定（セッション、ロックアウト、HSTS、公開URL、パスワードポリシー）には **admin:settings** 権限が必要です — オペレーターに対してはフィールドがロックされます。
 
 > ⚠ IP制限は適用前に慎重にテストしてください。不正なルールによりすべてのユーザーがロックアウトされる可能性があります。
 
@@ -305,12 +312,25 @@ UCM WebインターフェースのTLS証明書を管理：
 - ユーザーのログイン、ログアウト
 - バックアップの作成
 
+### 認証
+
+オプションの送信認証（いずれもオプションのHMAC署名に追加して適用されます）：
+
+- **なし** — 認証ヘッダーなし（公開Webhook）
+- **Bearer** — Authorization: Bearer {token}
+- **Basic** — Authorization: Basic base64(username:password)
+- **APIキー** — カスタムヘッダー（例：X-Api-Key: {token}）
+- **カスタム** — Authorization: {scheme} {token}（例：auth-key VALUE）
+
+トークンは暗号化して保存され、UIには一切返されません。
+
 ### Webhookの作成
 1. **Webhookを追加**をクリック
 2. **URL**を入力（HTTPSである必要があります）
 3. サブスクライブする**イベント**を選択
-4. 必要に応じてHMAC署名検証用の**シークレット**を設定
-5. **作成**をクリック
+4. **認証タイプ**を選択して資格情報を入力（オプション）
+5. 必要に応じてHMAC署名検証用の**シークレット**を設定
+6. **作成**をクリック
 
 ### テスト
 **テスト**をクリックしてサンプルイベントをWebhook URLに送信し、到達可能であることを確認します。
@@ -382,12 +402,20 @@ SSO 配下で構成された LDAP プロバイダーとは独立した、UCM 自
 - **サービスプリンシパル名 (SPN)** — 例: \`HTTP/ucm.example.com@EXAMPLE.COM\`
 - **Keytab** — 上記の SPN 用に、ドメインコントローラー上で \`ktpass\` または \`ktutil\` を使用して生成します
 
-> ⚠ サーバー側の SPNEGO ライブラリがインストールされていない場合、ここで有効にしていても Kerberos 認証は機能しません -- タブに警告が表示されます。
+> ⚠ Kerberos にはサーバー側の **\`gssapi\` バックエンド** (Python の \`gssapi\` ライブラリとシステムの Kerberos ライブラリ) が必要です -- ベースの SPNEGO パッケージだけでは不十分です。これが無い場合、ここで有効にしていても Kerberos 認証は機能せず、Kerberos バインディングは公開されません。タブに警告が表示されます。
 
 ### 登録ポリシー URL
 
 - **ユーザー名/パスワード** — 資格情報の入力を求めます。対話型の「新しい証明書の要求」登録用で、Active Directory は不要です
 - **Kerberos** — 資格情報の入力は不要です。ドメイン参加済みのクライアントと GPO の構成が必要です
+
+### 証明書更新バインディング
+
+ユーザー名/パスワードと Kerberos に加えて、WSTEP は実際の ADCS CES エンドポイントと同様の**クライアント証明書による更新**をサポートします: 更新リクエスト (RST) は、**UCM 自身が発行した**証明書の秘密鍵で XML-DSig 署名されている必要があります。提示された証明書は、構成された CA について保存されている証明書と**バイト単位で完全一致**するか照合されます -- シリアル番号やサブジェクトだけでは不十分です。これにより、Windows クライアントは資格情報や Kerberos チケットなしで、現在の証明書を使用して無人で更新できます。
+
+### SID セキュリティ拡張 (KB5014754)
+
+**Kerberos 認証による発行**時、UCM は要求元の AD SID を発行される証明書の Microsoft SID セキュリティ拡張 (\`szOID_NTDS_CA_SECURITY_EXT\`) に埋め込みます。ドメインコントローラーはこれを**強い証明書マッピング** (KB5014754) に使用します -- 証明書ベース認証 (スマートカードログオン、PKINIT) の強いマッピングが AD で強制されて以降、必須です。
 
 ### AD 由来のサブジェクト
 

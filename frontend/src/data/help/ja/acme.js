@@ -22,6 +22,7 @@ export default {
           { label: 'キータイプ', text: '証明書キー用のRSA-2048、RSA-4096、ECDSA P-256、ECDSA P-384' },
           { label: 'アカウントキー', text: 'ACMEアカウントキー用のES256 (P-256)、ES384 (P-384)、またはRS256アルゴリズム' },
           { label: 'DNSプロバイダー', text: 'DNS-01チャレンジプロバイダーの設定（Cloudflare、Route53など）' },
+          { label: 'カスタムコマンド', text: '管理者が設定したローカルコマンドをTXTレコードの作成/削除に実行するDNSプロバイダータイプ — レコード情報はDOMAIN、RECORD_NAME、RECORD_VALUE、TTL、ACTION環境変数で渡されます。バイナリの絶対パスが必須、シェルなし、タイムアウト設定可能' },
           { label: 'ドメイン', text: '自動検証のためにドメインをDNSプロバイダーにマッピングします' },
         ]
       },
@@ -43,6 +44,7 @@ export default {
           { label: 'アカウントリセット', text: '保存されたアップストリームアカウント認証情報をクリアして再登録を強制します（CA変更後に使用）' },
           { label: 'EAB認証情報', text: 'EABが必要なCAのためのExternal Account Binding認証情報（例：ZeroSSL、Google Trust）' },
           { label: 'DNSチャレンジ', text: 'UCMは設定されたDNSプロバイダーを使用して、クライアントに代わってDNS-01チャレンジを処理します' },
+          { label: '置き換えられた証明書の削除', text: 'オプトインのトグル：プロキシオーダーの確定時に、まったく同じドメインセットに対して以前プロキシオーダーでインポートされた証明書を削除します。失効した証明書は常に保持され、プロキシ以外の証明書には一切触れません。デフォルトは無効' },
         ]
       },
       {
@@ -54,6 +56,7 @@ export default {
           { label: 'バインド', text: 'クライアントは newAccount で MAC キー上に JWS を署名して ACME アカウントをバインドする' },
           { label: 'ローテーション / 取消', text: 'kid をいつでも取消可能 — 既存アカウントは継続動作、新規バインドは拒否' },
           { label: '監査', text: '発行・ローテーション・取消は実行したオペレーターの下で監査される' },
+          { label: 'ドメイン制限', text: 'クレデンシャルが要求できるドメインを制限: *(任意)、*.example.com(全サブドメイン)、または明示的なリスト — 空のリストは発行を完全にブロックします。new-order/new-authz で、サーバーとプロキシの両方に適用されます。EAB が必須の場合にのみ意味を持ちます' },
         ]
       },
       {
@@ -62,6 +65,7 @@ export default {
           { label: 'アカウント単位オーバーライド', text: '_acme-challenge TXT レコードを検証する際にシステムリゾルバを上書き' },
           { label: 'スプリットホライズン', text: '権威サーバーが内部にあり、パブリックビューが他所にキャッシュされている場合に有用' },
           { label: '古いレコード', text: '高速な自動更新中にパブリックリゾルバのキャッシュを回避' },
+          { label: 'host:port エントリ', text: 'ポート53以外で待ち受けるリゾルバも指定可能(例: ループバック専用の BIND や別ポートの dnsmasq) — カンマ区切り、通常の IP もそのまま使用可能' },
         ]
       },
       {
@@ -110,12 +114,14 @@ export default {
       'ACMEディレクトリURL: https://your-server:port/acme/directory',
       'カスタムディレクトリURLを使用して、ZeroSSL、Buypass、HARICA、またはその他のRFC 8555 CAに接続できます',
       'EAB資格情報（キーID + HMACキー）は、登録時にCAから提供されます',
+      'UCM が ACME サーバーの場合、ACME → EAB Credentials で独自の EAB クレデンシャルを発行してください',
+      'Kubernetes/cert-manager 用: examples/kubernetes/cert-manager/ にある参照マニフェストを参照',
       'ECDSA P-256キーはRSA-2048と同等のセキュリティを、はるかに小さいサイズで提供します',
       'ローカルドメインを使用して、異なる内部ドメインに異なるCAを割り当てることができます',
       '秘密鍵を持つ任意のCAを発行CAとして選択できます',
       'ワイルドカードドメイン（*.example.com）にはDNS-01検証が必要です',
-      'UCM が ACME サーバーの場合、ACME → EAB Credentials で独自の EAB クレデンシャルを発行してください',
-      'Kubernetes/cert-manager 用: examples/kubernetes/cert-manager/ にある参照マニフェストを参照',
+      'アップストリームCAを切り替えると、古いアカウント認証情報は自動的にクリアされます',
+      'certbot でプロキシURLを使用: certbot certonly --server https://your-server:port/acme/proxy/directory',
     ],
     warnings: [
       'ドメイン検証が必要です — サーバーが到達可能であるか、DNSが設定されている必要があります',
@@ -203,6 +209,20 @@ ECDSAキーは最新のデプロイに推奨されます — より小さく、�
 
 各プロバイダーにはDNSサービス固有のAPI資格情報が必要です。
 
+#### カスタムコマンドプロバイダー
+ネイティブドライバーのないDNSサービス向けに、**カスタムコマンド**プロバイダーは管理者が設定したローカルコマンドをTXTレコードの作成/削除に実行します。レコード情報は環境変数で渡されます：
+
+- \`DOMAIN\` — 検証対象のベースドメイン
+- \`RECORD_NAME\` — TXTレコードの完全な名前（\`_acme-challenge.example.com\`）
+- \`RECORD_VALUE\` — TXTの内容（チャレンジダイジェスト）
+- \`TTL\` — レコードのTTL（秒）
+- \`ACTION\` — \`create\` または \`delete\`
+
+コマンドには**バイナリの絶対パス**が必要で、シェルなしで実行され（パイプや展開は不可）、設定可能なタイムアウト（5〜300秒、デフォルト60）後に強制終了されます。外部のDNSツールと連携するには、小さなラッパースクリプトを使用してください。
+
+### カスタムDNSリゾルバ
+\`_acme-challenge\` TXTレコードの検証に使用するリゾルバを任意で上書きできます（スプリットホライズンDNSやパブリックリゾルバのキャッシュ回避に有用）。エントリはカンマ区切りで、通常のIPまたは \`host:port\` を指定できます — 例：ループバック専用のBINDや別ポートのdnsmasqインスタンス。
+
 ### ドメイン
 ドメインをDNSプロバイダーにマッピングします。ドメインの証明書を要求する際、UCMはマッピングされたプロバイダーを使用してDNS-01チャレンジレコードを作成します。
 
@@ -258,6 +278,13 @@ https://your-ucm-server:8443/acme/proxy/directory
 - アップストリームCAの変更は古い認証情報を自動的にクリアし、再登録を強制
 - 必要に応じて**アカウントリセット**ボタンで手動で認証情報をクリア
 - **接続テスト**はアップストリームディレクトリが到達可能か、EABが必要かを確認
+
+### 置き換えられた証明書の削除
+プロキシによる更新のたびに新しい証明書がインベントリにインポートされるため、置き換えられた証明書は時間とともに蓄積します。**置き換えられた証明書を削除**トグル（プロキシ設定）は自動的にクリーンアップします：プロキシオーダーの確定時に、**まったく同じドメインセット**に対して以前プロキシオーダーでインポートされた証明書が削除されます。
+
+- **失効した証明書は常に保持されます** — 失効記録はそのまま残ります
+- プロキシ経由で発行されていない証明書には一切触れません
+- デフォルトは無効
 
 ### プロキシの使用
 内部ACMEクライアントを対象CAのプロキシディレクトリに向けます。
@@ -322,6 +349,17 @@ ACMEクライアントが証明書を要求すると、UCMは以下の順序で�
 3. **グローバルデフォルト** — ACMEサーバー設定で指定されたCA
 4. **最初の利用可能なCA** — 秘密鍵を持つ任意のCA
 
+### EAB クレデンシャル(サーバー側)
+UCM が ACME サーバー（またはプロキシ）の場合、**External Account Binding** を必須にできます：クライアントはアカウント登録時に事前発行された kid + HMAC キーを提示する必要があります。クレデンシャルの発行と取消は **ACME → EAB Credentials** から行います。
+
+各クレデンシャルは**証明書を要求できるドメイン**を制限できます：
+- \`*\` — 任意のドメイン（新規および既存クレデンシャルのデフォルト）
+- \`*.example.com\` — そのドメインとすべてのサブドメイン
+- 明示的なドメインのリスト
+- **空のリストはそのクレデンシャルの発行を完全にブロック**します
+
+制限は new-order と new-authz で、組み込み ACME サーバーとプロキシの両方に適用されます。**EAB が必須**の場合にのみ意味を持ちます — そうでなければクライアントはクレデンシャルなしで登録できます。
+
 ### アカウント
 登録済みACMEクライアントアカウントの表示：
 - アカウントIDと連絡先メール
@@ -335,44 +373,6 @@ ACMEクライアントが証明書を要求すると、UCMは以下の順序で�
 - 使用された署名CA
 - 発行タイムスタンプ
 
-## certbotの使用
-
-\`\`\`
-# アカウント登録（Let's Encrypt — デフォルト）
-certbot register --agree-tos --email admin@example.com
-
-# カスタムACME CA + EABでの登録
-certbot register \\
-  --server 'https://acme.zerossl.com/v2/DV90' \\
-  --eab-kid 'your-key-id' \\
-  --eab-hmac-key 'your-hmac-key' \\
-  --agree-tos --email admin@example.com
-
-# ECDSAキーで証明書を要求
-certbot certonly --server https://your-server:8443/acme/directory \\
-  --standalone -d myserver.internal.corp \\
-  --key-type ecdsa --elliptic-curve secp256r1
-
-# 更新
-certbot renew --server https://your-server:8443/acme/directory
-\`\`\`
-
-## acme.shの使用
-
-\`\`\`
-# デフォルト（Let's Encrypt）
-acme.sh --issue -d example.com --standalone
-
-# カスタムACME CAとEABおよびECDSA
-acme.sh --issue \\
-  --server 'https://acme-v02.harica.gr/acme/TOKEN/directory' \\
-  --eab-kid 'your-key-id' \\
-  --eab-hmac-key 'your-hmac-key' \\
-  --keylength ec-256 \\
-  -d example.com --standalone
-\`\`\`
-
-> ⚠ 内部ACMEの場合、クライアントはUCM CAを信頼する必要があります。ルートCA証明書をクライアントのトラストストアにインストールしてください。
 ## IPアドレス証明書 (RFC 8738)
 
 ローカルACMEサーバーはDNS名だけでなく、**IPアドレス**（IPv4およびIPv6）の証明書を発行できます。内部サービス、アプライアンス、IPで直接アドレス指定されるホストに便利です。
@@ -416,6 +416,45 @@ _validation-persist.app.example.com. IN TXT "ca.example.com; accounturi=https://
 - \`persistUntil=<unix タイムスタンプ>\` — その時刻以降の新規検証を停止します
 
 > ⚠️ レコードが存在する限り、ACME アカウント鍵に発行権限が与えられます。取り消すには TXT レコードを削除してください。
+
+## certbotの使用
+
+\`\`\`
+# アカウント登録（Let's Encrypt — デフォルト）
+certbot register --agree-tos --email admin@example.com
+
+# カスタムACME CA + EABでの登録
+certbot register \\
+  --server 'https://acme.zerossl.com/v2/DV90' \\
+  --eab-kid 'your-key-id' \\
+  --eab-hmac-key 'your-hmac-key' \\
+  --agree-tos --email admin@example.com
+
+# ECDSAキーで証明書を要求
+certbot certonly --server https://your-server:8443/acme/directory \\
+  --standalone -d myserver.internal.corp \\
+  --key-type ecdsa --elliptic-curve secp256r1
+
+# 更新
+certbot renew --server https://your-server:8443/acme/directory
+\`\`\`
+
+## acme.shの使用
+
+\`\`\`
+# デフォルト（Let's Encrypt）
+acme.sh --issue -d example.com --standalone
+
+# カスタムACME CAとEABおよびECDSA
+acme.sh --issue \\
+  --server 'https://acme-v02.harica.gr/acme/TOKEN/directory' \\
+  --eab-kid 'your-key-id' \\
+  --eab-hmac-key 'your-hmac-key' \\
+  --keylength ec-256 \\
+  -d example.com --standalone
+\`\`\`
+
+> ⚠ 内部ACMEの場合、クライアントはUCM CAを信頼する必要があります。ルートCA証明書をクライアントのトラストストアにインストールしてください。
 
 ## Renewal Information (ARI, RFC 9773)
 

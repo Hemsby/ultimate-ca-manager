@@ -26,6 +26,15 @@ export default {
         ]
       },
       {
+        title: 'Provisioning dei ruoli (#81)',
+        items: [
+          { label: 'Ruolo predefinito', text: 'Applicato SOLO quando un utente viene creato automaticamente al primo accesso SSO. Le modifiche di ruolo effettuate in seguito in UCM vengono preservate.' },
+          { label: 'Mappatura ruoli', text: 'Mappa i gruppi esterni (Azure AD, Okta, LDAP) → ruoli UCM (admin / operator / viewer). Usata alla creazione dell\'utente e a ogni accesso quando la sincronizzazione dei ruoli è abilitata. Se più gruppi corrispondono, vince il ruolo con più privilegi (admin > operator > auditor > viewer) — l\'ordine delle voci non conta (#221).' },
+          { label: 'Sincronizza ruolo a ogni accesso', text: 'OFF (predefinito): SSO non sovrascrive mai i ruoli gestiti in UCM. ON: il ruolo viene risincronizzato da role_mapping a ogni accesso; gli utenti senza corrispondenza nella mappatura mantengono il ruolo memorizzato (default_role non viene mai riapplicato).' },
+          { label: 'Aggiornamento automatico utenti', text: 'Aggiorna email e nome completo a ogni accesso. NON tocca il ruolo.' },
+        ]
+      },
+      {
         title: 'LDAP',
         items: [
           { label: 'Server', text: 'Hostname e porta del server LDAP (389 o 636 per SSL)' },

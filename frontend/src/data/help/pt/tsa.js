@@ -17,6 +17,7 @@ export default {
           { label: 'CA Assinante', text: 'A CA cuja chave privada assina tokens de carimbo de tempo — deve ser uma CA válida e não expirada' },
           { label: 'OID da Política', text: 'Object Identifier para a política TSA (ex.: 1.2.3.4.1) — incluído em cada resposta de carimbo de tempo' },
           { label: 'Ativar/Desativar', text: 'Alternar o endpoint TSA sem perder a configuração' },
+          { label: 'Exigir certificado dedicado', text: 'Opcional: recusa assinar carimbos de tempo com o próprio certificado da CA — requer um certificado de assinatura de entidade final dedicado com o EKU timeStamping crítico (RFC 3161)' },
         ]
       },
       {

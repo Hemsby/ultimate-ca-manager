@@ -22,6 +22,7 @@ export default {
           { label: '密钥类型', text: '证书密钥支持 RSA-2048、RSA-4096、ECDSA P-256、ECDSA P-384' },
           { label: '账户密钥', text: 'ACME 账户密钥支持 ES256 (P-256)、ES384 (P-384) 或 RS256 算法' },
           { label: 'DNS 提供商', text: '配置 DNS-01 挑战提供商（Cloudflare、Route53 等）' },
+          { label: '自定义命令', text: '运行管理员配置的本地命令来创建/删除 TXT 记录的 DNS 提供商类型——记录详情通过 DOMAIN、RECORD_NAME、RECORD_VALUE、TTL、ACTION 环境变量传递。要求二进制文件绝对路径，不经过 shell，超时可配置' },
           { label: '域名', text: '将域名映射到 DNS 提供商以进行自动验证' },
         ]
       },
@@ -43,6 +44,7 @@ export default {
           { label: '重置账户', text: '清除保存的上游账户凭据以强制重新注册（更改CA后使用）' },
           { label: 'EAB凭据', text: '需要EAB的CA的External Account Binding凭据（如ZeroSSL、Google Trust）' },
           { label: 'DNS挑战', text: 'UCM使用配置的DNS提供商代表客户端处理DNS-01挑战' },
+          { label: '清理被替换的证书', text: '可选开关：当代理订单 finalize 时，删除之前由代理订单为完全相同域名集合导入的证书。已吊销证书始终保留；非代理证书绝不受影响。默认关闭' },
         ]
       },
       {
@@ -54,6 +56,7 @@ export default {
           { label: '绑定', text: '客户端在 newAccount 上对 MAC 密钥签名 JWS 以绑定其 ACME 账户' },
           { label: '轮换 / 撤销', text: '随时撤销 kid — 现有账户继续工作,新绑定被拒绝' },
           { label: '审计', text: '签发、轮换和撤销在执行操作员名下进行审计' },
+          { label: '域名限制', text: '将凭据限制为其可申请的域名：*（任意）、*.example.com（所有子域名）或显式列表——空列表将完全阻止签发。在 new-order/new-authz 上强制执行，服务器和代理均适用；仅在要求 EAB 时有意义' },
         ]
       },
       {
@@ -62,6 +65,7 @@ export default {
           { label: '账户级覆盖', text: '在验证 _acme-challenge TXT 记录时覆盖系统解析器' },
           { label: '分裂视图', text: '当权威服务器在内部但公网视图被其他地方缓存时有用' },
           { label: '过时记录', text: '在快速自动续期期间避免公共解析器缓存' },
+          { label: 'host:port 条目', text: '接受不在 53 端口监听的解析器（例如仅监听环回的 BIND 或使用备用端口的 dnsmasq）——逗号分隔，纯 IP 仍然有效' },
         ]
       },
       {
@@ -110,12 +114,14 @@ export default {
       'ACME 目录 URL：https://your-server:port/acme/directory',
       '使用自定义目录 URL 连接到 ZeroSSL、Buypass、HARICA 或任何 RFC 8555 CA',
       'EAB 凭据（密钥 ID + HMAC 密钥）由您的 CA 在注册时提供',
+      '当 UCM 是 ACME 服务器时，在 ACME → EAB Credentials 中签发您自己的 EAB 凭据',
+      '对于 Kubernetes/cert-manager：参见 examples/kubernetes/cert-manager/ 中的参考清单',
       'ECDSA P-256 密钥提供与 RSA-2048 等效的安全性，但体积更小',
       '使用本地域名为不同的内部域名分配不同的 CA',
       '任何拥有私钥的 CA 都可以被选为签发 CA',
       '通配符域名 (*.example.com) 需要 DNS-01 验证',
-      '当 UCM 是 ACME 服务器时,在 ACME → EAB Credentials 中签发您自己的 EAB 凭据',
-      '对于 Kubernetes/cert-manager:参见 examples/kubernetes/cert-manager/ 中的参考清单',
+      '切换上游 CA 会自动清除过时的账户凭据',
+      '在 certbot 中使用代理 URL：certbot certonly --server https://your-server:port/acme/proxy/directory',
     ],
     warnings: [
       '域名验证是必需的——您的服务器必须可达或已配置 DNS',
@@ -203,6 +209,20 @@ ECDSA 密钥推荐用于现代部署——更小、更快且同样安全。
 
 每个提供商需要特定于该 DNS 服务的 API 凭据。
 
+#### 自定义命令提供商
+对于没有原生驱动的 DNS 服务，**自定义命令**提供商运行管理员配置的本地命令来创建/删除 TXT 记录。记录详情通过环境变量传递：
+
+- \`DOMAIN\` — 正在验证的基础域名
+- \`RECORD_NAME\` — 完整的 TXT 记录名（\`_acme-challenge.example.com\`）
+- \`RECORD_VALUE\` — TXT 内容（质询摘要）
+- \`TTL\` — 记录 TTL（秒）
+- \`ACTION\` — \`create\` 或 \`delete\`
+
+命令要求**二进制文件绝对路径**，不经过 shell 运行（无管道或变量展开），并在可配置的超时后被终止（5–300 秒，默认 60）。可使用一个小的包装脚本对接任何外部 DNS 工具。
+
+### 自定义 DNS 解析器
+可选地覆盖用于验证 \`_acme-challenge\` TXT 记录的解析器（适用于分裂视图 DNS 或避免公共解析器缓存）。条目以逗号分隔，接受纯 IP 或 \`host:port\`——例如仅监听环回的 BIND 或使用备用端口的 dnsmasq 实例。
+
 ### 域名
 将域名映射到 DNS 提供商。当为域名请求证书时，UCM 使用映射的提供商创建 DNS-01 挑战记录。
 
@@ -258,6 +278,13 @@ https://your-ucm-server:8443/acme/proxy/directory
 - 更换上游CA会自动清除过时凭据并强制重新注册
 - 如需手动清除凭据，使用 **重置账户** 按钮
 - **测试连接** 检查上游目录是否可达以及是否需要EAB
+
+### 清理被替换的证书
+每次代理续期都会向清单导入一张新证书，被替换的证书会随时间累积。**清理被替换的证书**开关（代理设置）可自动清理：当代理订单 finalize 时，之前由代理订单为**完全相同域名集合**导入的证书将被删除。
+
+- **已吊销证书始终保留**——吊销记录保持完整
+- 非通过代理签发的证书绝不受影响
+- 默认关闭
 
 ### 使用代理
 将内部 ACME 客户端指向目标 CA 的代理目录。
@@ -321,6 +348,17 @@ certbot、acme.sh 或 Caddy 等客户端使用此 URL 来发现 ACME 端点。
 2. **DNS 域名映射** — 为 DNS 提供商配置的 CA
 3. **全局默认** — ACME 服务器配置中设置的 CA
 4. **第一个可用** — 任何拥有私钥的 CA
+
+### EAB 凭据（服务器端）
+当 UCM 作为 ACME 服务器（或代理）时，可以要求 **External Account Binding**：客户端必须出示预先签发的 kid + HMAC 密钥才能注册账户。在 **ACME → EAB Credentials** 中签发和撤销凭据。
+
+每个凭据都可以限制为**其可申请证书的域名**：
+- \`*\` — 任意域名（新建及既有凭据的默认值）
+- \`*.example.com\` — 该域名及其所有子域名
+- 显式域名列表
+- **空列表将完全阻止**该凭据的签发
+
+限制在 new-order 和 new-authz 上强制执行，内置 ACME 服务器和代理均适用。仅在**要求 EAB** 时才有意义——否则客户端无需凭据即可注册。
 
 ### 账户
 查看已注册的 ACME 客户端账户：

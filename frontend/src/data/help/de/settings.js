@@ -20,6 +20,7 @@ export default {
           { label: "Admin", text: "admin.ucm.example.com — GUI und API (mTLS nach Richtlinie)" },
           { label: "ACME", text: "acme.ucm.example.com — /acme/* und /acme/proxy/* (ohne Client-mTLS)" },
           { label: "Wildcard TLS", text: "Konkreter Hostname (z. B. acme.ucm.example.com). Ein *.ucm.example.com-Zertifikat-SAN deckt TLS für Admin- und ACME-Vhosts ab — nicht *.ucm.example.com als Vhost eintragen" },
+          { label: "Vor dem Speichern", text: "Sorgen Sie zuerst für funktionierendes DNS und TLS auf dem ACME-Vhost — Clients, die das Directory neu lesen, wechseln die URLs sofort, und Erneuerungen schlagen fehl, wenn der Vhost nicht erreichbar ist" },
           { label: "TLS-Zertifikat-ID", text: "Metadaten für das auf dem ACME-Vhost bereitgestellte Zertifikat (z. B. Wildcard)" },
         ]
       },
@@ -194,6 +195,11 @@ Zugriff von bestimmten IP-Adressen oder CIDR-Bereichen erlauben oder verweigern.
 ### 2FA-Durchsetzung
 Alle Benutzer zur Aktivierung der Zwei-Faktor-Authentifizierung verpflichten.
 
+### Verschlüsselung privater Schlüssel
+Alle in der Datenbank gespeicherten privaten Schlüssel mit AES-256 verschlüsseln, geschützt durch eine Master-Key-Datei. Der Bereich zeigt den Verschlüsselungsstatus und die Zähler **verschlüsselt / unverschlüsselt**. Zwei Opt-in-Umgebungsvariablen machen fehlende Schlüssel beim Start fatal: \`UCM_REQUIRE_DB_ENCRYPTION_KEY\` (Verschlüsselung von Integrationsgeheimnissen) und \`UCM_REQUIRE_KEY_ENCRYPTION\` (Verschlüsselung privater Schlüssel).
+
+> 💡 Sicherheitskritische Einstellungen (Sitzung, Sperrung, HSTS, öffentliche URL, Passwortrichtlinie) erfordern die Berechtigung **admin:settings** — die Felder sind für Operatoren gesperrt.
+
 > ⚠ Testen Sie IP-Einschränkungen sorgfältig vor der Anwendung. Falsche Regeln können alle Benutzer aussperren.
 
 ## SSO (Single Sign-On)
@@ -304,6 +310,18 @@ HTTP-Webhooks konfigurieren, um externe Systeme bei Ereignissen zu benachrichtig
 - Benutzer angemeldet, abgemeldet
 - Sicherung erstellt
 
+### Authentifizierung
+
+Optionale ausgehende Authentifizierung (alle gelten zusätzlich zur optionalen HMAC-Signatur):
+
+- **Keine** — Kein Auth-Header (öffentliche Webhooks)
+- **Bearer** — Authorization: Bearer {token}
+- **Basic** — Authorization: Basic base64(username:password)
+- **API Key** — Benutzerdefinierter Header (z. B. X-Api-Key: {token})
+- **Custom** — Authorization: {scheme} {token} (z. B. auth-key VALUE)
+
+Tokens werden verschlüsselt gespeichert und nie in der UI zurückgegeben.
+
 ### Webhook erstellen
 1. Klicken Sie auf **Webhook hinzufügen**
 2. Geben Sie die **URL** ein (muss HTTPS sein)
@@ -387,6 +405,14 @@ Bindet die Kerberos-authentifizierten XCEP/WSTEP-Endpunkte für die stille GPO-A
 
 - **Benutzername/Passwort** — Fragt nach Anmeldedaten; für die interaktive Registrierung „Neues Zertifikat anfordern“, ohne Active Directory zu benötigen
 - **Kerberos** — Keine Anmeldeaufforderung; erfordert einen domänenverbundenen Client und eine GPO-Konfiguration
+
+### Zertifikatserneuerungs-Bindung
+
+Neben Benutzername/Passwort und Kerberos unterstützt WSTEP die **Erneuerung per Client-Zertifikat**, analog zu echten ADCS-CES-Endpunkten: Die Erneuerungsanfrage (RST) muss mit dem privaten Schlüssel eines Zertifikats XML-DSig-signiert sein, das **UCM selbst ausgestellt hat**. Das vorgelegte Zertifikat wird **Byte für Byte** mit dem gespeicherten Zertifikat der konfigurierten CA abgeglichen — Seriennummer oder Betreff allein genügen nie. So können Windows-Clients unbeaufsichtigt mit ihrem aktuellen Zertifikat erneuern, ohne Anmeldedaten oder Kerberos-Ticket.
+
+### SID-Sicherheitserweiterung (KB5014754)
+
+Bei **Kerberos-authentifizierter Ausstellung** bettet UCM die AD-SID des Anfragers in die Microsoft-SID-Sicherheitserweiterung (\`szOID_NTDS_CA_SECURITY_EXT\`) des ausgestellten Zertifikats ein. Domänencontroller nutzen sie für die **starke Zertifikatszuordnung** (KB5014754) — erforderlich, seit AD die starke Zuordnung für zertifikatsbasierte Authentifizierung erzwingt (Smartcard-Anmeldung, PKINIT).
 
 ### AD-abgeleitete Betreffe
 

@@ -47,10 +47,9 @@ export default {
     ],
     tips: [
       'Les CA avec une icône de clé (🔑) possèdent une clé privée et peuvent signer des certificats',
-      'Utilisez des CA intermédiaires pour la signature quotidienne, gardez la CA racine hors ligne si possible',
-      'L\'exportation PKCS#12 inclut la chaîne complète et est idéale pour la sauvegarde',
       'Mettez la CA racine hors ligne dès que vos intermédiaires sont opérationnelles',
       'Utilisez « Exportée en fichier » pour le meilleur isolement air-gap ; « Protégée par mot de passe » pour une restauration rapide en place',
+      'L\'exportation PKCS#12 inclut la chaîne complète et est idéale pour la sauvegarde',
     ],
     warnings: [
       'Supprimer une CA ne révoquera PAS les certificats qu\'elle a émis — révoquez-les d\'abord',

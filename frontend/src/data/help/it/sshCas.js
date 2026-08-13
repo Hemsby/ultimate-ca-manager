@@ -22,8 +22,11 @@ export default {
       {
         title: 'Configurazione del server',
         items: [
-          { label: 'Script di configurazione', text: 'Scarica uno script shell POSIX che configura automaticamente sshd per fidarsi di questa CA. Supporta tutte le principali distribuzioni Linux.' },
-          { label: 'Configurazione manuale', text: 'Copia la chiave pubblica della CA e aggiungi TrustedUserCAKeys (User CA) o HostCertificate (Host CA) in sshd_config.' },
+          { label: 'Script di configurazione Linux/macOS', text: 'Scarica uno script shell POSIX (.sh) che configura automaticamente sshd per fidarsi di questa CA. Installazione rapida: curl -fsSL <url> | bash' },
+          { label: 'Script di configurazione Windows', text: 'Scarica uno script PowerShell (.ps1) che configura Windows OpenSSH Server (scrive la chiave pubblica della CA in %ProgramData%\\ssh, blinda le ACL, aggiunge TrustedUserCAKeys / HostCertificate a sshd_config, valida con sshd -T, riavvia sshd). Installazione rapida: iwr <url> | iex' },
+          { label: 'Blocco diagnostico', text: 'In caso di errore di Add-WindowsCapability (WSUS / dominio), lo script stampa un blocco etichettato che spiega lo stato della policy e tre percorsi di risoluzione — non modifica mai da sé la policy WSUS / WU' },
+          { label: 'Dry-run', text: 'Entrambi gli script supportano un flag -DryRun / --dry-run per visualizzare in anteprima le modifiche senza applicarle' },
+          { label: 'Configurazione manuale', text: 'Copia la chiave pubblica della CA e aggiungi TrustedUserCAKeys (User CA) o HostCertificate (Host CA) in sshd_config' },
         ]
       },
       {
@@ -31,6 +34,14 @@ export default {
         items: [
           { label: 'KRL (Key Revocation List)', text: 'Formato binario compatto per revocare singoli certificati. Si configura tramite RevokedKeys in sshd_config.' },
           { label: 'Scarica KRL', text: 'Scarica il file KRL attuale dal pannello dettaglio della CA.' },
+        ]
+      },
+      {
+        title: 'Formati TTL',
+        items: [
+          { label: 'Durate con suffisso', text: 'Il TTL predefinito e il TTL massimo accettano 24h, 7d, 365d — suffissi s, m, h, d, w, y' },
+          { label: 'Numeri semplici', text: 'Un numero senza suffisso è interpretato come secondi (es. 3600 = 1 ora)' },
+          { label: 'Validazione', text: 'I valori malformati vengono rifiutati con un errore che indica i formati accettati' },
         ]
       },
     ],
@@ -84,6 +95,15 @@ Una Host CA firma certificati che autenticano i **server presso i client**. Quan
    - **RSA 2048/4096** — Massima compatibilità, chiavi più grandi.
 5. Imposta opzionalmente la validità massima e le estensioni predefinite
 6. Fai clic su **Crea**
+
+### Formati TTL
+
+I campi **TTL predefinito** e **TTL massimo** accettano durate leggibili:
+
+- Valori con suffisso — \`24h\`, \`7d\`, \`365d\` (suffissi accettati: \`s\`, \`m\`, \`h\`, \`d\`, \`w\`, \`y\`)
+- Numeri semplici — interpretati come **secondi** (es. \`3600\` = 1 ora)
+
+I valori malformati vengono rifiutati con un errore che indica i formati accettati.
 
 > 💡 Usa CA separate per i certificati utente e host. Non usare mai una stessa CA per entrambi gli scopi.
 

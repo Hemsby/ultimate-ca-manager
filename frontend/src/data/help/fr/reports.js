@@ -1,42 +1,39 @@
 export default {
   helpContent: {
     title: 'Rapports',
-    subtitle: 'Rapports de conformité et opérationnels',
-    overview: 'Générez, téléchargez et programmez des rapports de conformité PKI. Les rapports fournissent une visibilité sur votre infrastructure de certificats pour l\'audit, la conformité et la planification opérationnelle.',
+    subtitle: 'Rapports de conformité et d\'inventaire PKI',
+    overview: 'Générez, téléchargez et programmez des rapports pour l\'audit de conformité. Les rapports couvrent l\'inventaire des certificats, les certificats expirants, la hiérarchie des CA, l\'activité d\'audit et le statut de conformité aux politiques. Téléchargez un rapport PDF exécutif pour les revues de direction.',
     sections: [
       {
         title: 'Types de rapports',
         items: [
-          { label: 'Inventaire des certificats', text: 'Liste complète de tous les certificats avec les détails et le statut' },
-          { label: 'Certificats expirants', text: 'Certificats expirant dans la fenêtre temporelle configurée' },
-          { label: 'Hiérarchie des CA', text: 'Structure de l\'autorité de certification avec les comptages et le statut' },
+          { label: 'Inventaire des certificats', text: 'Liste complète de tous les certificats avec leur statut' },
+          { label: 'Certificats expirants', text: 'Certificats expirant dans une fenêtre temporelle spécifiée' },
+          { label: 'Hiérarchie des CA', text: 'Structure et statistiques des autorités de certification' },
           { label: 'Résumé d\'audit', text: 'Événements de sécurité et résumé de l\'activité des utilisateurs' },
           { label: 'Statut de conformité', text: 'Résumé de la conformité et des violations de politique' },
         ]
       },
       {
-        title: 'Actions',
+        title: 'Rapport PDF exécutif',
         items: [
-          { label: 'Générer', text: 'Créer un aperçu sous forme de tableau formaté' },
-          { label: 'Télécharger CSV', text: 'Exporter au format tableur pour Excel ou Google Sheets' },
-          { label: 'Télécharger JSON', text: 'Exporter en données structurées pour l\'automatisation' },
-          { label: 'Télécharger PDF', text: 'Rapport exécutif professionnel avec graphiques et recommandations' },
+          { label: 'Télécharger PDF', text: 'Rapport PDF professionnel en un clic pour la direction et les auditeurs' },
+          { label: 'Contenu', text: 'Résumé exécutif, évaluation des risques, inventaire des certificats, scores de conformité, infrastructure CA, activité d\'audit et recommandations' },
+          { label: 'Graphiques et visuels', text: 'Inclut jauge de risque, distribution des statuts, chronologie d\'expiration et répartition de la conformité' },
         ]
       },
       {
-        title: 'Rapports programmés',
+        title: 'Programmation',
         items: [
-          { label: 'Rapport d\'expiration (quotidien)', text: 'Vérification quotidienne automatique des certificats expirants avec notification par e-mail' },
-          { label: 'Rapport de conformité (hebdomadaire)', text: 'Résumé hebdomadaire de la conformité aux politiques' },
-          { label: 'Envoi test', text: 'Envoyer un rapport test à un destinataire pour vérifier la configuration SMTP' },
+          { label: 'Rapport d\'expiration', text: 'E-mail quotidien avec les certificats expirant bientôt' },
+          { label: 'Rapport de conformité', text: 'E-mail hebdomadaire avec le statut de conformité aux politiques' },
         ]
       },
     ],
     tips: [
-      'Programmez le rapport d\'expiration en premier — c\'est le plus important pour la prévention des pannes',
-      'Les rapports CSV sont plus faciles pour les parties prenantes non techniques',
-      'Le rapport PDF inclut des éléments visuels (jauge de risque, distribution, chronologie) pour les présentations',
-      'Les rapports programmés nécessitent que SMTP soit configuré dans Paramètres → E-mail',
+      'Utilisez le rapport PDF exécutif pour les revues de direction et les audits de conformité.',
+      'Téléchargez les rapports en CSV pour l\'analyse en tableur ou en JSON pour l\'automatisation.',
+      'Utilisez la fonction d\'envoi test pour vérifier la livraison des e-mails avant d\'activer les programmations.',
     ],
   },
   helpGuides: {

@@ -195,6 +195,11 @@ Autoriser ou refuser l'accès depuis des adresses IP ou plages CIDR spécifiques
 ### Application de la 2FA
 Exiger que tous les utilisateurs activent l'authentification à deux facteurs.
 
+### Chiffrement des clés privées
+Chiffrez toutes les clés privées stockées en base de données avec AES-256, protégées par un fichier de clé maîtresse. La section affiche l'état du chiffrement et les compteurs de clés **chiffrées / non chiffrées**. Deux variables d'environnement opt-in rendent l'absence de clé fatale au démarrage : \`UCM_REQUIRE_DB_ENCRYPTION_KEY\` (chiffrement des secrets d'intégration) et \`UCM_REQUIRE_KEY_ENCRYPTION\` (chiffrement des clés privées).
+
+> 💡 Les paramètres sensibles (session, verrouillage, HSTS, URL publique, politique de mot de passe) exigent la permission **admin:settings** — les champs sont verrouillés pour les opérateurs.
+
 > ⚠ Testez les restrictions IP soigneusement avant de les appliquer. Des règles incorrectes peuvent verrouiller tous les utilisateurs.
 
 ## SSO (Authentification unique)
@@ -395,12 +400,20 @@ Lie les points de terminaison XCEP/WSTEP authentifiés par Kerberos utilisés po
 - **Nom de principal de service (SPN)** — p. ex. \`HTTP/ucm.exemple.fr@EXEMPLE.FR\`
 - **Keytab** — Généré avec \`ktpass\` ou \`ktutil\` sur le contrôleur de domaine pour le SPN ci-dessus
 
-> ⚠ Si la bibliothèque SPNEGO côté serveur n'est pas installée, l'authentification Kerberos ne fonctionnera pas même si elle est activée ici -- un avertissement s'affiche sur l'onglet.
+> ⚠ Kerberos nécessite le **backend \`gssapi\`** côté serveur (la bibliothèque Python \`gssapi\` plus les bibliothèques Kerberos système) — le paquet SPNEGO de base seul ne suffit pas. Sans lui, l'authentification Kerberos ne fonctionnera pas même si elle est activée ici, et la liaison Kerberos n'est pas annoncée ; un avertissement s'affiche sur l'onglet.
 
 ### URL de stratégie d'inscription
 
 - **Nom d'utilisateur/Mot de passe** — Demande des identifiants ; pour l'inscription interactive « Demander un nouveau certificat », ne nécessite pas Active Directory
 - **Kerberos** — Aucune invite d'identifiants ; nécessite un client joint au domaine et une configuration GPO
+
+### Liaison de renouvellement par certificat
+
+En plus de Nom d'utilisateur/Mot de passe et Kerberos, WSTEP prend en charge le **renouvellement par certificat client**, à l'image des vrais endpoints CES d'ADCS : la requête de renouvellement (RST) doit être signée en XML-DSig avec la clé privée d'un certificat **émis par UCM lui-même**. Le certificat présenté est comparé **octet par octet** au certificat stocké pour la CA configurée — le numéro de série ou le sujet seuls ne suffisent jamais. Cela permet aux clients Windows de renouveler sans surveillance avec leur certificat actuel, sans identifiants ni ticket Kerberos.
+
+### Extension de sécurité SID (KB5014754)
+
+Lors d'une **émission authentifiée par Kerberos**, UCM intègre le SID AD du demandeur dans l'extension de sécurité SID de Microsoft (\`szOID_NTDS_CA_SECURITY_EXT\`) du certificat émis. Les contrôleurs de domaine l'utilisent pour le **mappage fort de certificats** (KB5014754) — requis depuis l'application par AD du mappage fort pour l'authentification par certificat (connexion par carte à puce, PKINIT).
 
 ### Sujets dérivés d'AD
 

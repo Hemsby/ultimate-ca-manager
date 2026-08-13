@@ -22,10 +22,20 @@ export default {
           { label: 'Import/Export', text: 'Templates als JSON-Dateien zwischen UCM-Instanzen teilen' },
         ]
       },
+      {
+        title: 'Windows-Autoregistrierung',
+        items: [
+          { label: 'Autoregistrierung erlauben', text: 'Das Template als autoEnroll=true in der Certificate Enrollment Policy ausweisen, damit GPO/Kerberos-Clients es bei der Anmeldung automatisch anfordern. Standardmäßig aus — manuelle Registrierung bleibt auch ohne dieses Flag möglich' },
+          { label: 'Betreff aus Active Directory ableiten', text: 'Betreff und SAN aus dem AD-Objekt des Anfragenden ableiten (über den AD-Connector), statt sie vom Client zu verlangen — für unbeaufsichtigte GPO-Autoregistrierung' },
+          { label: 'Registrierung auf AD-Gruppe beschränken', text: 'Nur Mitglieder der konfigurierten AD-Gruppe (einschließlich verschachtelter Mitgliedschaften) dürfen über den Kerberos-Endpunkt registrieren. Leer = jeder authentifizierte Principal. Auf dem Benutzername/Passwort-Endpunkt nicht durchgesetzt' },
+          { label: 'Gepinnte Betreffsfelder', text: 'C/ST/L/O/OU-Werte auf jedem über WSTEP ausgestellten Zertifikat erzwingen — sie überschreiben CSR oder AD-Ableitung für diese Felder. CN und SAN sind nie betroffen — lassen Sie ein Feld leer, um es dynamisch zu halten' },
+        ]
+      },
     ],
     tips: [
       'Erstellen Sie separate Templates für TLS-Server, Clients und Code-Signierung',
       'Verwenden Sie die Duplizieren-Aktion, um schnell Varianten eines Templates zu erstellen',
+      'Templates mit Autoregistrierungs-Flags zeigen AD- / Auto- / ACL- / Pinned-Badges in der Liste',
     ],
   },
   helpGuides: {
@@ -64,6 +74,26 @@ Wählen Sie beim Ausstellen eines Zertifikats oder Signieren eines CSR ein Templ
 - Betreffsfelder (die Sie überschreiben können)
 - Key Usage und Extended Key Usage
 - Gültigkeitsdauer
+
+## Windows-Autoregistrierungs-Flags
+
+Templates tragen drei Opt-in-Flags für die Windows-Autoregistrierungsprotokolle (XCEP/WSTEP, konfiguriert unter **Einstellungen → Windows-Autoregistrierung**):
+
+- **Autoregistrierung erlauben** — Das Template als \`autoEnroll=true\` in der Certificate Enrollment Policy ausweisen, damit GPO/Kerberos-authentifizierte Clients es bei der Anmeldung automatisch und ohne Benutzeraktion anfordern. Standardmäßig aus — wie bei echtem ADCS kann ein Template auch ohne dieses Flag manuell registriert werden (MMC „Neues Zertifikat anfordern", \`certreq\`), da Enroll und Autoenroll getrennte Berechtigungen sind.
+- **Betreff aus Active Directory ableiten** — Für unbeaufsichtigte GPO-Autoregistrierung: Betreff und SAN des Zertifikats aus dem AD-Objekt des Anfragenden ableiten (über den AD-Connector), statt sie vom Client zu verlangen.
+- **Registrierung auf AD-Gruppe beschränken** — Nur Principals, die der konfigurierten Active-Directory-Gruppe angehören (einschließlich verschachtelter Mitgliedschaften), dürfen dieses Template über den Kerberos-authentifizierten Endpunkt registrieren. Geben Sie einen Gruppennamen oder vollständigen DN ein; leer lassen, um jeden authentifizierten Principal zuzulassen — entsprechend dem ADCS-Standardverhalten. Auf dem Benutzername/Passwort-Endpunkt nicht durchgesetzt, da dort keine Identität pro Anfrage geprüft werden kann.
+
+Templates mit diesen Flags zeigen **AD**-, **Auto**- und **ACL**-Badges in der Template-Liste.
+
+## Gepinnte Betreffsfelder
+
+Ein Template kann die organisatorischen Betreffsfelder — **C, ST, L, O, OU** — für über WSTEP ausgestellte Zertifikate **pinnen**. Ein gepinnter Wert wird auf jedes ausgestellte Zertifikat erzwungen und überschreibt, was der CSR des Clients oder die Active-Directory-Ableitung für dieses Feld liefert.
+
+- **Common Name und Subject Alternative Name sind nie betroffen** — sie bleiben pro Anfragendem dynamisch
+- Lassen Sie ein Feld leer, um es dynamisch zu halten
+- Templates mit gepinnten Feldern zeigen ein **Pinned**-Badge, und die gepinnten Werte erscheinen im Template-Detailbereich
+
+Nutzen Sie dies, um eine einheitliche organisatorische Identität (z.B. ein festes \`O\` und \`C\`) über eine autoregistrierte Flotte hinweg zu garantieren, unabhängig davon, was jeder Windows-Client übermittelt.
 
 ## Templates duplizieren
 

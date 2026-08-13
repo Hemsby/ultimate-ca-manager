@@ -11,6 +11,7 @@ export default {
           { label: 'Regenerar Manualmente', text: 'Forçar a regeneração da CRL imediatamente' },
           { label: 'Baixar CRL', text: 'Baixar o arquivo CRL em formato DER ou PEM' },
           { label: 'URL do CDP', text: 'URL do Ponto de Distribuição de CRL para incorporar nos certificados' },
+          { label: 'Validade', text: 'Validade da CRL por CA de 1 dia até 5 anos (90d/180d/1y/3y/5y para CAs offline que não podem reassinar no prazo). Um aviso aparece acima de um ano — as partes confiantes podem manter dados de revogação obsoletos durante toda a janela' },
         ]
       },
       {
@@ -20,6 +21,8 @@ export default {
           { label: 'URL do AIA', text: 'URLs de Acesso à Informação da Autoridade — endpoints do respondedor OCSP e download do certificado do emissor CA incorporados nos certificados emitidos' },
           { label: 'Cache', text: 'Cache de respostas com limpeza diária automática de entradas expiradas' },
           { label: 'Total de Consultas', text: 'Número de requisições OCSP processadas' },
+          { label: 'Respondedor Delegado', text: 'Assinar as respostas com um certificado OCSPSigning dedicado em vez da chave da CA — atribua um por CA no painel de detalhes' },
+          { label: 'Renovação Automática do Respondedor', text: 'Uma tarefa diária reemite o certificado do respondedor delegado antes da expiração (mesmo par de chaves, renovado de forma idêntica) e o revincula — ativada por padrão' },
         ]
       },
     ],
@@ -53,6 +56,13 @@ Clique em **Regenerar** para reconstruir a CRL de uma CA imediatamente. Isso é 
 ### Regeneração Automática
 Ative a regeneração automática para reconstruir automaticamente a CRL sempre que um certificado for revogado. Alterne isso por CA.
 
+### Validade da CRL
+O agendamento da CRL (por CA) define por quanto tempo cada CRL publicada permanece válida. As opções vão de **1 dia a 5 anos**: 1d, 2d, 3d, 7d, 14d, 30d, 90d, 180d, 1y, 3y, 5y.
+
+- **CAs online** devem manter uma validade curta (dias) para que as partes confiantes captem revogações rapidamente
+- **CAs offline** (tipicamente uma raiz que não pode reassinar CRLs no prazo) são o caso de uso previsto para as opções longas — 90d até 5y
+- Um aviso é mostrado acima de um ano: as partes confiantes podem manter dados de revogação obsoletos durante toda a janela de validade
+
 ### Ponto de Distribuição de CRL (CDP)
 A URL do CDP é incorporada nos certificados para que clientes saibam onde baixar a CRL. Copie a URL dos detalhes da CRL.
 
@@ -84,6 +94,12 @@ O UCM armazena em cache as respostas OCSP para desempenho. O cache é:
 - **Limpo automaticamente** — Respostas expiradas são purgadas diariamente pelo agendador
 - **Invalidado na revogação** — Quando um certificado é revogado, sua resposta OCSP em cache é imediatamente limpa
 - **Invalidado na remoção de suspensão** — Quando uma Suspensão de Certificado é removida, o cache OCSP é atualizado
+
+### Respondedor OCSP Delegado
+
+Por padrão, as respostas OCSP são assinadas com a própria chave da CA. Um **respondedor delegado** usa em vez disso um certificado dedicado com o EKU **OCSPSigning** — atribua um por CA no painel de detalhes da CA (apenas certificados portando o EKU OCSPSigning e uma chave privada são elegíveis).
+
+**Renovação automática**: uma tarefa diária reemite o certificado do respondedor antes que ele expire — mesmo par de chaves e extensões, renovado de forma idêntica — e revincula a configuração do respondedor da CA ao novo certificado. Certificados de assinatura OCSP de curta duração (ex. um modelo de 90 dias) rotacionam sem ação manual. Ativada por padrão; pode ser desativada e a janela de renovação ajustada via configuração.
 
 ### URLs AIA
 A extensão Authority Information Access (AIA) é incorporada nos certificados para informar aos clientes onde encontrar:

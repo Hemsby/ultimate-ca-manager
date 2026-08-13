@@ -61,10 +61,9 @@ export default {
     ],
     tips: [
       'Marque con estrella ⭐ los certificados importantes para añadirlos a su lista de favoritos',
-      'Utilice los filtros para encontrar rápidamente certificados por estado, CA o texto de búsqueda',
+      'Utilice los filtros para encontrar rápidamente certificados por estado, CA o texto de búsqueda — su selección se conserva tras recargar la página',
       'La renovación conserva el mismo sujeto pero genera un nuevo par de claves',
       '¿Necesita un EKU no estándar (Microsoft RDP, smartcard logon, document signing)? Añádalo vía "EKU adicionales" en lugar de editar plantillas',
-      'Los filtros activos (estado, CA, búsqueda) se conservan tras recargar la página',
     ],
     warnings: [
       'La revocación es generalmente permanente — excepto para «Suspensión de certificado» que puede levantarse',

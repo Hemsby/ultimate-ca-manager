@@ -61,10 +61,9 @@ export default {
     ],
     tips: [
       'Markieren Sie ⭐ wichtige Zertifikate, um sie zu Ihrer Favoritenliste hinzuzufügen',
-      'Verwenden Sie Filter, um Zertifikate schnell nach Status, CA oder Suchtext zu finden',
+      'Verwenden Sie Filter, um Zertifikate schnell nach Status, CA oder Suchtext zu finden — Ihre Auswahl wird über Reloads hinweg gespeichert',
       'Beim Erneuern wird derselbe Betreff beibehalten, aber ein neues Schlüsselpaar generiert',
       'Brauchen Sie eine nicht-standardisierte EKU (Microsoft RDP, Smartcard-Anmeldung, Dokumentsignierung)? Fügen Sie sie über "Extra EKUs" hinzu, statt Templates zu bearbeiten',
-      'Aktive Filter (Status, CA, Suche) werden über Reloads hinweg gespeichert',
     ],
     warnings: [
       'Widerruf ist grundsätzlich dauerhaft — außer bei „Zertifikat gesperrt", das aufgehoben werden kann (Sperre aufheben)',

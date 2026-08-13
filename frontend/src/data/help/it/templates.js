@@ -22,10 +22,20 @@ export default {
           { label: 'Importa/Esporta', text: 'Condividi modelli come file JSON tra istanze UCM' },
         ]
       },
+      {
+        title: 'Autoenrollment Windows',
+        items: [
+          { label: 'Consenti autoenrollment', text: 'Pubblicizza il modello come autoEnroll=true nella Certificate Enrollment Policy, così i client GPO/Kerberos lo richiedono automaticamente al logon. Disattivato per impostazione predefinita — l\'enrollment manuale resta possibile senza questo flag' },
+          { label: 'Costruisci soggetto da Active Directory', text: 'Deriva soggetto e SAN dall\'oggetto AD del richiedente (tramite l\'AD Connector) invece di richiedere che sia il client a fornirli — per l\'autoenrollment GPO non presidiato' },
+          { label: 'Limita l\'enrollment a un gruppo AD', text: 'Solo i membri del gruppo AD configurato (inclusa l\'appartenenza annidata) possono fare enrollment tramite l\'endpoint Kerberos. Vuoto = qualsiasi principal autenticato. Non applicato sull\'endpoint Username/Password' },
+          { label: 'Campi soggetto bloccati', text: 'Forza i valori C/ST/L/O/OU su ogni certificato emesso via WSTEP, sovrascrivendo il CSR o la derivazione AD per quei campi. CN e SAN non sono mai interessati — lascia un campo vuoto per mantenerlo dinamico' },
+        ]
+      },
     ],
     tips: [
       'Crea modelli separati per server TLS, client e firma del codice',
       'Usa l\'azione Duplica per creare rapidamente varianti di un modello',
+      'I modelli con flag di autoenrollment mostrano i badge AD / Auto / ACL / Pinned nell\'elenco',
     ],
   },
   helpGuides: {
@@ -64,6 +74,26 @@ Quando emetti un certificato o firmi un CSR, seleziona un modello dal menu a ten
 - Campi soggetto (puoi sovrascriverli)
 - Key Usage e Extended Key Usage
 - Periodo di validità
+
+## Flag di autoenrollment Windows
+
+I modelli includono tre flag opt-in usati dai protocolli di autoenrollment Windows (XCEP/WSTEP, configurati in **Impostazioni → Autoenrollment Windows**):
+
+- **Consenti autoenrollment** — Pubblicizza il modello come \`autoEnroll=true\` nella Certificate Enrollment Policy, così i client autenticati GPO/Kerberos lo richiedono automaticamente al logon senza alcuna azione dell'utente. Disattivato per impostazione predefinita — come nel vero ADCS, un modello può comunque essere richiesto manualmente (MMC «Richiedi nuovo certificato», \`certreq\`) senza questo flag, perché Enroll e Autoenroll sono permessi separati.
+- **Costruisci soggetto da Active Directory** — Per l'autoenrollment GPO non presidiato: deriva soggetto e SAN del certificato dall'oggetto AD del richiedente (tramite l'AD Connector) invece di richiedere che sia il client a fornirli.
+- **Limita l'enrollment a un gruppo AD** — Solo i principal appartenenti al gruppo Active Directory configurato (inclusa l'appartenenza annidata) possono fare enrollment con questo modello tramite l'endpoint autenticato Kerberos. Inserisci un nome di gruppo o un DN completo; lascia vuoto per consentire qualsiasi principal autenticato, come nel comportamento predefinito del vero ADCS. Non applicato sull'endpoint Username/Password, che non ha un'identità per richiesta da verificare.
+
+I modelli con questi flag mostrano i badge **AD**, **Auto** e **ACL** nell'elenco dei modelli.
+
+## Campi soggetto bloccati
+
+Un modello può **bloccare** i campi organizzativi del soggetto — **C, ST, L, O, OU** — per i certificati emessi via WSTEP. Un valore bloccato viene forzato su ogni certificato emesso, sovrascrivendo qualunque valore fornito dal CSR del client o dalla derivazione Active Directory per quel campo.
+
+- **Common Name e Subject Alternative Name non sono mai interessati** — restano dinamici per ogni richiedente
+- Lascia un campo vuoto per mantenerlo dinamico
+- I modelli con campi bloccati mostrano un badge **Pinned** e i valori bloccati appaiono nel pannello di dettaglio del modello
+
+Usalo per garantire un'identità organizzativa uniforme (es. \`O\` e \`C\` fissi) su un intero parco in autoenrollment, indipendentemente da ciò che ogni client Windows invia.
 
 ## Duplicazione dei modelli
 

@@ -17,6 +17,7 @@ export default {
           { label: 'CA firmataria', text: 'La CA la cui chiave privata firma i token timestamp — deve essere una CA valida e non scaduta' },
           { label: 'Policy OID', text: 'Object Identifier per la policy TSA (es. 1.2.3.4.1) — incluso in ogni risposta timestamp' },
           { label: 'Abilita/Disabilita', text: 'Attiva o disattiva l\'endpoint TSA senza perdere la configurazione' },
+          { label: 'Richiedi certificato dedicato', text: 'Opt-in: rifiuta di firmare le marche temporali con il certificato della CA stessa — richiede un certificato di firma end-entity dedicato con EKU timeStamping critico (RFC 3161)' },
         ]
       },
       {

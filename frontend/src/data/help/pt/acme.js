@@ -22,6 +22,7 @@ export default {
           { label: 'Tipos de Chave', text: 'RSA-2048, RSA-4096, ECDSA P-256, ECDSA P-384 para chaves de certificado' },
           { label: 'Chaves de Conta', text: 'Algoritmos ES256 (P-256), ES384 (P-384) ou RS256 para chaves de conta ACME' },
           { label: 'Provedores DNS', text: 'Configurar provedores de desafio DNS-01 (Cloudflare, Route53, etc.)' },
+          { label: 'Comando Personalizado', text: 'Tipo de provedor DNS que executa comandos locais configurados pelo admin para criar/excluir TXT — detalhes do registro passados via variáveis de ambiente DOMAIN, RECORD_NAME, RECORD_VALUE, TTL, ACTION. Caminho absoluto do binário obrigatório, sem shell, timeout configurável' },
           { label: 'Domínios', text: 'Mapear domínios para provedores DNS para validação automática' },
         ]
       },
@@ -43,6 +44,7 @@ export default {
           { label: 'Redefinir conta', text: 'Limpa as credenciais de conta upstream salvas para forçar novo registro (use após mudar a CA upstream)' },
           { label: 'Credenciais EAB', text: 'Credenciais de External Account Binding para CAs que as exigem (ex.: ZeroSSL, Google Trust)' },
           { label: 'Desafios DNS', text: 'O UCM lida com desafios DNS-01 em nome dos clientes usando os provedores DNS configurados' },
+          { label: 'Podar certificados substituídos', text: 'Opção opt-in: quando um pedido proxy é finalizado, os certificados importados anteriormente por pedidos proxy para exatamente o mesmo conjunto de domínios são excluídos. Certificados revogados são sempre mantidos; certificados não-proxy nunca são tocados. Desativado por padrão' },
         ]
       },
       {
@@ -54,6 +56,7 @@ export default {
           { label: 'Vincular', text: 'O cliente assina um JWS sobre a chave MAC em newAccount para vincular sua conta ACME' },
           { label: 'Rotacionar / Revogar', text: 'Revogar um kid a qualquer momento — contas existentes continuam, novos vínculos são recusados' },
           { label: 'Auditoria', text: 'Emissão, rotação e revogação são auditadas sob o operador que as realizou' },
+          { label: 'Restrições de domínio', text: 'Limite uma credencial aos domínios que ela pode solicitar: * (qualquer), *.example.com (todos os subdomínios) ou uma lista explícita — uma lista vazia bloqueia totalmente a emissão. Aplicado em new-order/new-authz, servidor e proxy; só tem efeito quando EAB é obrigatório' },
         ]
       },
       {
@@ -62,6 +65,7 @@ export default {
           { label: 'Override por conta', text: 'Sobrescrever resolvedores do sistema ao validar registros TXT _acme-challenge' },
           { label: 'Split-horizon', text: 'Útil quando seu servidor autoritativo é interno mas a visão pública é cacheada em outro lugar' },
           { label: 'Registros obsoletos', text: 'Evita o cache de resolvedores públicos durante renovações automáticas rápidas' },
+          { label: 'Entradas host:port', text: 'Resolvedores que não escutam na porta 53 são aceitos (ex. um BIND ou dnsmasq somente em loopback numa porta alternativa) — separados por vírgula, IPs simples continuam funcionando' },
         ]
       },
       {
@@ -110,12 +114,14 @@ export default {
       'URL do diretório ACME: https://seu-servidor:porta/acme/directory',
       'Use uma URL de diretório personalizada para conectar ao ZeroSSL, Buypass, HARICA ou qualquer CA RFC 8555',
       'As credenciais EAB (Key ID + HMAC Key) são fornecidas pela sua CA após o registro',
+      'Quando UCM é o servidor ACME, emita suas próprias credenciais EAB em ACME → EAB Credentials',
+      'Para Kubernetes/cert-manager: veja os manifestos de referência em examples/kubernetes/cert-manager/',
       'Chaves ECDSA P-256 oferecem segurança equivalente ao RSA-2048 com tamanho muito menor',
       'Use Domínios Locais para atribuir diferentes CAs a diferentes domínios internos',
       'Qualquer CA com chave privada pode ser selecionada como CA emissora',
       'Domínios curinga (*.example.com) requerem validação DNS-01',
-      'Quando UCM é o servidor ACME, emita suas próprias credenciais EAB em ACME → EAB Credentials',
-      'Para Kubernetes/cert-manager: veja os manifestos de referência em examples/kubernetes/cert-manager/',
+      'A troca de CA upstream limpa automaticamente credenciais de conta obsoletas',
+      'Use a URL do proxy com o certbot: certbot certonly --server https://seu-servidor:porta/acme/proxy/directory',
     ],
     warnings: [
       'A validação de domínio é obrigatória — seu servidor deve estar acessível ou o DNS configurado',
@@ -203,6 +209,20 @@ Configure provedores de desafio DNS-01 para validação de domínio. Provedores 
 
 Cada provedor requer credenciais de API específicas para o serviço DNS.
 
+#### Provedor Comando Personalizado
+Para serviços DNS sem driver nativo, o provedor **Comando Personalizado** executa comandos locais configurados pelo admin para criar/excluir registros TXT. Os detalhes do registro são passados como variáveis de ambiente:
+
+- \`DOMAIN\` — domínio base sendo validado
+- \`RECORD_NAME\` — nome completo do registro TXT (\`_acme-challenge.example.com\`)
+- \`RECORD_VALUE\` — conteúdo do TXT (digest do desafio)
+- \`TTL\` — TTL do registro em segundos
+- \`ACTION\` — \`create\` ou \`delete\`
+
+O comando requer um **caminho absoluto do binário**, executa sem shell (sem pipes nem expansão) e é encerrado após um timeout configurável (5–300 s, padrão 60). Use um pequeno script wrapper para integrar qualquer ferramenta DNS externa.
+
+### Resolvedores DNS personalizados
+Opcionalmente sobrescreva os resolvedores usados para verificar os registros TXT \`_acme-challenge\` (útil para DNS split-horizon ou para evitar o cache de resolvedores públicos). As entradas são separadas por vírgula e aceitam IPs simples ou \`host:port\` — ex. um BIND somente em loopback ou uma instância dnsmasq numa porta alternativa.
+
 ### Domínios
 Mapeie seus domínios para provedores DNS. Ao solicitar um certificado para um domínio, o UCM usa o provedor mapeado para criar registros de desafio DNS-01.
 
@@ -258,6 +278,13 @@ Slugs reservados (proibidos): \`directory\`, \`new-order\`, \`challenge\`, \`acc
 - A troca de CA upstream limpa automaticamente credenciais obsoletas e força um novo registro
 - Use o botão **Redefinir conta** para limpar credenciais manualmente, se necessário
 - **Testar conexão** verifica se o diretório upstream está acessível e se EAB é necessário
+
+### Poda de certificados substituídos
+Cada renovação via proxy importa um novo certificado para o inventário, então os substituídos se acumulam com o tempo. A opção **Podar certificados substituídos** (definições do proxy) limpa automaticamente: quando um pedido proxy é finalizado, os certificados importados anteriormente por pedidos proxy para **exatamente o mesmo conjunto de domínios** são excluídos.
+
+- **Certificados revogados são sempre mantidos** — o registro de revogação permanece intacto
+- Certificados não emitidos pelo proxy nunca são tocados
+- Desativado por padrão
 
 ### Uso do proxy
 Direcione seus clientes ACME internos para o diretório proxy do CA alvo.
@@ -322,6 +349,17 @@ Quando um cliente ACME solicita um certificado, o UCM determina a CA assinante n
 3. **Padrão global** — A CA definida na configuração do servidor ACME
 4. **Primeira disponível** — Qualquer CA com chave privada
 
+### Credenciais EAB (lado servidor)
+Quando o UCM é o servidor ACME (ou proxy), você pode exigir **External Account Binding**: os clientes devem apresentar um kid + chave HMAC pré-emitidos para registrar uma conta. Emita e revogue credenciais em **ACME → EAB Credentials**.
+
+Cada credencial pode ser restrita aos **domínios para os quais pode solicitar certificados**:
+- \`*\` — qualquer domínio (o padrão para credenciais novas e pré-existentes)
+- \`*.example.com\` — o domínio e todos os seus subdomínios
+- Uma lista explícita de domínios
+- Uma **lista vazia bloqueia totalmente a emissão** para essa credencial
+
+As restrições são aplicadas em new-order e new-authz, tanto no servidor ACME integrado quanto no proxy. Elas só têm sentido quando **EAB é obrigatório** — caso contrário, os clientes podem simplesmente se registrar sem credencial.
+
 ### Contas
 Visualize contas de clientes ACME registradas:
 - ID da conta e e-mail de contato
@@ -335,44 +373,6 @@ Navegue por todos os pedidos de emissão de certificados:
 - CA assinante usada
 - Data e hora da emissão
 
-## Usando certbot
-
-\`\`\`
-# Registrar conta (Let's Encrypt — padrão)
-certbot register --agree-tos --email admin@example.com
-
-# Registrar com CA ACME personalizada + EAB
-certbot register \\
-  --server 'https://acme.zerossl.com/v2/DV90' \\
-  --eab-kid 'seu-key-id' \\
-  --eab-hmac-key 'sua-hmac-key' \\
-  --agree-tos --email admin@example.com
-
-# Solicitar certificado com chave ECDSA
-certbot certonly --server https://seu-servidor:8443/acme/directory \\
-  --standalone -d meuservidor.internal.corp \\
-  --key-type ecdsa --elliptic-curve secp256r1
-
-# Renovar
-certbot renew --server https://seu-servidor:8443/acme/directory
-\`\`\`
-
-## Usando acme.sh
-
-\`\`\`
-# Padrão (Let's Encrypt)
-acme.sh --issue -d example.com --standalone
-
-# CA ACME personalizada com EAB e ECDSA
-acme.sh --issue \\
-  --server 'https://acme-v02.harica.gr/acme/TOKEN/directory' \\
-  --eab-kid 'seu-key-id' \\
-  --eab-hmac-key 'sua-hmac-key' \\
-  --keylength ec-256 \\
-  -d example.com --standalone
-\`\`\`
-
-> ⚠ Para ACME interno, os clientes devem confiar na CA do UCM. Instale o certificado da CA Raiz no armazenamento de confiança do cliente.
 ## Certificados de endereço IP (RFC 8738)
 
 O servidor ACME local pode emitir certificados para **endereços IP** (IPv4 e IPv6), não apenas nomes DNS. Útil para serviços internos, appliances e hosts endereçados diretamente por IP.
@@ -416,6 +416,45 @@ O objeto challenge anuncia os valores esperados \`accounturi\` e \`issuer-domain
 - \`persistUntil=<timestamp-unix>\` — bloqueia novas validações após essa data
 
 > ⚠️ O registro concede capacidade de emissão à chave da conta ACME enquanto existir — exclua o TXT para revogá-la.
+
+## Usando certbot
+
+\`\`\`
+# Registrar conta (Let's Encrypt — padrão)
+certbot register --agree-tos --email admin@example.com
+
+# Registrar com CA ACME personalizada + EAB
+certbot register \\
+  --server 'https://acme.zerossl.com/v2/DV90' \\
+  --eab-kid 'seu-key-id' \\
+  --eab-hmac-key 'sua-hmac-key' \\
+  --agree-tos --email admin@example.com
+
+# Solicitar certificado com chave ECDSA
+certbot certonly --server https://seu-servidor:8443/acme/directory \\
+  --standalone -d meuservidor.internal.corp \\
+  --key-type ecdsa --elliptic-curve secp256r1
+
+# Renovar
+certbot renew --server https://seu-servidor:8443/acme/directory
+\`\`\`
+
+## Usando acme.sh
+
+\`\`\`
+# Padrão (Let's Encrypt)
+acme.sh --issue -d example.com --standalone
+
+# CA ACME personalizada com EAB e ECDSA
+acme.sh --issue \\
+  --server 'https://acme-v02.harica.gr/acme/TOKEN/directory' \\
+  --eab-kid 'seu-key-id' \\
+  --eab-hmac-key 'sua-hmac-key' \\
+  --keylength ec-256 \\
+  -d example.com --standalone
+\`\`\`
+
+> ⚠ Para ACME interno, os clientes devem confiar na CA do UCM. Instale o certificado da CA Raiz no armazenamento de confiança do cliente.
 
 ## Renewal Information (ARI, RFC 9773)
 

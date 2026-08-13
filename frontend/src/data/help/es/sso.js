@@ -26,6 +26,15 @@ export default {
         ]
       },
       {
+        title: 'Aprovisionamiento de roles (#81)',
+        items: [
+          { label: 'Rol predeterminado', text: 'Se aplica SOLO cuando un usuario se crea automáticamente en su primer inicio de sesión SSO. Los cambios de rol realizados después en UCM se conservan.' },
+          { label: 'Mapeo de roles', text: 'Mapee grupos externos (Azure AD, Okta, LDAP) → roles UCM (admin / operator / viewer). Se usa al crear el usuario y en cada inicio de sesión cuando la sincronización de roles está activada. Si varios grupos coinciden, gana el rol de mayor privilegio (admin > operator > auditor > viewer) — el orden de las entradas no importa (#221).' },
+          { label: 'Sincronizar rol en cada inicio de sesión', text: 'DESACTIVADO (predeterminado): SSO nunca sobrescribe los roles gestionados en UCM. ACTIVADO: el rol se resincroniza desde role_mapping en cada inicio de sesión; los usuarios sin coincidencia en el mapeo conservan su rol almacenado (default_role nunca se vuelve a aplicar).' },
+          { label: 'Actualizar usuarios automáticamente', text: 'Actualiza el correo y el nombre completo en cada inicio de sesión. NO toca el rol.' },
+        ]
+      },
+      {
         title: 'LDAP',
         items: [
           { label: 'Servidor', text: 'Nombre de host y puerto del servidor LDAP (389 o 636 para SSL)' },

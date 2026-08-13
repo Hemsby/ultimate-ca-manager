@@ -298,10 +298,21 @@ export const helpContent = {
           { label: 'Import/Export', text: 'Share templates as JSON files between UCM instances' },
         ]
       },
+      {
+        title: 'Windows Autoenrollment',
+        icon: WindowsLogo,
+        items: [
+          { label: 'Allow autoenrollment', text: 'Advertise the template as autoEnroll=true in Certificate Enrollment Policy so GPO/Kerberos clients request it automatically at logon. Off by default — manual enrollment stays possible without it' },
+          { label: 'Build subject from Active Directory', text: 'Derive the subject and SAN from the requester\'s AD object (via the AD Connector) instead of requiring the client to supply one — for unattended GPO autoenrollment' },
+          { label: 'Restrict enrollment to AD group', text: 'Only members of the configured AD group (nested membership included) may enroll over the Kerberos endpoint. Blank = any authenticated principal. Not enforced on the Username/Password endpoint' },
+          { label: 'Pinned subject fields', text: 'Force C/ST/L/O/OU values onto every certificate issued over WSTEP, overriding the CSR or AD derivation for those fields. CN and SAN are never affected — leave a field blank to keep it dynamic' },
+        ]
+      },
     ],
     tips: [
       'Create separate templates for TLS servers, clients, and code signing',
       'Use the Duplicate action to quickly create variations of a template',
+      'Templates with autoenrollment flags show AD / Auto / ACL / Pinned badges in the list',
     ],
     related: ['Certificates', 'CSRs', 'CAs']
   },
@@ -320,6 +331,7 @@ export const helpContent = {
           { label: 'Manual Regenerate', text: 'Force CRL regeneration immediately' },
           { label: 'Download CRL', text: 'Download the CRL file in DER or PEM format' },
           { label: 'CDP URL', text: 'CRL Distribution Point URL to embed in certificates' },
+          { label: 'Validity', text: 'Per-CA CRL validity from 1 day up to 5 years (90d/180d/1y/3y/5y for offline CAs that cannot re-sign on schedule). A warning appears past one year — relying parties may keep stale revocation data for the whole window' },
         ]
       },
       {
@@ -330,6 +342,8 @@ export const helpContent = {
           { label: 'AIA URL', text: 'Authority Information Access URLs — OCSP responder and CA Issuers certificate download endpoints embedded in issued certificates' },
           { label: 'Cache', text: 'Response cache with automatic daily cleanup of expired entries' },
           { label: 'Total Queries', text: 'Number of OCSP requests processed' },
+          { label: 'Delegated Responder', text: 'Sign responses with a dedicated OCSPSigning certificate instead of the CA key — assign one per CA from the detail panel' },
+          { label: 'Responder Auto-Renewal', text: 'A daily task re-issues the delegated responder certificate before expiry (same key pair, renewed at par) and rebinds it — enabled by default' },
         ]
       },
     ],
@@ -457,6 +471,7 @@ export const helpContent = {
           { label: 'Signing CA', text: 'The CA whose private key signs timestamp tokens — must be a valid, non-expired CA' },
           { label: 'Policy OID', text: 'Object Identifier for the TSA policy (e.g., 1.2.3.4.1) — included in every timestamp response' },
           { label: 'Enable/Disable', text: 'Toggle the TSA endpoint on or off without losing configuration' },
+          { label: 'Require dedicated certificate', text: 'Opt-in: refuse to sign timestamps with the CA certificate itself — requires a dedicated end-entity signing certificate with a critical timeStamping EKU (RFC 3161)' },
         ]
       },
       {
@@ -507,6 +522,7 @@ export const helpContent = {
           { label: 'Key Types', text: 'RSA-2048, RSA-4096, ECDSA P-256, ECDSA P-384 for certificate keys' },
           { label: 'Account Keys', text: 'ES256 (P-256), ES384 (P-384), or RS256 algorithms for ACME account keys' },
           { label: 'DNS Providers', text: 'Configure DNS-01 challenge providers (Cloudflare, Route53, etc.)' },
+          { label: 'Custom Command', text: 'DNS provider type running admin-configured local commands for TXT create/delete — record details passed via DOMAIN, RECORD_NAME, RECORD_VALUE, TTL, ACTION environment variables. Absolute binary path required, no shell, configurable timeout' },
           { label: 'Domains', text: 'Map domains to DNS providers for automatic validation' },
         ]
       },
@@ -530,6 +546,7 @@ export const helpContent = {
           { label: 'Reset Account', text: 'Clear saved upstream account credentials to force re-registration (use after changing upstream CA)' },
           { label: 'EAB Credentials', text: 'External Account Binding credentials for CAs that require them (e.g., ZeroSSL, Google Trust)' },
           { label: 'DNS Challenges', text: 'UCM handles DNS-01 challenges on behalf of clients using configured DNS providers' },
+          { label: 'Prune replaced certificates', text: 'Opt-in toggle: when a proxy order finalizes, certificates previously imported by proxy orders for the exact same domain set are deleted. Revoked certificates are always kept; non-proxy certificates are never touched. Off by default' },
         ]
       },
       {
@@ -542,6 +559,7 @@ export const helpContent = {
           { label: 'Bind', text: 'The client signs a JWS over the MAC key on newAccount to bind its ACME account' },
           { label: 'Rotate / Revoke', text: 'Revoke a kid at any time — existing accounts continue to work, new bindings are refused' },
           { label: 'Audit', text: 'Issuance, rotation and revocation are audited under the operator who performed them' },
+          { label: 'Domain restrictions', text: 'Limit a credential to the domains it may request: * (any), *.example.com (all sub-domains), or an explicit list — an empty list blocks issuance entirely. Enforced on new-order/new-authz, server and proxy; only meaningful when EAB is required' },
         ]
       },
       {
@@ -551,6 +569,7 @@ export const helpContent = {
           { label: 'Per-account override', text: 'Override system resolvers when validating _acme-challenge TXT records' },
           { label: 'Split-horizon', text: 'Useful when your authoritative server is internal but the public view is cached elsewhere' },
           { label: 'Stale records', text: 'Avoids public-resolver caching during fast automated renewals' },
+          { label: 'host:port entries', text: 'Resolvers not listening on port 53 are accepted (e.g. a loopback-only BIND or dnsmasq on an alternate port) — comma-separated, plain IPs still work' },
         ]
       },
       {
@@ -1194,6 +1213,16 @@ export const helpContent = {
     overview: 'Configure password policies, session management, rate limiting, and network security. These settings apply system-wide and affect all user accounts.',
     sections: [
       {
+        title: 'Private Key Encryption',
+        icon: Lock,
+        items: [
+          { label: 'Status & counters', text: 'Shows whether encryption is enabled and how many stored private keys are encrypted vs unencrypted' },
+          { label: 'Enable / Disable', text: 'Encrypt all CA and certificate private keys with AES-256 under a master key file — back up the key file immediately, or disable to return to plaintext storage' },
+          { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: 'Opt-in environment variable: refuse to start without an explicit database encryption key' },
+          { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: 'Opt-in environment variable: refuse to start unless private-key encryption is enabled' },
+        ]
+      },
+      {
         title: 'Password Policy',
         icon: Lock,
         items: [
@@ -1213,6 +1242,14 @@ export const helpContent = {
           { label: '2FA Enforcement', text: 'Require two-factor authentication for all users' },
         ]
       },
+      {
+        title: 'mTLS Authentication',
+        icon: ShieldCheck,
+        items: [
+          { label: 'Trusted CA', text: 'Select the CA that issues and validates mTLS client login certificates' },
+          { label: 'Require client certificate', text: 'Optionally make mTLS mandatory for the web UI — changing mTLS settings requires a service restart' },
+        ]
+      },
     ],
     tips: [
       'Enable rate limiting to protect against automated attack tools',
@@ -1221,6 +1258,7 @@ export const helpContent = {
     warnings: [
       'Locking the password policy too tightly may frustrate users',
       'Always ensure at least one admin can access the system before enabling IP restrictions',
+      'Security-sensitive settings (session, lockout, HSTS, public URL, password policy) require admin:settings — the fields are locked for operators',
     ],
     related: ['Account', 'Users & Groups', 'Settings']
   },
@@ -1368,6 +1406,55 @@ export const helpContent = {
     related: ['Policies', 'Certificates', 'Audit Logs', 'Settings']
   },
 
+  // ===== DISCOVERY =====
+  discovery: {
+    title: 'Certificate Discovery',
+    subtitle: 'Find TLS certificates on your network',
+    overview: 'Scan your network to find TLS certificates deployed on servers and endpoints, and match them against your managed PKI inventory. Locate untracked certificates, detect changes, and watch for expiring certificates outside UCM\'s control.',
+    sections: [
+      {
+        title: 'Tabs',
+        icon: ListChecks,
+        items: [
+          { label: 'Discovered', text: 'All certificates found by scans, with status, expiry, and endpoint details' },
+          { label: 'Profiles', text: 'Saved scan configurations — targets, ports, schedule, notifications' },
+          { label: 'History', text: 'Past scan runs with duration, targets scanned, and certificates found' },
+        ]
+      },
+      {
+        title: 'Scanning',
+        icon: Globe,
+        items: [
+          { label: 'Quick Scan', text: 'Ad-hoc scan without saving a profile — enter targets and ports, results stream live' },
+          { label: 'Targets', text: 'One per line: hostname, IP, CIDR subnet (192.168.1.0/24), or host:port (10.0.0.1:8443)' },
+          { label: 'Ports', text: 'Comma-separated TCP ports (e.g. 443, 8443, 636), or the common-ports preset' },
+          { label: 'Advanced options', text: 'Reverse DNS resolution (PTR records), timeout, and concurrency' },
+          { label: 'Schedule', text: 'Profiles run manually or automatically every 1h / 6h / 12h / 24h / 7d' },
+          { label: 'Notifications', text: 'Email alerts on new certificates, certificate changes, or upcoming expiry' },
+        ]
+      },
+      {
+        title: 'Result Statuses',
+        icon: ShieldCheck,
+        items: [
+          { label: 'Managed', text: 'The certificate\'s SHA-256 fingerprint matches a certificate in UCM\'s inventory' },
+          { label: 'Unmanaged', text: 'Found on the network but not in the inventory — a candidate for bringing under management' },
+          { label: 'Error', text: 'The endpoint could not be scanned — the error hint distinguishes refused, DNS, timeout, and TLS/SNI failures; retry individually or all at once' },
+          { label: 'Changed', text: 'An endpoint presenting a different certificate than the previous scan is flagged with a Last changed timestamp' },
+        ]
+      },
+    ],
+    tips: [
+      'Filter results with the status pills: Managed, Unmanaged, Error, Expired, Expiring Soon',
+      'Export discovered certificates as CSV or JSON — active filters apply to the export',
+      'Schedule a daily scan of your server subnets with the new-certificate notification enabled',
+    ],
+    warnings: [
+      'Running scans and managing profiles requires admin permissions; subnets are capped at 1024 addresses (/22)',
+    ],
+    related: ['Certificates', 'CAs', 'Reports']
+  },
+
   // ===== MICROSOFT CA =====
   msca: {
     title: 'Microsoft AD CS Integration',
@@ -1495,6 +1582,15 @@ export const helpContent = {
         items: [
           { label: 'KRL (Key Revocation List)', text: 'Compact binary format to revoke individual certificates. Configured via RevokedKeys in sshd_config.' },
           { label: 'Download KRL', text: 'Download the current KRL file from the CA detail panel.' },
+        ]
+      },
+      {
+        title: 'TTL Formats',
+        icon: Clock,
+        items: [
+          { label: 'Suffixed durations', text: 'Default TTL and Max TTL accept 24h, 7d, 365d — suffixes s, m, h, d, w, y' },
+          { label: 'Bare numbers', text: 'A plain number is interpreted as seconds (e.g. 3600 = 1 hour)' },
+          { label: 'Validation', text: 'Malformed values are rejected with an error naming the accepted formats' },
         ]
       },
     ],

@@ -1,41 +1,22 @@
 export default {
   helpContent: {
     title: 'Demandes d\'approbation',
-    subtitle: 'Flux de travail d\'émission de certificats',
-    overview: 'Examinez et approuvez ou rejetez les demandes de certificats qui nécessitent une approbation manuelle. Les flux d\'approbation sont configurés dans les politiques et s\'appliquent automatiquement lors de l\'émission de certificats.',
+    subtitle: 'Gestion du flux d\'approbation de certificats',
+    overview: 'Examinez et gérez les demandes d\'approbation de certificats. Lorsqu\'une politique exige une approbation, l\'émission du certificat est suspendue jusqu\'à ce que le nombre requis d\'approbateurs aient examiné et approuvé la demande.',
     sections: [
       {
         title: 'Cycle de vie des demandes',
-        definitions: [
-          { term: 'En attente', description: 'En attente d\'examen — le certificat ne peut pas être émis tant que les approbateurs n\'ont pas approuvé' },
-          { term: 'Approuvée', description: 'Toutes les approbations requises ont été reçues — le certificat est émis automatiquement' },
-          { term: 'Rejetée', description: 'Tout rejet unique arrête immédiatement la demande' },
-          { term: 'Expirée', description: 'La demande n\'a pas été examinée avant l\'échéance' },
-        ]
-      },
-      {
-        title: 'Actions',
         items: [
-          { label: 'Approuver', text: 'Examiner les détails du certificat et approuver la demande — un commentaire optionnel peut être ajouté' },
-          { label: 'Rejeter', text: 'Rejeter la demande avec un motif obligatoire — la demande est immédiatement arrêtée' },
-        ]
-      },
-      {
-        title: 'Filtrage',
-        items: [
-          { label: 'En attente', text: 'Demandes en attente de votre examen' },
-          { label: 'Approuvées', text: 'Demandes récemment approuvées' },
-          { label: 'Rejetées', text: 'Demandes rejetées avec motifs' },
-          { label: 'Total', text: 'Toutes les demandes quel que soit le statut' },
+          { label: 'En attente', text: 'En attente d\'examen — le certificat ne peut pas encore être émis' },
+          { label: 'Approuvée', text: 'Toutes les approbations requises ont été reçues — le certificat peut être émis' },
+          { label: 'Rejetée', text: 'Tout rejet arrête immédiatement la demande' },
+          { label: 'Expirée', text: 'La demande n\'a pas été examinée avant l\'échéance' },
         ]
       },
     ],
     tips: [
-      'Configurez les notifications par e-mail dans les politiques pour alerter les approbateurs lorsque de nouvelles demandes arrivent',
-      'Chaque approbation/rejet est enregistré avec l\'utilisateur et l\'horodatage pour la conformité d\'audit',
-    ],
-    warnings: [
-      'Tout rejet unique arrête la demande entière — c\'est intentionnel pour la sécurité',
+      'Tout rejet unique arrête immédiatement l\'approbation — c\'est intentionnel pour la sécurité.',
+      'Les commentaires d\'approbation sont enregistrés dans la piste d\'audit pour la conformité.',
     ],
   },
   helpGuides: {

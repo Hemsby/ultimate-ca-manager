@@ -1,25 +1,26 @@
 export default {
   helpContent: {
     title: 'Modules de sécurité matériels',
-    subtitle: 'Protection des clés cryptographiques',
-    overview: 'Intégrez des HSM pour le stockage inviolable des clés privées. Les clés stockées sur un HSM ne quittent jamais le matériel, offrant le plus haut niveau de protection. Prend en charge PKCS#11, AWS CloudHSM, Azure Key Vault, Google Cloud KMS et OpenBao/Vault Transit.',
+    subtitle: 'Stockage de clés externe',
+    overview: 'Intégrez des modules de sécurité matériels pour le stockage sécurisé des clés privées. Prend en charge PKCS#11, AWS CloudHSM, Azure Key Vault, Google Cloud KMS et OpenBao/Vault Transit.',
     sections: [
       {
         title: 'Fournisseurs pris en charge',
-        items: [
-          { label: 'PKCS#11', text: 'Interface HSM standard — Thales Luna, Entrust nShield, SoftHSM et tout appareil PKCS#11' },
-          { label: 'AWS CloudHSM', text: 'HSM basé sur le cloud avec identifiants AWS' },
-          { label: 'Azure Key Vault', text: 'Stockage de clés géré Microsoft Azure' },
-          { label: 'Google Cloud KMS', text: 'Service de gestion des clés Google Cloud' },
-          { label: 'OpenBao / Vault Transit', text: 'Moteur de secrets Transit OpenBao ou Vault pour la gestion des clés en tant que service' },
+        definitions: [
+          { term: 'PKCS#11', description: 'Interface HSM standard de l\'industrie (Thales, Entrust, SoftHSM)' },
+          { term: 'AWS CloudHSM', description: 'HSM basé sur le cloud Amazon Web Services' },
+          { term: 'Azure Key Vault', description: 'Stockage de clés géré Microsoft Azure' },
+          { term: 'Google KMS', description: 'Service de gestion des clés Google Cloud' },
+          { term: 'OpenBao / Vault Transit', description: 'Moteur de secrets Transit OpenBao ou HashiCorp Vault pour la gestion de clés en chiffrement-as-a-service' },
         ]
       },
       {
-        title: 'Gestion des clés',
+        title: 'Actions',
         items: [
-          { label: 'Générer une clé', text: 'Créer des clés RSA ou ECDSA directement sur le HSM' },
-          { label: 'Utiliser les clés HSM', text: 'Sélectionner les clés HSM lors de la création de CA au lieu de clés logicielles' },
-          { label: 'Tester la connexion', text: 'Vérifier la communication et l\'authentification avec le HSM' },
+          { label: 'Ajouter un fournisseur', text: 'Configurer la connexion à un HSM (chemin de bibliothèque, identifiants, slot)' },
+          { label: 'Tester la connexion', text: 'Vérifier que le HSM est joignable et que les identifiants sont valides' },
+          { label: 'Générer une clé', text: 'Créer une nouvelle paire de clés directement sur le HSM' },
+          { label: 'Statut', text: 'Surveiller la santé de la connexion du fournisseur' },
         ]
       },
       {
@@ -36,14 +37,14 @@ export default {
 
     ],
     tips: [
-      'SoftHSM est pré-installé dans l\'image Docker — un jeton par défaut est auto-initialisé au premier démarrage',
-      'Utilisez SoftHSM pour le développement et les tests avant le déploiement avec des HSM physiques',
-      'Les clés générées sur un HSM ne peuvent pas être exportées — planifiez soigneusement votre stratégie de sauvegarde',
-      'Pour les CA racines à long terme en production, préférez le stockage de clé adossé à HSM',
+      'Utilisez SoftHSM pour les tests avant de déployer avec un HSM physique',
+      'Les clés générées sur un HSM ne quittent jamais le matériel — elles ne peuvent pas être exportées',
+      'Testez la connexion avant d\'utiliser un fournisseur HSM pour la signature de CA',
+      'Pour les CA racines à longue durée de vie en production, préférez le stockage de clé adossé à HSM',
     ],
     warnings: [
-      'Les clés HSM ne peuvent pas être exportées — la perte d\'accès au HSM signifie la perte des clés',
-      'Testez toujours la connexion après avoir créé ou modifié un fournisseur',
+      'Une mauvaise configuration du fournisseur HSM peut empêcher la signature de certificats',
+      'Perdre l\'accès au HSM signifie perdre l\'accès aux clés qui y sont stockées',
     ],
   },
   helpGuides: {
@@ -104,6 +105,8 @@ Types de clés pris en charge :
 - AES-256-GCM (symétrique)
 
 > 💡 OpenBao est un fork communautaire de HashiCorp Vault. UCM fonctionne avec les deux.
+
+> 💡 Pour le développement, lancez OpenBao en mode dev : \`docker run -d -p 8200:8200 -e BAO_DEV_ROOT_TOKEN_ID=test-token quay.io/openbao/openbao:latest server -dev\`
 
 ## Gérer les fournisseurs
 

@@ -33,7 +33,7 @@ export default {
           { label: 'Revoca', text: 'Segna come revocato con un motivo — apparirà nella CRL' },
           { label: 'Rimuovi sospensione', text: 'Riattiva un certificato revocato con motivo "Sospensione certificato" — ripristina lo stato valido' },
           { label: 'Revoca e sostituisci', text: 'Revoca e riemetti immediatamente un sostituto' },
-          { label: 'Esporta', text: 'Scarica in formato PEM, DER o PKCS#12' },
+          { label: 'Esporta', text: 'Scarica in formato PEM, DER, PKCS#12 o JKS' },
           { label: 'Confronta', text: 'Confronto affiancato di due certificati' },
         ]
       },
@@ -61,10 +61,9 @@ export default {
     ],
     tips: [
       'Aggiungi la stella ⭐ ai certificati importanti per inserirli nella lista dei preferiti',
-      'Usa i filtri per trovare rapidamente i certificati per stato, CA o testo di ricerca',
+      'Usa i filtri per trovare rapidamente i certificati per stato, CA o testo di ricerca — la selezione viene conservata al ricaricamento della pagina',
       'Il rinnovo preserva lo stesso soggetto ma genera una nuova coppia di chiavi',
       'Serve un EKU non standard (Microsoft RDP, smartcard logon, document signing)? Aggiungilo via "EKU extra" invece di modificare i template',
-      'I filtri attivi (stato, CA, ricerca) vengono conservati al ricaricamento della pagina',
     ],
     warnings: [
       'La revoca è generalmente permanente — tranne per "Sospensione certificato" che può essere rimossa',

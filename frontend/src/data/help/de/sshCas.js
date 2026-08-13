@@ -22,8 +22,11 @@ export default {
       {
         title: 'Serverkonfiguration',
         items: [
-          { label: 'Setup-Skript', text: 'Laden Sie ein POSIX-Shell-Skript herunter, das sshd automatisch konfiguriert, dieser CA zu vertrauen. Unterstützt alle gängigen Linux-Distributionen.' },
-          { label: 'Manuelle Einrichtung', text: 'Kopieren Sie den öffentlichen CA-Schlüssel und fügen Sie TrustedUserCAKeys (User CA) oder HostCertificate (Host CA) in sshd_config hinzu.' },
+          { label: 'Linux/macOS-Setup-Skript', text: 'Laden Sie ein POSIX-Shell-Skript (.sh) herunter, das sshd automatisch konfiguriert, dieser CA zu vertrauen. Schnellinstallation: curl -fsSL <url> | bash' },
+          { label: 'Windows-Setup-Skript', text: 'Laden Sie ein PowerShell-Skript (.ps1) herunter, das den Windows OpenSSH Server konfiguriert (schreibt den öffentlichen CA-Schlüssel nach %ProgramData%\\ssh, härtet die ACLs, fügt TrustedUserCAKeys / HostCertificate zur sshd_config hinzu, validiert mit sshd -T, startet sshd neu). Schnellinstallation: iwr <url> | iex' },
+          { label: 'Diagnoseblock', text: 'Schlägt Add-WindowsCapability fehl (WSUS / domänenverbunden), gibt das Skript einen beschrifteten Block aus, der den Richtlinienzustand und drei Abhilfewege erklärt — es ändert die WSUS-/WU-Richtlinie nie selbst' },
+          { label: 'Dry-run', text: 'Beide Skripte unterstützen ein -DryRun / --dry-run Flag, um Änderungen in der Vorschau anzuzeigen, ohne sie anzuwenden' },
+          { label: 'Manuelle Einrichtung', text: 'Kopieren Sie den öffentlichen CA-Schlüssel und fügen Sie TrustedUserCAKeys (User CA) oder HostCertificate (Host CA) in sshd_config hinzu' },
         ]
       },
       {
@@ -31,6 +34,14 @@ export default {
         items: [
           { label: 'KRL (Key Revocation List)', text: 'Kompaktes Binärformat zum Widerrufen einzelner Zertifikate. Wird über RevokedKeys in sshd_config konfiguriert.' },
           { label: 'KRL herunterladen', text: 'Laden Sie die aktuelle KRL-Datei aus dem CA-Detailbereich herunter.' },
+        ]
+      },
+      {
+        title: 'TTL-Formate',
+        items: [
+          { label: 'Dauern mit Suffix', text: 'Standard-TTL und Max-TTL akzeptieren 24h, 7d, 365d — Suffixe s, m, h, d, w, y' },
+          { label: 'Reine Zahlen', text: 'Eine einfache Zahl wird als Sekunden interpretiert (z. B. 3600 = 1 Stunde)' },
+          { label: 'Validierung', text: 'Fehlerhafte Werte werden mit einer Fehlermeldung abgelehnt, die die akzeptierten Formate nennt' },
         ]
       },
     ],
@@ -84,6 +95,15 @@ Eine Host CA signiert Zertifikate, die **Server gegenüber Clients** authentifiz
    - **RSA 2048/4096** — Breiteste Kompatibilität, größere Schlüssel.
 5. Legen Sie optional die maximale Gültigkeit und Standarderweiterungen fest
 6. Klicken Sie auf **Erstellen**
+
+### TTL-Formate
+
+Die Felder **Standard-TTL** und **Max-TTL** akzeptieren gut lesbare Dauern:
+
+- Werte mit Suffix — \`24h\`, \`7d\`, \`365d\` (akzeptierte Suffixe: \`s\`, \`m\`, \`h\`, \`d\`, \`w\`, \`y\`)
+- Reine Zahlen — werden als **Sekunden** interpretiert (z. B. \`3600\` = 1 Stunde)
+
+Fehlerhafte Werte werden mit einer Fehlermeldung abgelehnt, die die akzeptierten Formate nennt.
 
 > 💡 Verwenden Sie getrennte CAs für Benutzer- und Host-Zertifikate. Verwenden Sie niemals eine CA für beide Zwecke.
 

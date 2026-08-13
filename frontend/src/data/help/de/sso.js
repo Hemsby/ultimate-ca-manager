@@ -26,6 +26,15 @@ export default {
         ]
       },
       {
+        title: 'Rollen-Provisionierung (#81)',
+        items: [
+          { label: 'Standardrolle', text: 'Wird NUR angewendet, wenn ein Benutzer beim ersten SSO-Login automatisch erstellt wird. Später in UCM vorgenommene Rollenänderungen bleiben erhalten.' },
+          { label: 'Rollenzuordnung', text: 'Externe Gruppen (Azure AD, Okta, LDAP) → UCM-Rollen (admin / operator / viewer) zuordnen. Wird bei der Benutzererstellung verwendet und bei jedem Login, wenn die Rollensynchronisierung aktiviert ist. Wenn mehrere Gruppen passen, gewinnt die Rolle mit den höchsten Rechten (admin > operator > auditor > viewer) — die Reihenfolge der Einträge spielt keine Rolle (#221).' },
+          { label: 'Rolle bei jedem Login synchronisieren', text: 'AUS (Standard): SSO überschreibt nie von UCM verwaltete Rollen. EIN: Die Rolle wird bei jedem Login aus role_mapping neu synchronisiert; Benutzer ohne passende Zuordnung behalten ihre gespeicherte Rolle (default_role wird nie erneut angewendet).' },
+          { label: 'Benutzer automatisch aktualisieren', text: 'Aktualisiert E-Mail und vollständigen Namen bei jedem Login. Verändert die Rolle NICHT.' },
+        ]
+      },
+      {
         title: 'LDAP',
         items: [
           { label: 'Server', text: 'LDAP-Server-Hostname und Port (389 oder 636 für SSL)' },

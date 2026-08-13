@@ -26,6 +26,15 @@ export default {
         ]
       },
       {
+        title: '角色配置 (#81)',
+        items: [
+          { label: '默认角色', text: '仅在用户首次 SSO 登录被自动创建时应用。之后在 UCM 中所做的角色更改会被保留。' },
+          { label: '角色映射', text: '将外部组（Azure AD、Okta、LDAP）映射到 UCM 角色（admin / operator / viewer）。在用户创建时使用；启用角色同步后，每次登录时也会使用。多个组匹配时，权限最高的角色胜出（admin > operator > auditor > viewer）——条目顺序无关紧要 (#221)。' },
+          { label: '每次登录时同步角色', text: '关闭（默认）：SSO 绝不覆盖由 UCM 管理的角色。开启：每次登录时从 role_mapping 重新同步角色；没有映射匹配的用户保留其已存储的角色（default_role 绝不会被重新应用）。' },
+          { label: '自动更新用户', text: '每次登录时更新邮箱和全名。不会改动角色。' },
+        ]
+      },
+      {
         title: 'LDAP',
         items: [
           { label: '服务器', text: 'LDAP 服务器主机名和端口（389 或 636 用于 SSL）' },

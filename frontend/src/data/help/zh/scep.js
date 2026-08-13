@@ -9,9 +9,9 @@ export default {
         items: [
           { label: '请求', text: '待处理、已批准和已拒绝的 SCEP 注册请求' },
           { label: '配置', text: 'SCEP 服务器设置：CA 选择、CA 标识符、自动批准' },
+          { label: '配置文件', text: '命名注册端点，每个都有自己的 URL、CA、模板和质询' },
           { label: '质询密码', text: '管理每个 CA 的设备注册质询密码' },
           { label: '信息', text: 'SCEP 端点 URL 和集成说明' },
-          { label: '配置文件', text: '命名注册端点，每个都有自己的 URL、CA、模板和质询' },
         ]
       },
       {
@@ -62,6 +62,21 @@ export default {
 - **CA 标识符** — SCEP CA 标识符字符串
 - **自动批准** — 启用/禁用带有有效质询密码的请求的自动批准
 
+### 配置文件
+命名注册端点，每个都通过自己的 URL 提供服务：
+
+\`\`\`
+https://your-server:8443/scep/<profile>/pkiclient.exe
+\`\`\`
+
+每个配置文件绑定：
+- **自己的 CA** — 不同的设备群可针对不同的 CA 注册
+- **可选的证书模板** — 绑定后，模板的密钥用法、扩展密钥用法和有效期将决定通过该配置文件签发的每个证书
+- **按配置文件的质询密码** — 加密存储，过期窗口与全局质询相同
+- **审批策略** — 每个配置文件可自动批准或手动审核
+
+将每个设备群、MDM 配置文件或租户指向其专属配置文件 URL。不带片段的 \`/scep/pkiclient.exe\` 端点继续使用全局配置，保持不变。
+
 ### 质询密码
 管理用于设备注册认证的质询密码：
 - 每个 CA 可以有自己的质询密码
@@ -82,10 +97,11 @@ export default {
 ## SCEP URL
 
 \`\`\`
-https://your-server:8443/scep
+https://your-server:8443/scep                          (全局端点)
+https://your-server:8443/scep/<profile>/pkiclient.exe  (按配置文件端点)
 \`\`\`
 
-设备使用此 URL 作为 SCEP 服务器地址。
+设备需要此 URL 加上 CA 标识符才能注册。使用配置文件 URL 可指向该配置文件的 CA、模板和质询密码。
 
 ## 批准/拒绝请求
 

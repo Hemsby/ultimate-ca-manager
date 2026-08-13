@@ -47,10 +47,9 @@ export default {
     ],
     tips: [
       'CAs mit einem Schlüsselsymbol (🔑) haben einen privaten Schlüssel und können Zertifikate signieren',
-      'Verwenden Sie Intermediate-CAs für die tägliche Signierung, halten Sie die Root-CA wenn möglich offline',
-      'PKCS#12-Export enthält die vollständige Kette und ist ideal für Sicherungen',
       'Nehmen Sie die Root-CA offline, sobald Ihre Intermediates betriebsbereit sind',
       'Verwenden Sie „Datei-exportiert" für stärkste Air-Gap-Isolation; „Passwortgeschützt" für schnelle In-Place-Wiederherstellung',
+      'PKCS#12-Export enthält die vollständige Kette und ist ideal für Sicherungen',
     ],
     warnings: [
       'Das Löschen einer CA widerruft NICHT die von ihr ausgestellten Zertifikate — widerrufen Sie diese zuerst',

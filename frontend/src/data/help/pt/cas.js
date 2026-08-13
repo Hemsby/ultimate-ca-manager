@@ -47,10 +47,9 @@ export default {
     ],
     tips: [
       'CAs com ícone de chave (🔑) possuem chave privada e podem assinar certificados',
-      'Use CAs intermediárias para assinatura diária, mantenha a CA raiz offline quando possível',
-      'A exportação PKCS#12 inclui a cadeia completa e é ideal para backup',
       'Coloque a CA raiz offline assim que suas intermediárias estiverem operacionais',
       'Use «Exportada para arquivo» para o maior isolamento air-gap; «Protegida por senha» para restauração rápida no local',
+      'A exportação PKCS#12 inclui a cadeia completa e é ideal para backup',
     ],
     warnings: [
       'Excluir uma CA NÃO revogará os certificados que ela emitiu — revogue-os primeiro',

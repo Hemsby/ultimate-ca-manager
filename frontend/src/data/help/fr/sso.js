@@ -1,51 +1,59 @@
 export default {
   helpContent: {
     title: 'Authentification unique',
-    subtitle: 'Authentification fédérée',
-    overview: 'Configurez SSO pour permettre aux utilisateurs de s\'authentifier avec le fournisseur d\'identité de leur organisation. UCM prend en charge SAML 2.0, OAuth2/OIDC et LDAP.',
+    subtitle: 'Intégration SAML, OAuth2 et LDAP',
+    overview: 'Configurez l\'authentification unique pour permettre aux utilisateurs de s\'authentifier via le fournisseur d\'identité de leur organisation. Prend en charge les protocoles SAML 2.0, OAuth2/OIDC et LDAP.',
     sections: [
       {
-        title: 'Protocoles',
+        title: 'SAML 2.0',
         items: [
-          { label: 'SAML 2.0', text: 'Norme d\'entreprise pour SSO basé sur navigateur avec échange de métadonnées XML' },
-          { label: 'OAuth2 / OIDC', text: 'Protocole d\'authentification moderne avec flux basé sur les jetons' },
-          { label: 'LDAP', text: 'Authentification par annuaire (Active Directory, OpenLDAP)' },
+          { label: 'Fournisseur d\'identité', text: 'Configurer l\'URL de métadonnées IDP ou téléverser le XML' },
+          { label: 'URL de métadonnées SP', text: 'Fournissez cette URL à votre IDP pour configurer automatiquement UCM comme fournisseur de services' },
+          { label: 'Certificat SP', text: 'Certificat HTTPS d\'UCM inclus dans les métadonnées — doit être approuvé par l\'IDP sinon les métadonnées seront rejetées' },
+          { label: 'Entity ID', text: 'Identifiant d\'entité du fournisseur de services UCM' },
+          { label: 'URL ACS', text: 'URL de callback du service de consommation d\'assertions (Assertion Consumer Service)' },
+          { label: 'Mappage d\'attributs', text: 'Mapper les attributs IDP aux champs utilisateur UCM' },
         ]
       },
       {
-        title: 'Configuration SAML',
+        title: 'OAuth2 / OIDC',
         items: [
-          { label: 'URL de métadonnées SP', text: 'Fournissez cette URL à votre IDP pour la configuration automatique' },
-          { label: 'Métadonnées IDP', text: 'URL ou XML de votre fournisseur d\'identité' },
-          { label: 'Mappage d\'attributs', text: 'Mapper les attributs IDP aux champs utilisateur UCM (nom d\'utilisateur, e-mail, groupes)' },
+          { label: 'URL d\'autorisation', text: 'Point de terminaison d\'autorisation OAuth2' },
+          { label: 'URL de jeton', text: 'Point de terminaison de jeton OAuth2' },
+          { label: 'Client ID/Secret', text: 'Identifiants client OAuth2 fournis par votre IDP' },
+          { label: 'Scopes', text: 'Scopes OAuth2 à demander (openid, profile, email)' },
+          { label: 'Création automatique d\'utilisateurs', text: 'Créer automatiquement des comptes UCM à la première connexion SSO' },
         ]
       },
       {
-        title: 'Configuration OAuth2',
+        title: 'Provisionnement des rôles (#81)',
         items: [
-          { label: 'URL de redirection', text: 'L\'URL de callback que votre fournisseur OAuth2 doit autoriser' },
-          { label: 'Client ID / Secret', text: 'Identifiants du fournisseur OAuth2' },
-          { label: 'Scopes', text: 'Scopes OpenID Connect (openid, profile, email)' },
-          { label: 'Création automatique d\'utilisateurs', text: 'Créer automatiquement un compte UCM à la première connexion SSO' },
+          { label: 'Rôle par défaut', text: 'Appliqué UNIQUEMENT quand un utilisateur est auto-créé à la première connexion SSO. Les changements de rôle effectués ensuite dans UCM sont préservés.' },
+          { label: 'Mappage de rôles', text: 'Mapper les groupes externes (Azure AD, Okta, LDAP) → rôles UCM (admin / operator / viewer). Utilisé à la création de l\'utilisateur, et à chaque connexion quand la synchronisation des rôles est activée. Quand plusieurs groupes correspondent, le rôle le plus privilégié gagne (admin > operator > auditor > viewer) — l\'ordre des entrées n\'a pas d\'importance (#221).' },
+          { label: 'Synchroniser le rôle à chaque connexion', text: 'OFF (par défaut) : le SSO n\'écrase jamais les rôles gérés dans UCM. ON : le rôle est re-synchronisé depuis role_mapping à chaque connexion ; les utilisateurs sans correspondance de mappage conservent leur rôle stocké (default_role n\'est jamais ré-appliqué).' },
+          { label: 'Mise à jour automatique des utilisateurs', text: 'Met à jour l\'e-mail et le nom complet à chaque connexion. Ne touche PAS au rôle.' },
         ]
       },
       {
-        title: 'Configuration LDAP',
+        title: 'LDAP',
         items: [
-          { label: 'Serveur', text: 'Nom d\'hôte et port (389 LDAP / 636 LDAPS)' },
-          { label: 'DN de liaison', text: 'Identifiants du compte de service pour les recherches de répertoire' },
+          { label: 'Serveur', text: 'Nom d\'hôte et port du serveur LDAP (389 ou 636 pour SSL)' },
+          { label: 'DN de liaison', text: 'Nom distinctif (DN) pour l\'authentification bind LDAP' },
           { label: 'DN de base', text: 'Base de recherche pour les recherches d\'utilisateurs' },
-          { label: 'Filtre utilisateur', text: 'Filtre LDAP pour la correspondance des utilisateurs (par ex. sAMAccountName={username})' },
+          { label: 'Filtre utilisateur', text: 'Filtre LDAP pour la correspondance des utilisateurs (par ex. (uid={username}))' },
+          { label: 'Mappage d\'attributs', text: 'Mapper les attributs LDAP au nom d\'utilisateur, e-mail et nom complet' },
         ]
       },
     ],
     tips: [
-      'Conservez toujours un compte admin local comme repli en cas de panne SSO',
-      'Testez SSO avec un compte non-admin avant d\'en faire la méthode d\'authentification principale',
-      'Utilisez le bouton Tester la connexion pour vérifier la configuration avant d\'activer un fournisseur',
+      'Testez SSO avec un compte non-admin d\'abord pour éviter les verrouillages',
+      'Conservez la connexion admin locale disponible comme repli',
+      'Mappez l\'attribut e-mail de l\'IDP pour garantir une identification unique des utilisateurs',
+      'Utilisez l\'URL de métadonnées SP pour configurer automatiquement votre IDP (SAML)',
+      'Le certificat HTTPS d\'UCM doit être approuvé par l\'IDP pour que les métadonnées SAML soient acceptées',
     ],
     warnings: [
-      'Le certificat HTTPS d\'UCM doit être approuvé par l\'IDP pour que les métadonnées SAML fonctionnent',
+      'Un SSO mal configuré peut verrouiller tous les utilisateurs — conservez toujours un admin local',
     ],
   },
   helpGuides: {

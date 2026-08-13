@@ -27,6 +27,7 @@ export default {
           { label: 'Schlüssel erstellen', text: 'Generieren Sie einen neuen API-Schlüssel mit optionalem Ablaufdatum' },
           { label: 'Berechtigungen', text: 'API-Schlüssel erben die Berechtigungen Ihrer Rolle' },
           { label: 'Widerrufen', text: 'Einen API-Schlüssel sofort ungültig machen' },
+          { label: 'Deaktivierte Benutzer', text: 'API-Schlüssel eines deaktivierten Benutzers werden abgelehnt, selbst wenn der Schlüssel selbst noch gültig ist' },
         ]
       },
       {
@@ -43,8 +44,8 @@ export default {
     tips: [
       'Aktivieren Sie mindestens einen zweiten Faktor (TOTP oder Sicherheitsschlüssel) für Admin-Konten',
       'API-Schlüssel können mit einem Ablaufdatum für kurzlebige Integrationen versehen werden',
-      'Scannen Sie den QR-Code mit einer beliebigen TOTP-App: Google Authenticator, Authy, 1Password, usw.',
       'API-Keys können auch ohne Ablaufdatum für langlaufende Automatisierung erstellt werden',
+      'Scannen Sie den QR-Code mit einer beliebigen TOTP-App: Google Authenticator, Authy, 1Password, usw.',
       'Filterauswahl auf jeder Listenseite (Zertifikate, CAs, Audit usw.) wird automatisch über Reloads hinweg gespeichert',
     ],
   },

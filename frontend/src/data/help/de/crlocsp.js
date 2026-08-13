@@ -11,6 +11,7 @@ export default {
           { label: 'Manuell regenerieren', text: 'CRL-Regenerierung sofort erzwingen' },
           { label: 'CRL herunterladen', text: 'Die CRL-Datei im DER- oder PEM-Format herunterladen' },
           { label: 'CDP-URL', text: 'CRL Distribution Point-URL zum Einbetten in Zertifikate' },
+          { label: 'Gültigkeit', text: 'CRL-Gültigkeit pro CA von 1 Tag bis zu 5 Jahren (90d/180d/1y/3y/5y für Offline-CAs, die nicht planmäßig neu signieren können). Ab einem Jahr erscheint eine Warnung — vertrauende Parteien können veraltete Widerrufsdaten für das gesamte Zeitfenster behalten' },
         ]
       },
       {
@@ -20,6 +21,8 @@ export default {
           { label: 'AIA-URL', text: 'Authority Information Access-URLs — OCSP-Responder- und CA-Aussteller-Zertifikat-Download-Endpunkte, die in ausgestellte Zertifikate eingebettet werden' },
           { label: 'Cache', text: 'Antwort-Cache mit automatischer täglicher Bereinigung abgelaufener Einträge' },
           { label: 'Gesamtabfragen', text: 'Anzahl der verarbeiteten OCSP-Anfragen' },
+          { label: 'Delegierter Responder', text: 'Antworten mit einem dedizierten OCSPSigning-Zertifikat anstelle des CA-Schlüssels signieren — weisen Sie eines pro CA über das Detailpanel zu' },
+          { label: 'Responder-Auto-Erneuerung', text: 'Eine tägliche Aufgabe stellt das delegierte Responder-Zertifikat vor Ablauf neu aus (gleiches Schlüsselpaar, gleichwertig erneuert) und bindet es neu — standardmäßig aktiviert' },
         ]
       },
     ],
@@ -53,6 +56,13 @@ Klicken Sie auf **Regenerieren**, um die CRL einer CA sofort neu zu erstellen. D
 ### Auto-Regenerierung
 Aktivieren Sie die Auto-Regenerierung, um die CRL automatisch nach jedem Zertifikatswiderruf neu zu erstellen. Konfigurierbar pro CA.
 
+### CRL-Gültigkeit
+Der CRL-Zeitplan (pro CA) legt fest, wie lange jede veröffentlichte CRL gültig bleibt. Die Optionen reichen von **1 Tag bis 5 Jahren**: 1d, 2d, 3d, 7d, 14d, 30d, 90d, 180d, 1y, 3y, 5y.
+
+- **Online-CAs** sollten eine kurze Gültigkeit (Tage) beibehalten, damit vertrauende Parteien Widerrufe schnell übernehmen
+- **Offline-CAs** (typischerweise eine Root, die CRLs nicht planmäßig neu signieren kann) sind der vorgesehene Anwendungsfall für die langen Optionen — 90d bis 5y
+- Ab einem Jahr wird eine Warnung angezeigt: Vertrauende Parteien können veraltete Widerrufsdaten für das gesamte Gültigkeitsfenster behalten
+
 ### CRL Distribution Point (CDP)
 Die CDP-URL wird in Zertifikate eingebettet, damit Clients wissen, wo sie die CRL herunterladen können. Kopieren Sie die URL aus den CRL-Details.
 
@@ -84,6 +94,12 @@ UCM speichert OCSP-Antworten für die Leistung im Cache. Der Cache wird:
 - **Automatisch bereinigt** — Abgelaufene Antworten werden täglich vom Scheduler gelöscht
 - **Bei Widerruf ungültig gemacht** — Wenn ein Zertifikat widerrufen wird, wird die zwischengespeicherte OCSP-Antwort sofort gelöscht
 - **Bei Sperre-Aufhebung ungültig gemacht** — Wenn eine Zertifikatssperre aufgehoben wird, wird der OCSP-Cache aktualisiert
+
+### Delegierter OCSP-Responder
+
+Standardmäßig werden OCSP-Antworten mit dem CA-Schlüssel selbst signiert. Ein **delegierter Responder** verwendet stattdessen ein dediziertes Zertifikat mit der **OCSPSigning**-EKU — weisen Sie eines pro CA über das Detailpanel der CA zu (nur Zertifikate mit OCSPSigning-EKU und privatem Schlüssel sind wählbar).
+
+**Automatische Erneuerung**: Eine tägliche Aufgabe stellt das Responder-Zertifikat vor Ablauf neu aus — gleiches Schlüsselpaar und gleiche Erweiterungen, gleichwertig erneuert — und bindet die Responder-Konfiguration der CA an das neue Zertifikat. Kurzlebige OCSP-Signaturzertifikate (z. B. ein 90-Tage-Template) rotieren ohne manuellen Eingriff. Standardmäßig aktiviert; kann deaktiviert und das Erneuerungsfenster über die Konfiguration angepasst werden.
 
 ### AIA-URLs
 Die Authority Information Access (AIA)-Erweiterung wird in Zertifikate eingebettet, um Clients mitzuteilen, wo sie finden:

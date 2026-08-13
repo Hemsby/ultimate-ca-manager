@@ -63,6 +63,21 @@ Configura il server SCEP:
 - **Identificativo CA** — L'identificativo che i dispositivi usano per localizzare la CA corretta
 - **Approvazione automatica** — Approva automaticamente le richieste con challenge password valide
 
+### Profili
+Endpoint di enrollment denominati, ciascuno servito su un URL proprio:
+
+\`\`\`
+https://your-server:8443/scep/<profile>/pkiclient.exe
+\`\`\`
+
+Ogni profilo è associato a:
+- **La propria CA** — flotte di dispositivi diverse possono iscriversi presso CA diverse
+- **Un modello di certificato opzionale** — quando associato, key usage, extended key usage e validità del modello governano ogni certificato emesso tramite il profilo
+- **Una challenge password per profilo** — memorizzata cifrata, con la stessa finestra di scadenza della challenge globale
+- **Una politica di approvazione** — approvazione automatica o revisione manuale per profilo
+
+Punta ogni flotta di dispositivi, profilo MDM o tenant al proprio URL di profilo. L'endpoint senza segmento \`/scep/pkiclient.exe\` continua a servire la configurazione globale senza modifiche.
+
 ### Challenge Password
 Gestisci le challenge password per CA. I dispositivi devono includere una challenge password valida nella loro richiesta di iscrizione per autenticarsi.
 
@@ -84,10 +99,11 @@ Mostra l'URL dell'endpoint SCEP e le istruzioni di integrazione.
 ## URL SCEP
 
 \`\`\`
-https://your-server:8443/scep
+https://your-server:8443/scep                          (global endpoint)
+https://your-server:8443/scep/<profile>/pkiclient.exe  (per-profile endpoint)
 \`\`\`
 
-I dispositivi necessitano di questo URL più l'identificativo CA per iscriversi.
+I dispositivi necessitano dell'URL più l'identificativo CA per iscriversi. Usa un URL di profilo per indirizzare la CA, il modello e la challenge password di quel profilo.
 
 ## Approvazione/Rifiuto delle richieste
 

@@ -195,6 +195,11 @@ Consenti o nega l'accesso da indirizzi IP o intervalli CIDR specifici.
 ### Imposizione 2FA
 Richiedi a tutti gli utenti di abilitare l'autenticazione a due fattori.
 
+### Cifratura delle chiavi private
+Cifra tutte le chiavi private memorizzate nel database con AES-256, protette da un file di chiave master. La sezione mostra lo stato della cifratura e i contatori delle chiavi **cifrate / non cifrate**. Due variabili d'ambiente opt-in rendono fatale all'avvio l'assenza delle chiavi: \`UCM_REQUIRE_DB_ENCRYPTION_KEY\` (cifratura dei segreti delle integrazioni) e \`UCM_REQUIRE_KEY_ENCRYPTION\` (cifratura delle chiavi private).
+
+> 💡 Le impostazioni sensibili alla sicurezza (sessione, blocco, HSTS, URL pubblico, politica password) richiedono il permesso **admin:settings** — i campi sono bloccati per gli operatori.
+
 > ⚠ Testa attentamente le restrizioni IP prima di applicarle. Regole errate possono bloccare tutti gli utenti.
 
 ## SSO (Single Sign-On)
@@ -401,6 +406,14 @@ Associa gli endpoint XCEP/WSTEP autenticati tramite Kerberos utilizzati per l'is
 
 - **Nome utente/Password** — Richiede le credenziali; per l'iscrizione interattiva "Richiedi nuovo certificato", non richiede Active Directory
 - **Kerberos** — Nessuna richiesta di credenziali; richiede un client aggiunto al dominio e la configurazione GPO
+
+### Vincolo di rinnovo con certificato
+
+Oltre a Nome utente/Password e Kerberos, WSTEP supporta il **rinnovo con certificato client**, rispecchiando i veri endpoint CES di ADCS: la richiesta di rinnovo (RST) deve essere firmata XML-DSig con la chiave privata di un certificato **emesso dallo stesso UCM**. Il certificato presentato viene confrontato **byte per byte** con il certificato memorizzato per la CA configurata — il numero di serie o il soggetto da soli non bastano mai. Questo consente ai client Windows di rinnovare in modo non presidiato usando il certificato attuale, senza credenziali né ticket Kerberos.
+
+### Estensione di sicurezza SID (KB5014754)
+
+Nell'**emissione autenticata Kerberos**, UCM incorpora il SID AD del richiedente nell'estensione di sicurezza SID di Microsoft (\`szOID_NTDS_CA_SECURITY_EXT\`) del certificato emesso. I domain controller la usano per la **mappatura forte dei certificati** (KB5014754) — obbligatoria da quando AD impone la mappatura forte per l'autenticazione basata su certificati (accesso con smartcard, PKINIT).
 
 ### Soggetti derivati da AD
 

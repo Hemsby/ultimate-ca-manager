@@ -11,6 +11,7 @@ export default {
           { label: 'Regenerar manualmente', text: 'Forzar la regeneración inmediata de la CRL' },
           { label: 'Descargar CRL', text: 'Descargar el archivo CRL en formato DER o PEM' },
           { label: 'CDP URL', text: 'URL del punto de distribución de CRL para incluir en los certificados' },
+          { label: 'Validez', text: 'Validez de la CRL por CA desde 1 día hasta 5 años (90d/180d/1y/3y/5y para CAs sin conexión que no pueden volver a firmar según el calendario). Aparece una advertencia pasado un año — las partes que confían pueden conservar datos de revocación obsoletos durante toda la ventana' },
         ]
       },
       {
@@ -20,6 +21,8 @@ export default {
           { label: 'AIA URL', text: 'URLs de acceso a información de autoridad — puntos de acceso del respondedor OCSP y descarga del certificado del emisor CA incluidos en los certificados emitidos' },
           { label: 'Caché', text: 'Caché de respuestas con limpieza diaria automática de las entradas expiradas' },
           { label: 'Total de consultas', text: 'Número de solicitudes OCSP procesadas' },
+          { label: 'Respondedor delegado', text: 'Firma las respuestas con un certificado OCSPSigning dedicado en lugar de la clave de la CA — asigne uno por CA desde el panel de detalles' },
+          { label: 'Auto-renovación del respondedor', text: 'Una tarea diaria reemite el certificado del respondedor delegado antes de que expire (mismo par de claves, renovado a la par) y lo vuelve a vincular — activado por defecto' },
         ]
       },
     ],
@@ -53,6 +56,13 @@ Haga clic en **Regenerar** para reconstruir la CRL de una CA inmediatamente. Est
 ### Auto-regeneración
 Active la auto-regeneración para reconstruir automáticamente la CRL cada vez que se revoque un certificado. Active esta opción por CA.
 
+### Validez de la CRL
+El calendario de la CRL (por CA) establece cuánto tiempo permanece válida cada CRL publicada. Las opciones van de **1 día a 5 años**: 1d, 2d, 3d, 7d, 14d, 30d, 90d, 180d, 1y, 3y, 5y.
+
+- **Las CAs en línea** deberían mantener una validez corta (días) para que las partes que confían recojan las revocaciones rápidamente
+- **Las CAs sin conexión** (típicamente una raíz que no puede volver a firmar las CRL según el calendario) son el caso de uso previsto para las opciones largas — de 90d a 5y
+- Se muestra una advertencia pasado un año: las partes que confían pueden conservar datos de revocación obsoletos durante toda la ventana de validez
+
 ### Punto de distribución de CRL (CDP)
 La URL del CDP se incluye en los certificados para que los clientes sepan dónde descargar la CRL. Copie la URL desde los detalles de la CRL.
 
@@ -84,6 +94,12 @@ UCM almacena en caché las respuestas OCSP para mejorar el rendimiento. La cach�
 - **Limpia automáticamente** — Las respuestas expiradas se eliminan diariamente por el programador
 - **Invalida al revocar** — Cuando un certificado se revoca, su respuesta OCSP en caché se elimina inmediatamente
 - **Invalida al levantar suspensión** — Cuando se levanta una suspensión de certificado, la caché OCSP se actualiza
+
+### Respondedor OCSP delegado
+
+Por defecto, las respuestas OCSP se firman con la propia clave de la CA. Un **respondedor delegado** utiliza en su lugar un certificado dedicado con el EKU **OCSPSigning** — asigne uno por CA desde el panel de detalles de la CA (solo son elegibles los certificados que llevan el EKU OCSPSigning y una clave privada).
+
+**Renovación automática**: una tarea diaria reemite el certificado del respondedor antes de que expire — mismo par de claves y extensiones, renovado a la par — y vuelve a vincular la configuración del respondedor de la CA al nuevo certificado. Los certificados de firma OCSP de corta duración (por ejemplo, una plantilla de 90 días) rotan sin acción manual. Activado por defecto; puede desactivarse y la ventana de renovación ajustarse mediante configuración.
 
 ### URLs AIA
 La extensión de acceso a información de autoridad (AIA) se incluye en los certificados para indicar a los clientes dónde encontrar:

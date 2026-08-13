@@ -22,7 +22,10 @@ export default {
       {
         title: '服务器配置',
         items: [
-          { label: '配置脚本', text: '下载一个POSIX shell脚本，自动配置sshd以信任此CA。支持所有主流Linux发行版。' },
+          { label: 'Linux/macOS配置脚本', text: '下载一个POSIX shell脚本（.sh），自动配置sshd以信任此CA。快速安装：curl -fsSL <url> | bash' },
+          { label: 'Windows配置脚本', text: '下载一个PowerShell脚本（.ps1），配置Windows OpenSSH Server（将CA公钥写入%ProgramData%\\ssh、收紧ACL、在sshd_config中添加TrustedUserCAKeys / HostCertificate、用sshd -T验证、重启sshd）。快速安装：iwr <url> | iex' },
+          { label: '诊断信息块', text: '当Add-WindowsCapability失败时（WSUS / 已加入域），脚本会打印一个带标签的信息块，说明策略状态和三种补救路径——脚本本身绝不修改WSUS / WU策略' },
+          { label: '试运行', text: '两个脚本都支持-DryRun / --dry-run参数，可在不应用更改的情况下预览' },
           { label: '手动配置', text: '复制CA公钥，在sshd_config中添加TrustedUserCAKeys（User CA）或HostCertificate（Host CA）。' },
         ]
       },
@@ -31,6 +34,14 @@ export default {
         items: [
           { label: 'KRL (Key Revocation List)', text: '用于吊销单个证书的紧凑二进制格式。通过sshd_config中的RevokedKeys配置。' },
           { label: '下载KRL', text: '从CA详情面板下载当前的KRL文件。' },
+        ]
+      },
+      {
+        title: 'TTL格式',
+        items: [
+          { label: '带后缀的时长', text: '默认TTL和最大TTL接受24h、7d、365d——可用后缀为s、m、h、d、w、y' },
+          { label: '纯数字', text: '纯数字按秒解释（例如3600 = 1小时）' },
+          { label: '验证', text: '格式错误的值会被拒绝，错误信息中会列出可接受的格式' },
         ]
       },
     ],
@@ -84,6 +95,15 @@ Host CA签发用于**将服务器认证到客户端**的证书。当客户端信
    - **RSA 2048/4096** — 最广泛的兼容性，密钥较大。
 5. 可选设置最大有效期和默认扩展
 6. 点击**创建**
+
+### TTL格式
+
+**默认TTL**和**最大TTL**字段接受人类可读的时长：
+
+- 带后缀的值 — \`24h\`、\`7d\`、\`365d\`（可用后缀：\`s\`、\`m\`、\`h\`、\`d\`、\`w\`、\`y\`）
+- 纯数字 — 按**秒**解释（例如\`3600\` = 1小时）
+
+格式错误的值会被拒绝，错误信息中会列出可接受的格式。
 
 > 💡 用户证书和主机证书使用单独的CA。切勿将一个CA用于两种用途。
 

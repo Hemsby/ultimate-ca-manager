@@ -17,6 +17,7 @@ export default {
           { label: '签名 CA', text: '用于签署时间戳令牌的 CA 私钥——必须是有效且未过期的 CA' },
           { label: '策略 OID', text: 'TSA 策略的对象标识符（例如 1.2.3.4.1）——包含在每个时间戳响应中' },
           { label: '启用/禁用', text: '在不丢失配置的情况下开关 TSA 端点' },
+          { label: '要求专用证书', text: '可选启用：拒绝使用 CA 证书本身签署时间戳——需要一个带有关键 timeStamping EKU 的专用终端实体签名证书（RFC 3161）' },
         ]
       },
       {

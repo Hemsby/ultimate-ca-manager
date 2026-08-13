@@ -1,24 +1,33 @@
 export default {
   helpContent: {
     title: 'Intégration Microsoft AD CS',
-    subtitle: 'Signer des CSR via Windows PKI',
-    overview: 'Intégrez UCM avec Microsoft Active Directory Certificate Services (AD CS) pour signer les CSR avec votre infrastructure PKI Windows et gérer le cycle de vie complet des certificats. Connexion via mTLS, Basic Auth ou Kerberos, plus un canal admin WinRM optionnel pour la révocation, les CRL, l\'inventaire et la gestion des requêtes en attente.',
+    subtitle: 'Signer des certificats avec une autorité de certification Microsoft',
+    overview: 'Connectez UCM à Microsoft Active Directory Certificate Services (AD CS) pour signer les CSR avec votre infrastructure PKI Windows et gérer le cycle de vie complet des certificats. Prend en charge l\'authentification par certificat (mTLS), Kerberos et Basic, plus un canal admin WinRM optionnel pour la révocation, les CRL, l\'inventaire et la gestion des requêtes en attente.',
     sections: [
       {
-        title: 'Configuration',
+        title: 'Méthodes d\'authentification',
         items: [
-          { label: 'Ajouter une connexion', text: 'Configurer les détails du serveur MS CA : nom d\'hôte, méthode d\'authentification et identifiants' },
-          { label: 'Méthodes d\'authentification', text: 'Certificat client (mTLS), Basic Auth ou Kerberos' },
-          { label: 'Tester la connexion', text: 'Vérifier la connectivité et l\'authentification avec le serveur CA' },
-          { label: 'Modèle par défaut', text: 'Sélectionner le modèle de certificat par défaut de la CA Windows' },
+          { label: 'Certificat client (mTLS)', text: 'Le plus sécurisé. Générez un certificat client sur votre MS CA, exportez en PFX, téléversez le certificat et la clé en PEM.' },
+          { label: 'Basic Auth', text: 'Nom d\'utilisateur/mot de passe sur HTTPS. Fonctionne sans jonction au domaine. Activez basic auth dans IIS certsrv.' },
+          { label: 'Kerberos', text: 'Nécessite le paquet requests-kerberos et une machine jointe au domaine ou un keytab configuré.' },
         ]
       },
       {
         title: 'Signer des CSR',
         items: [
-          { label: 'Modèles auto-approuvés', text: 'Le certificat est retourné immédiatement et importé dans UCM' },
-          { label: 'Modèles avec approbation', text: 'UCM suit l\'ID de requête MS CA jusqu\'à l\'approbation du gestionnaire' },
-          { label: 'EOBO', text: 'Inscrire pour le compte d\'un autre utilisateur avec les identifiants d\'agent d\'inscription' },
+          { label: 'Sélection du modèle', text: 'Choisir parmi les modèles de certificats disponibles sur la MS CA' },
+          { label: 'Auto-approuvé', text: 'Les modèles avec autoenroll retournent le certificat immédiatement' },
+          { label: 'Approbation du gestionnaire', text: 'Certains modèles exigent l\'approbation du gestionnaire — UCM suit la requête en attente' },
+          { label: 'Interrogation du statut', text: 'Vérifier le statut des requêtes en attente depuis le panneau de détail de la CSR' },
+        ]
+      },
+      {
+        title: 'Inscription pour le compte d\'autrui (EOBO)',
+        items: [
+          { label: 'Vue d\'ensemble', text: 'Soumettre une CSR pour le compte d\'un autre utilisateur avec des certificats d\'agent d\'inscription' },
+          { label: 'DN du bénéficiaire', text: 'Nom distinctif (DN) de l\'utilisateur cible (auto-rempli depuis le sujet de la CSR)' },
+          { label: 'UPN du bénéficiaire', text: 'Nom principal d\'utilisateur (UPN) de l\'utilisateur cible (auto-rempli depuis le SAN e-mail de la CSR)' },
+          { label: 'Prérequis', text: 'Le modèle de la CA doit autoriser l\'inscription pour le compte d\'autrui. Le compte de service UCM a besoin d\'un certificat d\'agent d\'inscription.' },
         ]
       },
       {
@@ -56,15 +65,15 @@ export default {
       },
     ],
     tips: [
-      'L\'authentification par certificat client (mTLS) est recommandée pour la production',
-      'EOBO nécessite un certificat d\'agent d\'inscription et des permissions de modèle appropriées',
-      'Les modèles de certificat sont chargés automatiquement depuis la CA connectée',
-      'Activez le canal admin WinRM pour propager les révocations à la CA et gérer les requêtes en attente depuis UCM',
+      'Testez d\'abord la connexion pour vérifier l\'authentification et découvrir les modèles disponibles.',
+      'Activez EOBO en cochant la case dans le modal de signature — les champs se remplissent automatiquement depuis la CSR.',
+      'L\'authentification par certificat client est recommandée pour la production — elle ne nécessite pas de jonction au domaine.',
+      'Activez le canal admin WinRM pour propager les révocations à la CA et gérer les requêtes en attente depuis UCM.',
     ],
     warnings: [
-      'Le serveur CA doit avoir certsrv accessible pour la connexion UCM',
-      'EOBO nécessite un certificat d\'agent d\'inscription configuré sur le serveur AD CS',
-      'Sans le canal admin WinRM, révoquer un certificat AD CS ne le marque révoqué que dans UCM — la CA Windows n\'est pas notifiée',
+      'Kerberos nécessite une machine jointe au domaine ou un keytab configuré — non disponible dans Docker.',
+      'EOBO nécessite un certificat d\'agent d\'inscription configuré sur le serveur AD CS.',
+      'Sans le canal admin WinRM, révoquer un certificat AD CS ne le marque révoqué que dans UCM — la CA Windows n\'est pas notifiée.',
     ],
   },
   helpGuides: {

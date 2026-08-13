@@ -137,6 +137,7 @@ Configuración de todo el sistema organizada en pestañas. Los cambios surten ef
 - **Nombre de host** — El nombre de dominio completamente cualificado del servidor
 - **Validez predeterminada** — Período de validez predeterminado del certificado en días
 - **Umbral de advertencia de expiración** — Días antes de la expiración para activar advertencias
+- **Vhost ACME público** — Nombre de host concreto en las URL del directorio ACME (p. ej. \`acme.ucm.example.com\` — no \`*.ucm.example.com\`). Un **SAN de certificado TLS** wildcard \`*.ucm.example.com\` cubre tanto \`admin.ucm.example.com\` como \`acme.ucm.example.com\`. Configure DNS y TLS para el vhost ACME **antes** de guardar — los clientes que relean el directorio cambian de URL al instante.
 
 ## Apariencia
 
@@ -194,6 +195,11 @@ Permitir o denegar acceso desde direcciones IP o rangos CIDR específicos.
 
 ### Aplicación de 2FA
 Requerir que todos los usuarios activen la autenticación de dos factores.
+
+### Cifrado de claves privadas
+Cifre todas las claves privadas almacenadas en la base de datos con AES-256, protegidas por un archivo de clave maestra. La sección muestra el estado del cifrado y los contadores de claves **cifradas / sin cifrar**. Dos variables de entorno opcionales hacen que la ausencia de claves sea fatal en el arranque: \`UCM_REQUIRE_DB_ENCRYPTION_KEY\` (cifrado de secretos de integración) y \`UCM_REQUIRE_KEY_ENCRYPTION\` (cifrado de claves privadas).
+
+> 💡 Las configuraciones sensibles de seguridad (sesión, bloqueo, HSTS, URL pública, política de contraseñas) requieren el permiso **admin:settings** — los campos están bloqueados para los operadores.
 
 > ⚠ Pruebe las restricciones de IP cuidadosamente antes de aplicarlas. Las reglas incorrectas pueden bloquear a todos los usuarios.
 
@@ -395,12 +401,20 @@ Vincula los puntos de conexión XCEP/WSTEP autenticados por Kerberos usados para
 - **Nombre de entidad de servicio (SPN)** — p. ej. \`HTTP/ucm.ejemplo.com@EJEMPLO.COM\`
 - **Keytab** — Generado con \`ktpass\` o \`ktutil\` en el controlador de dominio para el SPN anterior
 
-> ⚠ Si la biblioteca SPNEGO del lado del servidor no está instalada, la autenticación Kerberos no funcionará aunque esté habilitada aquí -- se muestra una advertencia en la pestaña.
+> ⚠ Kerberos requiere el **backend \`gssapi\`** del lado del servidor (la biblioteca Python \`gssapi\` más las bibliotecas Kerberos del sistema) — el paquete SPNEGO base por sí solo no es suficiente. Sin él, la autenticación Kerberos no funcionará aunque esté habilitada aquí, y la vinculación Kerberos no se anuncia; se muestra una advertencia en la pestaña.
 
 ### URL de directiva de inscripción
 
 - **Usuario/Contraseña** — Solicita credenciales; para la inscripción interactiva "Solicitar nuevo certificado", no requiere Active Directory
 - **Kerberos** — Sin solicitud de credenciales; requiere un cliente unido al dominio y configuración de GPO
+
+### Vinculación de renovación de certificados
+
+Además de Usuario/Contraseña y Kerberos, WSTEP admite la **renovación con certificado de cliente**, reflejando los endpoints CES de un ADCS real: la solicitud de renovación (RST) debe firmarse con XML-DSig usando la clave privada de un certificado que **el propio UCM emitió**. El certificado presentado se compara **byte a byte** con el certificado almacenado para la CA configurada — el número de serie o el sujeto por sí solos nunca son suficientes. Esto permite a los clientes Windows renovar de forma desatendida con su certificado actual, sin credenciales ni ticket Kerberos.
+
+### Extensión de seguridad SID (KB5014754)
+
+En la **emisión autenticada por Kerberos**, UCM incrusta el SID de AD del solicitante en la extensión de seguridad SID de Microsoft (\`szOID_NTDS_CA_SECURITY_EXT\`) del certificado emitido. Los controladores de dominio la usan para el **mapeo fuerte de certificados** (KB5014754) — requerido desde que AD exige el mapeo fuerte para la autenticación basada en certificados (inicio de sesión con tarjeta inteligente, PKINIT).
 
 ### Sujetos derivados de AD
 

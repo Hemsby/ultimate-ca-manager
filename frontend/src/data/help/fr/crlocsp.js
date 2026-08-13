@@ -11,6 +11,7 @@ export default {
           { label: 'Régénération manuelle', text: 'Forcer la régénération immédiate de la CRL' },
           { label: 'Télécharger la CRL', text: 'Télécharger le fichier CRL au format DER ou PEM' },
           { label: 'URL CDP', text: 'URL du point de distribution CRL à intégrer dans les certificats' },
+          { label: 'Validité', text: 'Validité de la CRL par CA de 1 jour à 5 ans (90j/180j/1a/3a/5a pour les CA hors ligne qui ne peuvent pas re-signer à l\'échéance). Un avertissement s\'affiche au-delà d\'un an — les parties utilisatrices peuvent conserver des données de révocation périmées pendant toute la fenêtre' },
         ]
       },
       {
@@ -20,6 +21,8 @@ export default {
           { label: 'URL AIA', text: 'URL d\'accès aux informations de l\'autorité — Points de terminaison du répondeur OCSP et de téléchargement du certificat de l\'émetteur CA intégrés dans les certificats émis' },
           { label: 'Cache', text: 'Cache de réponses avec nettoyage automatique quotidien des entrées expirées' },
           { label: 'Total des requêtes', text: 'Nombre de requêtes OCSP traitées' },
+          { label: 'Répondeur délégué', text: 'Signer les réponses avec un certificat OCSPSigning dédié au lieu de la clé de la CA — assignez-en un par CA depuis le panneau de détails' },
+          { label: 'Renouvellement auto du répondeur', text: 'Une tâche quotidienne réémet le certificat du répondeur délégué avant expiration (même paire de clés, renouvelé à l\'identique) et le relie — activé par défaut' },
         ]
       },
     ],
@@ -53,6 +56,13 @@ Cliquez sur **Régénérer** pour reconstruire immédiatement la CRL d'une CA. C
 ### Auto-régénération
 Activez l'auto-régénération pour reconstruire automatiquement la CRL chaque fois qu'un certificat est révoqué. Basculez cette option par CA.
 
+### Validité de la CRL
+La planification de la CRL (par CA) définit la durée de validité de chaque CRL publiée. Les options vont de **1 jour à 5 ans** : 1j, 2j, 3j, 7j, 14j, 30j, 90j, 180j, 1a, 3a, 5a.
+
+- **Les CA en ligne** devraient garder une validité courte (quelques jours) pour que les parties utilisatrices récupèrent rapidement les révocations
+- **Les CA hors ligne** (typiquement une racine qui ne peut pas re-signer les CRL à l'échéance) sont le cas d'usage prévu des options longues — de 90j à 5a
+- Un avertissement s'affiche au-delà d'un an : les parties utilisatrices peuvent conserver des données de révocation périmées pendant toute la fenêtre de validité
+
 ### Point de distribution CRL (CDP)
 L'URL CDP est intégrée dans les certificats pour que les clients sachent où télécharger la CRL. Copiez l'URL depuis les détails de la CRL.
 
@@ -84,6 +94,12 @@ UCM met en cache les réponses OCSP pour les performances. Le cache est :
 - **Nettoyé automatiquement** — Les réponses expirées sont purgées quotidiennement par le planificateur
 - **Invalidé à la révocation** — Lorsqu'un certificat est révoqué, sa réponse OCSP en cache est immédiatement supprimée
 - **Invalidé à la levée de suspension** — Lorsqu'une suspension de certificat est levée, le cache OCSP est mis à jour
+
+### Répondeur OCSP délégué
+
+Par défaut, les réponses OCSP sont signées avec la clé de la CA elle-même. Un **répondeur délégué** utilise à la place un certificat dédié doté de l'EKU **OCSPSigning** — assignez-en un par CA depuis le panneau de détails de la CA (seuls les certificats portant l'EKU OCSPSigning et une clé privée sont éligibles).
+
+**Renouvellement automatique** : une tâche quotidienne réémet le certificat du répondeur avant son expiration — même paire de clés et mêmes extensions, renouvelé à l'identique — et relie la configuration du répondeur de la CA au nouveau certificat. Les certificats de signature OCSP à courte durée de vie (p. ex. un modèle de 90 jours) tournent sans action manuelle. Activé par défaut ; il peut être désactivé et la fenêtre de renouvellement ajustée via la configuration.
 
 ### URL AIA
 L'extension AIA (Authority Information Access) est intégrée dans les certificats pour indiquer aux clients où trouver :

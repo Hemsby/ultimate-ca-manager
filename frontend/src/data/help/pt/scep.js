@@ -9,9 +9,9 @@ export default {
         items: [
           { label: 'Solicitações', text: 'Solicitações de inscrição SCEP pendentes, aprovadas e rejeitadas' },
           { label: 'Configuração', text: 'Configurações do servidor SCEP: seleção de CA, identificador de CA, auto-aprovação' },
+          { label: 'Perfis', text: 'Endpoints de inscrição nomeados, cada um com URL, CA, modelo e desafio próprios' },
           { label: 'Senhas de Desafio', text: 'Gerenciar senhas de desafio por CA para inscrição de dispositivos' },
           { label: 'Informações', text: 'URLs de endpoints SCEP e instruções de integração' },
-          { label: 'Perfis', text: 'Endpoints de inscrição nomeados, cada um com URL, CA, modelo e desafio próprios' },
         ]
       },
       {
@@ -27,8 +27,8 @@ export default {
         items: [
           { label: 'Segmento de URL', text: 'Cada perfil é servido em /scep/<segment>/pkiclient.exe — aponte cada frota de dispositivos ou perfil MDM para o seu próprio URL' },
           { label: 'Modelo de certificado', text: 'Quando um modelo está vinculado, os seus KU/EKU e validade governam cada certificado emitido pelo perfil' },
-          { label: 'Desafio por perfil', text: 'Cada perfil tem a sua própria palavra-passe de desafio, armazenada cifrada, com a mesma janela de expiração do desafio global' },
-          { label: 'Endpoint padrão', text: 'O endpoint /scep/pkiclient.exe sem segmento continua a servir a configuração global' },
+          { label: 'Desafio por perfil', text: 'Cada perfil tem sua própria senha de desafio, armazenada criptografada, com a mesma janela de expiração do desafio global' },
+          { label: 'Endpoint padrão', text: 'O endpoint /scep/pkiclient.exe sem segmento continua servindo a configuração global' },
         ]
       },
     ],
@@ -63,6 +63,21 @@ Configure o servidor SCEP:
 - **Identificador de CA** — O identificador que dispositivos usam para localizar a CA correta
 - **Auto-Aprovação** — Aprovar automaticamente solicitações com senhas de desafio válidas
 
+### Perfis
+Endpoints de inscrição nomeados, cada um servido em sua própria URL:
+
+\`\`\`
+https://seu-servidor:8443/scep/<perfil>/pkiclient.exe
+\`\`\`
+
+Cada perfil está vinculado a:
+- **Sua própria CA** — frotas de dispositivos diferentes podem se inscrever em CAs diferentes
+- **Um modelo de certificado opcional** — quando vinculado, o key usage, extended key usage e validade do modelo governam cada certificado emitido pelo perfil
+- **Uma senha de desafio por perfil** — armazenada criptografada, com a mesma janela de expiração do desafio global
+- **Uma política de aprovação** — auto-aprovação ou revisão manual por perfil
+
+Aponte cada frota de dispositivos, perfil MDM ou tenant para sua própria URL de perfil. O endpoint \`/scep/pkiclient.exe\` sem segmento continua servindo a configuração global inalterada.
+
 ### Senhas de Desafio
 Gerencie senhas de desafio por CA. Os dispositivos devem incluir uma senha de desafio válida em sua solicitação de inscrição para autenticação.
 
@@ -81,13 +96,14 @@ Exibe a URL do endpoint SCEP e instruções de integração.
 5. Se auto-aprovação estiver ativada, o UCM assina e retorna o certificado
 6. Se auto-aprovação estiver desativada, um administrador revisa e aprova/rejeita
 
-## URL SCEP
+## URLs SCEP
 
 \`\`\`
-https://seu-servidor:8443/scep
+https://seu-servidor:8443/scep                          (endpoint global)
+https://seu-servidor:8443/scep/<perfil>/pkiclient.exe   (endpoint por perfil)
 \`\`\`
 
-Os dispositivos precisam desta URL mais o identificador de CA para se inscrever.
+Os dispositivos precisam da URL mais o identificador de CA para se inscrever. Use uma URL de perfil para direcionar a CA, o modelo e a senha de desafio daquele perfil.
 
 ## Aprovando/Rejeitando Solicitações
 

@@ -47,10 +47,9 @@ export default {
     ],
     tips: [
       'Las CAs con un icono de llave (🔑) tienen clave privada y pueden firmar certificados',
-      'Usa CAs intermedias para la firma diaria, mantén la CA raíz fuera de línea cuando sea posible',
-      'La exportación PKCS#12 incluye la cadena completa y es ideal para respaldo',
       'Ponga la CA raíz sin conexión tan pronto como sus intermedias estén operativas',
       'Use «Exportada a archivo» para el mayor aislamiento air-gap; «Protegida con contraseña» para una restauración rápida in situ',
+      'La exportación PKCS#12 incluye la cadena completa y es ideal para respaldo',
     ],
     warnings: [
       'Eliminar una CA NO revocará los certificados que haya emitido — revócalos primero',

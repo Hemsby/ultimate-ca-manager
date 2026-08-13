@@ -27,6 +27,7 @@ export default {
           { label: 'Crear clave', text: 'Genera una nueva clave API con expiración opcional' },
           { label: 'Permisos', text: 'Las claves API heredan los permisos de tu rol' },
           { label: 'Revocar', text: 'Invalida inmediatamente una clave API' },
+          { label: 'Usuarios desactivados', text: 'Las claves API de un usuario desactivado se rechazan aunque la clave en sí siga siendo válida' },
         ]
       },
       {
@@ -43,8 +44,8 @@ export default {
     tips: [
       'Activa al menos un segundo factor (TOTP o clave de seguridad) para las cuentas de administrador',
       'Las claves API pueden tener una fecha de expiración para integraciones de corta duración',
-      'Escanea el código QR con cualquier app TOTP: Google Authenticator, Authy, 1Password, etc.',
       'Las claves API también pueden crearse sin expiración para automatización a largo plazo',
+      'Escanea el código QR con cualquier app TOTP: Google Authenticator, Authy, 1Password, etc.',
       'Las selecciones de filtros en cada página de lista (Certificados, CA, Auditoría, etc.) se persisten automáticamente entre recargas',
     ],
   },

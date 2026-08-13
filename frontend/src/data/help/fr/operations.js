@@ -1,34 +1,37 @@
 export default {
   helpContent: {
     title: 'Opérations',
-    subtitle: 'Actions en masse et gestion des données',
-    overview: 'Effectuez des opérations en masse sur plusieurs ressources simultanément. Révoquez, renouvelez, exportez ou supprimez des certificats par lots. Gérez les CA, CSR, modèles et utilisateurs en masse.',
+    subtitle: 'Importation, exportation et actions en masse',
+    overview: 'Centre d\'opérations centralisé. Importez des certificats depuis des fichiers ou OPNsense, exportez des bundles aux formats PEM/P7B et effectuez des actions en masse sur tous les types de ressources avec recherche et filtres intégrés.',
     sections: [
       {
-        title: 'Onglets',
+        title: 'Onglets latéraux',
         items: [
-          { label: 'Importation/Exportation', text: 'Identique à la page Importation & Exportation — assistant d\'importation intelligente et export en masse' },
-          { label: 'OPNsense', text: 'Intégration OPNsense pour l\'importation de certificats et CA depuis le pare-feu' },
-          { label: 'Actions en masse', text: 'Sélectionner plusieurs éléments et effectuer des opérations par lots' },
+          { label: 'Importation', text: 'Importation intelligente avec détection automatique du format, plus synchronisation OPNsense pour récupérer les certificats des pare-feu' },
+          { label: 'Exportation', text: 'Télécharger des bundles de certificats par type de ressource au format PEM ou P7B via des cartes d\'action' },
+          { label: 'Actions en masse', text: 'Sélectionner un type de ressource et effectuer des opérations par lots sur plusieurs éléments' },
         ]
       },
       {
-        title: 'Actions en masse disponibles',
+        title: 'Actions en masse',
         items: [
-          { label: 'Certificats', text: 'Révoquer, renouveler, exporter ou supprimer en masse' },
-          { label: 'CA', text: 'Exporter ou supprimer les CA sélectionnées' },
-          { label: 'CSR', text: 'Signer en masse avec une CA sélectionnée ou supprimer' },
-          { label: 'Modèles', text: 'Exporter ou supprimer les modèles sélectionnés' },
-          { label: 'Utilisateurs', text: 'Désactiver ou supprimer les comptes utilisateurs sélectionnés' },
+          { label: 'Certificats', text: 'Révoquer, renouveler, supprimer ou exporter — filtrer par statut et CA émettrice' },
+          { label: 'CA', text: 'Supprimer ou exporter des autorités de certification' },
+          { label: 'CSR', text: 'Signer avec une CA ou supprimer les requêtes en attente' },
+          { label: 'Modèles', text: 'Supprimer des modèles de certificats' },
+          { label: 'Utilisateurs', text: 'Supprimer des comptes utilisateurs' },
         ]
       },
     ],
     tips: [
-      'Utilisez la recherche et le filtre dans le panneau de gauche pour trouver rapidement des éléments spécifiques',
-      'Créez toujours une sauvegarde avant d\'effectuer des suppressions ou révocations en masse',
+      'Utilisez les puces de ressources pour basculer rapidement entre les types de ressources',
+      'La recherche et les filtres intégrés (Statut, CA) permettent d\'affiner les éléments sans quitter la barre d\'outils',
+      'Basculez entre les modes d\'affichage Tableau et Panier (panneau de transfert) sur ordinateur',
+      'Prévisualisez les changements avant de confirmer les opérations en masse',
     ],
     warnings: [
-      'Les opérations en masse sont irréversibles — vérifiez bien votre sélection avant d\'exécuter',
+      'La suppression en masse est irréversible — créez toujours une sauvegarde d\'abord',
+      'La révocation en masse publiera des CRL mises à jour pour toutes les CA concernées',
     ],
   },
   helpGuides: {

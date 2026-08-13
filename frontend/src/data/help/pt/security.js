@@ -5,6 +5,15 @@ export default {
     overview: 'Configure políticas de senha, gerenciamento de sessão, limitação de taxa e segurança de rede. Estas configurações se aplicam a todo o sistema e afetam todas as contas de usuário.',
     sections: [
       {
+        title: 'Criptografia de Chaves Privadas',
+        items: [
+          { label: 'Status e contadores', text: 'Mostra se a criptografia está ativada e quantas chaves privadas armazenadas estão criptografadas vs não criptografadas' },
+          { label: 'Ativar / Desativar', text: 'Criptografar todas as chaves privadas de CAs e certificados com AES-256 sob um arquivo de chave mestra — faça backup do arquivo de chave imediatamente, ou desative para retornar ao armazenamento em texto claro' },
+          { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: 'Variável de ambiente opcional: recusa iniciar sem uma chave de criptografia de banco de dados explícita' },
+          { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: 'Variável de ambiente opcional: recusa iniciar a menos que a criptografia de chaves privadas esteja ativada' },
+        ]
+      },
+      {
         title: 'Política de Senha',
         items: [
           { label: 'Comprimento Mínimo', text: 'Número mínimo de caracteres obrigatórios' },
@@ -22,6 +31,13 @@ export default {
           { label: 'Aplicação de 2FA', text: 'Exigir autenticação de dois fatores para todos os usuários' },
         ]
       },
+      {
+        title: 'Autenticação mTLS',
+        items: [
+          { label: 'CA Confiável', text: 'Selecionar a CA que emite e valida os certificados de cliente mTLS para login' },
+          { label: 'Exigir certificado de cliente', text: 'Opcionalmente tornar o mTLS obrigatório para a interface web — alterar configurações mTLS requer reinício do serviço' },
+        ]
+      },
     ],
     tips: [
       'Ative a limitação de taxa para proteger contra ferramentas de ataque automatizadas',
@@ -30,6 +46,7 @@ export default {
     warnings: [
       'Restringir a política de senha excessivamente pode frustrar os usuários',
       'Sempre garanta que pelo menos um administrador pode acessar o sistema antes de ativar restrições de IP',
+      'Configurações sensíveis à segurança (sessão, bloqueio, HSTS, URL pública, política de senha) requerem admin:settings — os campos ficam bloqueados para operators',
     ],
   },
   helpGuides: {
@@ -38,6 +55,23 @@ export default {
 ## Visão Geral
 
 Configuração de segurança de todo o sistema que afeta todas as contas de usuário e padrões de acesso.
+
+## Criptografia de Chaves Privadas
+
+Criptografe todas as chaves privadas de CAs e certificados armazenadas no banco de dados com AES-256, protegidas por um arquivo de chave mestra mantido fora do banco de dados.
+
+- **Status e contadores** — A seção mostra se a criptografia está ativada e quantas chaves estão atualmente **criptografadas** vs **não criptografadas**
+- **Ativar Criptografia** — Gera o arquivo de chave mestra e criptografa todas as chaves privadas armazenadas. Faça backup do arquivo de chave imediatamente: sem ele, as chaves criptografadas são perdidas permanentemente
+- **Desativar Criptografia** — Descriptografa todas as chaves privadas de volta ao armazenamento em texto claro (confirmação necessária)
+
+### Aplicação na Inicialização
+
+Sem uma chave de criptografia configurada, o UCM registra um aviso na inicialização mas continua funcionando. Duas **variáveis de ambiente opcionais** transformam isso em falha imediata:
+
+- \`UCM_REQUIRE_DB_ENCRYPTION_KEY\` — recusa iniciar sem uma chave de criptografia de banco de dados explícita (caso contrário, os segredos de integração recorrem a uma chave derivada do id da máquina)
+- \`UCM_REQUIRE_KEY_ENCRYPTION\` — recusa iniciar a menos que a criptografia de chaves privadas esteja ativada
+
+Ambas aceitam \`1\`/\`true\`/\`yes\`/\`on\`. Uma chave inválida é tratada como fatal em vez de recorrer silenciosamente ao texto claro.
 
 ## Política de Senha
 
@@ -90,6 +124,18 @@ Exigir que todos os usuários ativem 2FA. Usuários que não configuraram 2FA se
 - **WebAuthn** — Chaves de segurança de hardware e biometria
 
 > 💡 Aplique 2FA para contas de administrador no mínimo. Considere aplicar para todos os usuários em ambientes sensíveis à segurança.
+
+## Autenticação mTLS
+
+Permita que usuários façam login com um certificado de cliente em vez de senha:
+
+- **CA Confiável** — Selecione a CA que emite e valida os certificados de cliente mTLS
+- **Exigir certificado de cliente** — Opcionalmente torne o mTLS obrigatório para a interface web
+- Alterar configurações mTLS requer reinício do serviço
+
+## Permissões Necessárias
+
+Configurações sensíveis à segurança — sessão, bloqueio, HSTS, URL pública e política de senha — requerem a permissão **admin:settings**. Para operators (apenas write:settings), esses campos aparecem bloqueados; o restante do cartão continua salvando normalmente.
 `
   }
 }

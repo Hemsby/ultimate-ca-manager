@@ -22,10 +22,20 @@ export default {
           { label: 'Importar/Exportar', text: 'Compartir plantillas como archivos JSON entre instancias de UCM' },
         ]
       },
+      {
+        title: 'Autoinscripción de Windows',
+        items: [
+          { label: 'Permitir autoinscripción', text: 'Anuncia la plantilla como autoEnroll=true en la Directiva de inscripción de certificados para que los clientes GPO/Kerberos la soliciten automáticamente al iniciar sesión. Desactivado por defecto — la inscripción manual sigue siendo posible sin él' },
+          { label: 'Crear sujeto desde Active Directory', text: 'Deriva el sujeto y el SAN del objeto de AD del solicitante (mediante el conector de AD) en lugar de exigir que el cliente proporcione uno — para la autoinscripción GPO desatendida' },
+          { label: 'Restringir la inscripción a un grupo de AD', text: 'Solo los miembros del grupo de AD configurado (incluida la pertenencia anidada) pueden inscribirse por el punto de conexión Kerberos. Vacío = cualquier principal autenticado. No se aplica en el punto de conexión Usuario/Contraseña' },
+          { label: 'Campos de sujeto fijados', text: 'Fuerza los valores C/ST/L/O/OU en cada certificado emitido mediante WSTEP, sobrescribiendo el CSR o la derivación desde AD para esos campos. CN y SAN nunca se ven afectados — deje un campo vacío para mantenerlo dinámico' },
+        ]
+      },
     ],
     tips: [
       'Cree plantillas separadas para servidores TLS, clientes y firma de código',
       'Use la acción Duplicar para crear rápidamente variaciones de una plantilla',
+      'Las plantillas con indicadores de autoinscripción muestran las insignias AD / Auto / ACL / Pinned en la lista',
     ],
   },
   helpGuides: {
@@ -64,6 +74,26 @@ Al emitir un certificado o firmar un CSR, seleccione una plantilla del menú des
 - Campos del sujeto (puede sobrescribirlos)
 - Uso de clave y uso extendido de clave
 - Período de validez
+
+## Indicadores de autoinscripción de Windows
+
+Las plantillas llevan tres indicadores opcionales utilizados por los protocolos de autoinscripción de Windows (XCEP/WSTEP, configurados en **Configuración → Autoinscripción de Windows**):
+
+- **Permitir autoinscripción** — Anuncia la plantilla como \`autoEnroll=true\` en la Directiva de inscripción de certificados, de modo que los clientes autenticados por GPO/Kerberos la soliciten automáticamente al iniciar sesión sin acción del usuario. Desactivado por defecto — como en un ADCS real, una plantilla puede seguir inscribiéndose manualmente (MMC «Solicitar nuevo certificado», \`certreq\`) sin este indicador, ya que Enroll y Autoenroll son permisos separados.
+- **Crear sujeto desde Active Directory** — Para la autoinscripción GPO desatendida: deriva el sujeto y el SAN del certificado a partir del objeto de AD del solicitante (mediante el conector de AD) en lugar de exigir que el cliente proporcione uno.
+- **Restringir la inscripción a un grupo de AD** — Solo los principales que pertenecen al grupo de Active Directory configurado (incluida la pertenencia anidada) pueden inscribirse con esta plantilla por el punto de conexión autenticado con Kerberos. Introduzca un nombre de grupo o un DN completo; déjelo vacío para permitir cualquier principal autenticado, igual que el comportamiento por defecto de un ADCS real. No se aplica en el punto de conexión Usuario/Contraseña, que no tiene identidad por solicitud que comprobar.
+
+Las plantillas con estos indicadores muestran las insignias **AD**, **Auto** y **ACL** en la lista de plantillas.
+
+## Campos de sujeto fijados
+
+Una plantilla puede **fijar** los campos organizativos del sujeto — **C, ST, L, O, OU** — para los certificados emitidos mediante WSTEP. Un valor fijado se fuerza en cada certificado emitido, sobrescribiendo lo que proporcione el CSR del cliente o la derivación desde Active Directory para ese campo.
+
+- **El Common Name y el Subject Alternative Name nunca se ven afectados** — permanecen dinámicos por solicitante
+- Deje un campo vacío para mantenerlo dinámico
+- Las plantillas con campos fijados muestran una insignia **Pinned**, y los valores fijados aparecen en el panel de detalles de la plantilla
+
+Utilícelo para garantizar una identidad organizativa uniforme (por ejemplo, \`O\` y \`C\` fijos) en toda una flota autoinscrita, independientemente de lo que envíe cada cliente de Windows.
 
 ## Duplicar plantillas
 

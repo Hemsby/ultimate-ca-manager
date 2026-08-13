@@ -9,9 +9,9 @@ export default {
         items: [
           { label: 'Solicitudes', text: 'Solicitudes de inscripción SCEP pendientes, aprobadas y rechazadas' },
           { label: 'Configuración', text: 'Ajustes del servidor SCEP: selección de CA, identificador de CA, aprobación automática' },
+          { label: 'Perfiles', text: 'Endpoints de inscripción con nombre, cada uno con su propia URL, CA, plantilla y desafío' },
           { label: 'Contraseñas de desafío', text: 'Gestionar contraseñas de desafío por CA para la inscripción de dispositivos' },
           { label: 'Información', text: 'URL del endpoint SCEP e instrucciones de integración' },
-          { label: 'Perfiles', text: 'Endpoints de inscripción con nombre, cada uno con su propia URL, CA, plantilla y desafío' },
         ]
       },
       {
@@ -63,6 +63,21 @@ Configurar el servidor SCEP:
 - **Identificador de CA** — El identificador que los dispositivos usan para localizar la CA correcta
 - **Aprobación automática** — Aprobar automáticamente solicitudes con contraseñas de desafío válidas
 
+### Perfiles
+Endpoints de inscripción con nombre, cada uno servido en su propia URL:
+
+\`\`\`
+https://su-servidor:8443/scep/<profile>/pkiclient.exe
+\`\`\`
+
+Cada perfil está vinculado a:
+- **Su propia CA** — distintas flotas de dispositivos pueden inscribirse contra CAs diferentes
+- **Una plantilla de certificado opcional** — cuando está vinculada, el uso de clave, el uso extendido de clave y la validez de la plantilla gobiernan cada certificado emitido a través del perfil
+- **Una contraseña de desafío por perfil** — almacenada cifrada, con la misma ventana de expiración que el desafío global
+- **Una política de aprobación** — aprobación automática o revisión manual por perfil
+
+Apunte cada flota de dispositivos, perfil MDM o tenant a su propia URL de perfil. El endpoint \`/scep/pkiclient.exe\` sin etiqueta sigue sirviendo la configuración global sin cambios.
+
 ### Contraseñas de desafío
 Gestionar contraseñas de desafío por CA. Los dispositivos deben incluir una contraseña de desafío válida en su solicitud de inscripción para autenticarse.
 
@@ -84,10 +99,11 @@ Muestra la URL del endpoint SCEP e instrucciones de integración.
 ## URL SCEP
 
 \`\`\`
-https://su-servidor:8443/scep
+https://su-servidor:8443/scep                          (endpoint global)
+https://su-servidor:8443/scep/<profile>/pkiclient.exe  (endpoint por perfil)
 \`\`\`
 
-Los dispositivos necesitan esta URL más el identificador de CA para inscribirse.
+Los dispositivos necesitan la URL más el identificador de CA para inscribirse. Use una URL de perfil para apuntar a la CA, la plantilla y la contraseña de desafío de ese perfil.
 
 ## Aprobar/Rechazar solicitudes
 

@@ -33,7 +33,7 @@ export default {
           { label: 'Révoquer', text: 'Marquer comme révoqué avec un motif — apparaîtra dans la CRL' },
           { label: 'Lever la suspension', text: 'Annuler la suspension d\'un certificat révoqué avec le motif « Suspension de certificat » — restaure le statut valide' },
           { label: 'Révoquer et remplacer', text: 'Révoquer et émettre immédiatement un remplacement' },
-          { label: 'Exporter', text: 'Télécharger en format PEM, DER ou PKCS#12' },
+          { label: 'Exporter', text: 'Télécharger au format PEM, DER, PKCS#12 ou JKS' },
           { label: 'Comparer', text: 'Comparaison côte à côte de deux certificats' },
         ]
       },
@@ -61,10 +61,9 @@ export default {
     ],
     tips: [
       'Ajoutez une étoile ⭐ aux certificats importants pour les ajouter à vos favoris',
-      'Utilisez les filtres pour trouver rapidement les certificats par statut, CA ou texte de recherche',
+      'Utilisez les filtres pour trouver rapidement les certificats par statut, CA ou texte de recherche — votre sélection est conservée au rechargement',
       'Le renouvellement conserve le même sujet mais génère une nouvelle paire de clés',
       'Besoin d\'un EKU non-standard (Microsoft RDP, smartcard logon, document signing) ? Ajoutez-le via « EKU supplémentaires » plutôt que d\'éditer les modèles',
-      'Les filtres actifs (statut, CA, recherche) sont conservés au rechargement de la page',
     ],
     warnings: [
       'La révocation est généralement permanente — sauf pour « Suspension de certificat » qui peut être levée',
