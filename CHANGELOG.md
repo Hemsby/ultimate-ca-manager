@@ -10,6 +10,10 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+### Added
+- ACME client accounts: import the private key of an existing account at creation (algorithm derived from the key) (#277)
+- ACME client accounts: deactivate an account upstream (RFC 8555 §7.3.6) — permanent and removes the local record (#278)
+
 ### Fixed
 - Certificate, SSH certificate, and user certificate lists now search the entire inventory (server-side) instead of only the current page (#280)
 

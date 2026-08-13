@@ -907,6 +907,40 @@ class AcmeClientService:
         hmac_key = self.account.eab_hmac_key or None
         return kid, hmac_key
     
+    def deactivate_account(self) -> Tuple[bool, str]:
+        """Deactivate the account upstream (RFC 8555 §7.3.6).
+
+        POSTs {"status": "deactivated"} to the account URL, signed with the
+        account key (kid header). Deactivation is permanent — a successfully
+        deactivated account can never be re-enabled or registered again with
+        the same key.
+
+        Returns:
+            Tuple of (success, message)
+        """
+        account_url = self._get_account_url()
+        if not account_url:
+            return False, 'Account is not registered'
+        try:
+            resp = self._post(account_url, {"status": "deactivated"})
+            if resp.status_code == 200:
+                try:
+                    status = (resp.json() or {}).get('status', '')
+                except ValueError:
+                    status = ''
+                if status == 'deactivated':
+                    logger.info(f"ACME account deactivated: {account_url}")
+                    return True, 'Account deactivated'
+                return False, f"ACME server acknowledged the request but account status is {status!r}"
+            try:
+                detail = (resp.json() or {}).get('detail') or f'HTTP {resp.status_code}'
+            except ValueError:
+                detail = f'HTTP {resp.status_code}'
+            return False, f'Account deactivation failed: {detail}'
+        except Exception as e:
+            logger.error(f"ACME account deactivation error: {e}")
+            return False, str(e)
+
     def _build_eab_payload(self, eab_kid: str, eab_hmac_key: str, url: str) -> dict:
         """
         Build External Account Binding JWS (RFC 8555 §7.3.4).

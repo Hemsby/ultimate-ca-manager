@@ -471,6 +471,22 @@ export default function ACMEPage() {
     }
   }
 
+  const handleDeactivateCaAccount = async (id) => {
+    const confirmed = await showConfirm(t('acme.confirmDeactivateCaAccount'), {
+      title: t('common.deactivateAccount'),
+      confirmText: t('common.deactivate'),
+      variant: 'danger'
+    })
+    if (!confirmed) return
+    try {
+      await acmeService.deactivateCaAccount(id)
+      showSuccess(t('acme.caAccountDeactivated'))
+      loadData()
+    } catch (error) {
+      showError(error.message || t('acme.accountDeactivationFailed'))
+    }
+  }
+
   const handleVerifyChallenge = async (order, force = false) => {
     try {
       const result = await acmeService.verifyChallenge(order.id, null, force)
@@ -1141,6 +1157,7 @@ export default function ACMEPage() {
               onCreate={handleCreateCaAccount}
               onUpdate={handleUpdateCaAccount}
               onDelete={handleDeleteCaAccount}
+              onDeactivate={handleDeactivateCaAccount}
               onSetDefault={handleSetDefaultCaAccount}
               onRegister={handleRegisterCaAccount}
             />

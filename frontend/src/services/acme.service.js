@@ -157,6 +157,10 @@ export const acmeService = {
     return apiClient.post(`/acme/client/accounts/${id}/register`, email ? { email } : {})
   },
 
+  async deactivateCaAccount(id) {
+    return apiClient.post(`/acme/client/accounts/${id}/deactivate`)
+  },
+
   // Client Orders (certificates from Let's Encrypt)
   async getClientOrders(status, environment) {
     return apiClient.get(`/acme/client/orders${buildQueryString({ status, environment })}`)

@@ -1,15 +1,16 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
-  Plus, Trash, PencilSimple, Key, CheckCircle, Star, Globe, LockKey, X
+  Plus, Trash, PencilSimple, Key, CheckCircle, Star, Globe, LockKey, X, Power
 } from '@phosphor-icons/react'
-import { Button, Badge, Input, Select, CompactSection } from '../../components'
+import { Button, Badge, Input, Select, Textarea, CompactSection } from '../../components'
 
 const EMPTY_FORM = {
   label: '',
   directory_url: '',
   email: '',
   account_key_algorithm: 'ES256',
+  account_key_pem: '',
   eab_kid: '',
   eab_hmac_key: '',
   is_default: false,
@@ -34,6 +35,7 @@ export default function CaAccountsManager({
   onCreate,
   onUpdate,
   onDelete,
+  onDeactivate,
   onSetDefault,
   onRegister,
 }) {
@@ -99,7 +101,9 @@ export default function CaAccountsManager({
         if (form.eab_hmac_key) payload.eab_hmac_key = form.eab_hmac_key
         await onUpdate(editingId, payload)
       } else {
-        await onCreate({ ...form, ...timing })
+        const payload = { ...form, ...timing }
+        if (!payload.account_key_pem) delete payload.account_key_pem
+        await onCreate(payload)
       }
       closeForm()
     } finally {
@@ -181,6 +185,11 @@ export default function CaAccountsManager({
                     <Button type="button" variant="secondary" size="sm" onClick={() => openEdit(acct)}>
                       <PencilSimple size={12} /> {t('common.edit')}
                     </Button>
+                    {canDelete && acct.is_registered && onDeactivate && (
+                      <Button type="button" variant="danger" size="sm" onClick={() => onDeactivate(acct.id)}>
+                        <Power size={12} /> {t('common.deactivate')}
+                      </Button>
+                    )}
                     {canDelete && (
                       <Button type="button" variant="danger" size="sm" onClick={() => onDelete(acct.id)}>
                         <Trash size={12} /> {t('common.delete')}
@@ -241,7 +250,20 @@ export default function CaAccountsManager({
                 { value: 'ES384', label: 'ECDSA P-384 (ES384)' },
                 { value: 'RS256', label: 'RSA 2048 (RS256)' },
               ]}
+              disabled={!editingId && !!form.account_key_pem.trim()}
             />
+
+            {!editingId && (
+              <Textarea
+                label={t('acme.importAccountKey')}
+                value={form.account_key_pem}
+                onChange={(e) => setForm(p => ({ ...p, account_key_pem: e.target.value }))}
+                placeholder="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+                helperText={t('acme.importAccountKeyHelper')}
+                rows={4}
+                className="font-mono text-xs"
+              />
+            )}
 
             <Input
               label={t('acme.eabKid')}

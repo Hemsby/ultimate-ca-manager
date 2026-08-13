@@ -8,12 +8,13 @@ be flagged ``is_default`` and is used when a request does not select a CA.
 
 Routes (all under /api/v2):
   GET    /acme/client/accounts              list
-  POST   /acme/client/accounts              create
+  POST   /acme/client/accounts              create (optional external key import)
   GET    /acme/client/accounts/<id>         detail
   PATCH  /acme/client/accounts/<id>         update
   DELETE /acme/client/accounts/<id>         delete (detaches orders)
   POST   /acme/client/accounts/<id>/register  register with the CA
   POST   /acme/client/accounts/<id>/default   mark as default
+  POST   /acme/client/accounts/<id>/deactivate deactivate upstream (RFC 8555 §7.3.6) + remove
 """
 
 import logging
@@ -32,6 +33,33 @@ from services.acme.acme_client_service import AcmeClientService, ACCOUNT_KEY_TYP
 from services.audit_service import AuditService
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_imported_account_key(pem: str) -> str:
+    """Validate an unencrypted PEM private key for use as an imported ACME
+    account key. Returns the matching JWS algorithm (RS256/ES256/ES384).
+    Raises ValueError on any problem."""
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa, ec
+
+    pem = pem.strip()
+    try:
+        key = serialization.load_pem_private_key(pem.encode('utf-8'), password=None)
+    except Exception:
+        raise ValueError(
+            'Invalid account key: expected an unencrypted RSA or ECDSA private key in PEM format'
+        )
+    if isinstance(key, rsa.RSAPrivateKey):
+        if key.key_size < 2048:
+            raise ValueError('RSA account keys must be at least 2048 bits')
+        return 'RS256'
+    if isinstance(key, ec.EllipticCurvePrivateKey):
+        if isinstance(key.curve, ec.SECP256R1):
+            return 'ES256'
+        if isinstance(key.curve, ec.SECP384R1):
+            return 'ES384'
+        raise ValueError('EC account keys must use the P-256 or P-384 curve')
+    raise ValueError('Unsupported key type: RSA and ECDSA (P-256/P-384) only')
 
 
 def _validate_directory_url(url: str) -> None:
@@ -144,7 +172,11 @@ def create_ca_account():
     """Create a new external ACME CA account.
 
     Body: { directory_url, label, email, account_key_algorithm?, eab_kid?,
-            eab_hmac_key?, is_default? }
+            eab_hmac_key?, is_default?, account_key_pem? }
+
+    ``account_key_pem``: optional unencrypted PEM private key of an existing
+    ACME account to import (key algorithm is derived from the key, the
+    ``account_key_algorithm`` parameter is ignored when a key is provided).
     """
     data = request.json or {}
 
@@ -176,7 +208,18 @@ def create_ca_account():
         return error_response('An account for this directory_url already exists', 409)
 
     algorithm = data.get('account_key_algorithm') or 'ES256'
-    if algorithm not in ACCOUNT_KEY_TYPES:
+    imported_key_pem = None
+    account_key_pem = (data.get('account_key_pem') or '').strip()
+    if account_key_pem:
+        if len(account_key_pem) > 64 * 1024:
+            return error_response('account_key_pem too large (max 64 KB)', 413)
+        try:
+            # Algorithm is derived from the imported key, not trusted from input.
+            algorithm = _validate_imported_account_key(account_key_pem)
+        except ValueError as exc:
+            return error_response(str(exc), 400)
+        imported_key_pem = account_key_pem
+    elif algorithm not in ACCOUNT_KEY_TYPES:
         return error_response(
             f'Invalid account_key_algorithm (allowed: {", ".join(ACCOUNT_KEY_TYPES)})', 400
         )
@@ -197,6 +240,11 @@ def create_ca_account():
         eab_hmac_key=(data.get('eab_hmac_key') or '').strip() or None,
         is_default=is_default,
     )
+    if imported_key_pem:
+        # Same at-rest treatment as a generated key (encrypt_text is a no-op
+        # when no master key is configured — mirrors _get_account_key).
+        from security.encryption import encrypt_text
+        acct.account_key = encrypt_text(imported_key_pem)
     try:
         _apply_timing_fields(acct, data)
         _apply_proxy_endpoint_fields(acct, data)
@@ -213,7 +261,10 @@ def create_ca_account():
         resource_type='acme_client_account',
         resource_id=str(acct.id),
         resource_name=label,
-        details=f'Created ACME CA account {label} ({directory_url})',
+        details=(
+            f'Created ACME CA account {label} ({directory_url})'
+            + (' with imported account key' if imported_key_pem else '')
+        ),
         success=True,
     )
     return success_response(data=acct.to_dict(), status=201)
@@ -282,6 +333,22 @@ def update_ca_account(account_id):
     return success_response(data=acct.to_dict())
 
 
+def _remove_account_row(acct: AcmeClientAccount) -> None:
+    """Detach orders and delete an account row; promotes a replacement default
+    if needed. Does not commit — caller wraps in safe_commit."""
+    was_default = acct.is_default
+    AcmeClientOrder.query.filter_by(acme_client_account_id=acct.id).update(
+        {AcmeClientOrder.acme_client_account_id: None}
+    )
+    db.session.delete(acct)
+    if was_default:
+        replacement = AcmeClientAccount.query.filter(
+            AcmeClientAccount.id != acct.id
+        ).order_by(AcmeClientAccount.id.asc()).first()
+        if replacement:
+            replacement.is_default = True
+
+
 @bp.route('/api/v2/acme/client/accounts/<int:account_id>', methods=['DELETE'])
 @require_auth(['delete:acme'])
 def delete_ca_account(account_id):
@@ -292,20 +359,7 @@ def delete_ca_account(account_id):
         return error_response('ACME account not found', 404)
 
     label = acct.label
-    was_default = acct.is_default
-
-    AcmeClientOrder.query.filter_by(acme_client_account_id=acct.id).update(
-        {AcmeClientOrder.acme_client_account_id: None}
-    )
-    db.session.delete(acct)
-
-    # If we removed the default, promote another account so issuance keeps a target.
-    if was_default:
-        replacement = AcmeClientAccount.query.filter(
-            AcmeClientAccount.id != acct.id
-        ).order_by(AcmeClientAccount.id.asc()).first()
-        if replacement:
-            replacement.is_default = True
+    _remove_account_row(acct)
 
     ok, err = safe_commit(logger, 'Failed to delete ACME CA account')
     if not ok:
@@ -320,6 +374,50 @@ def delete_ca_account(account_id):
         success=True,
     )
     return success_response(message=f'Account {label} deleted')
+
+
+@bp.route('/api/v2/acme/client/accounts/<int:account_id>/deactivate', methods=['POST'])
+@require_auth(['delete:acme'])
+def deactivate_ca_account(account_id):
+    """Deactivate the ACME account upstream (RFC 8555 §7.3.6), then remove it.
+
+    Deactivation is permanent and server-side: the CA will refuse any further
+    use of the account (orders, renewal) with the same key. Only on upstream
+    success is the local row deleted; a failed deactivation keeps the row so
+    the user can retry or simply delete it.
+    """
+    acct = db.session.get(AcmeClientAccount, account_id)
+    if not acct:
+        return error_response('ACME account not found', 404)
+    if not acct.is_registered():
+        return error_response(
+            'Account is not registered with the CA — use Delete to remove it locally', 400
+        )
+
+    label = acct.label
+    try:
+        client = AcmeClientService(account=acct)
+        success, message = client.deactivate_account()
+        if not success:
+            return error_response(message, 502)
+    except Exception as e:
+        logger.error(f'ACME CA account deactivation failed: {e}')
+        return error_response('Deactivation failed', 502)
+
+    _remove_account_row(acct)
+    ok, err = safe_commit(logger, 'Failed to remove deactivated ACME CA account')
+    if not ok:
+        return err
+
+    AuditService.log_action(
+        action='acme_ca_account_deactivate',
+        resource_type='acme_client_account',
+        resource_id=str(account_id),
+        resource_name=label,
+        details=f'Deactivated ACME CA account {label} upstream and removed it',
+        success=True,
+    )
+    return success_response(message=f'Account {label} deactivated')
 
 
 @bp.route('/api/v2/acme/client/accounts/<int:account_id>/default', methods=['POST'])
