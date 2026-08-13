@@ -10,6 +10,9 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+### Fixed
+- Certificate, SSH certificate, and user certificate lists now search the entire inventory (server-side) instead of only the current page (#280)
+
 ## [2.208] - 2026-08-12
 
 ### Added

@@ -100,12 +100,13 @@ export default function SSHCertificatesPage() {
   const [filterStatus, setFilterStatus] = usePersistedState('ucm-filter-ssh-certs-status', [])
   const [filterType, setFilterType] = usePersistedState('ucm-filter-ssh-certs-type', [])
   const [filterCA, setFilterCA] = usePersistedState('ucm-filter-ssh-certs-ca', [])
+  const [searchValue, setSearchValue] = useState('')
 
   // ============= DATA LOADING =============
 
   useEffect(() => {
     loadData()
-  }, [page, perPage, sortBy, sortOrder, JSON.stringify(filterStatus), JSON.stringify(filterType), JSON.stringify(filterCA)])
+  }, [page, perPage, sortBy, sortOrder, JSON.stringify(filterStatus), JSON.stringify(filterType), JSON.stringify(filterCA), searchValue])
 
   const loadData = async () => {
     try {
@@ -119,6 +120,7 @@ export default function SSHCertificatesPage() {
       if (filterStatus.length > 0) params.status = filterStatus
       if (filterType.length > 0) params.type = filterType
       if (filterCA.length > 0) params.ca_id = filterCA
+      if (searchValue) params.search = searchValue
 
       const [certsRes, casRes, statsRes] = await Promise.all([
         sshCertificatesService.getAll(params),
@@ -638,7 +640,8 @@ export default function SSHCertificatesPage() {
           selectedId={selectedCert?.id}
           searchable
           searchPlaceholder={`${t('common.search')} ${t('sshCertificates.title').toLowerCase()}...`}
-          searchKeys={['key_id', 'principals', 'ca_name', 'serial', 'fingerprint']}
+          externalSearch={searchValue}
+          onSearchChange={(v) => { setSearchValue(v); setPage(1) }}
           toolbarFilters={[
             {
               key: 'type',

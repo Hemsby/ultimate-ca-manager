@@ -86,6 +86,7 @@ export default function CertificatesPage() {
   const [filterCA, setFilterCA] = usePersistedState('ucm-filter-certs-ca', [])
   const [filterSource, setFilterSource] = usePersistedState('ucm-filter-certs-source', [])
   const [filterTemplate, setFilterTemplate] = usePersistedState('ucm-filter-certs-template', [])
+  const [searchValue, setSearchValue] = useState('')
 
   // Apply filter preset callback
   const handleApplyFilterPreset = useCallback((filters) => {
@@ -109,7 +110,7 @@ export default function CertificatesPage() {
   useEffect(() => {
     loadData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, perPage, JSON.stringify(filterStatus), JSON.stringify(filterCA), JSON.stringify(filterSource), JSON.stringify(filterTemplate), sortBy, sortOrder])
+  }, [page, perPage, JSON.stringify(filterStatus), JSON.stringify(filterCA), JSON.stringify(filterSource), JSON.stringify(filterTemplate), sortBy, sortOrder, searchValue])
 
   // Reload when floating window actions change data
   useEffect(() => {
@@ -155,6 +156,7 @@ export default function CertificatesPage() {
       if (filterTemplate.includes('modified')) {
         params.template_modified = 'true'
       }
+      if (searchValue) params.search = searchValue
       
       const [certsRes, casRes, statsRes] = await Promise.all([
         certificatesService.getAll(params),
@@ -614,7 +616,8 @@ export default function CertificatesPage() {
           selectedId={selectedCert?.id}
           searchable
           searchPlaceholder={t('common.search') + ' ' + t('common.certificates').toLowerCase() + '...'}
-          searchKeys={['cn', 'common_name', 'subject', 'issuer', 'serial']}
+          externalSearch={searchValue}
+          onSearchChange={(v) => { setSearchValue(v); setPage(1) }}
           columnStorageKey="ucm-certs-columns"
           filterPresetsKey="ucm-certs-presets"
           densityStorageKey="ucm-certs-density"

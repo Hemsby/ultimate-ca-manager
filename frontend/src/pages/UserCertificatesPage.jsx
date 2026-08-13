@@ -41,6 +41,7 @@ export default function UserCertificatesPage() {
 
   // Filters
   const [filterStatus, setFilterStatus] = usePersistedState('ucm-filter-usercerts-status', [])
+  const [searchValue, setSearchValue] = useState('')
 
   // Export modal
   const [showExportModal, setShowExportModal] = useState(false)
@@ -55,6 +56,7 @@ export default function UserCertificatesPage() {
     try {
       const params = { page, per_page: perPage }
       if (filterStatus.length > 0) params.status = filterStatus
+      if (searchValue) params.search = searchValue
 
       const [certRes, statsRes] = await Promise.all([
         userCertificatesService.getAll(params),
@@ -69,7 +71,7 @@ export default function UserCertificatesPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, perPage, JSON.stringify(filterStatus), showError, t])
+  }, [page, perPage, JSON.stringify(filterStatus), searchValue, showError, t])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -365,7 +367,8 @@ export default function UserCertificatesPage() {
         rowActions={rowActions}
         searchable
         searchPlaceholder={t('userCertificates.searchPlaceholder')}
-        searchKeys={['name', 'cert_subject', 'owner', 'cert_serial']}
+        externalSearch={searchValue}
+        onSearchChange={(v) => { setSearchValue(v); setPage(1) }}
         columnStorageKey="ucm-user-certs-columns"
         filterPresetsKey="ucm-user-certs-presets"
         densityStorageKey="ucm-user-certs-density"
