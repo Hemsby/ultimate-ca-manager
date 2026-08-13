@@ -86,15 +86,15 @@ export function AppShell() {
   // Pages that have contextual help
   const pagesWithHelp = [
     // Core pages
-    'certificates', 'cas', 'csrs', 'users', 'templates', 
-    'acme', 'scep', 'est', 'tsa', 'settings', 'truststore', 'crl-ocsp', 
-    'tools', 'audit', 'account', 'operations',
+    'certificates', 'cas', 'csrs', 'users', 'templates',
+    'acme', 'scep', 'est', 'tsa', 'settings', 'truststore', 'crl-ocsp',
+    'tools', 'audit', 'account', 'operations', 'user-certificates',
     // Pro pages
     'rbac', 'hsm',
     // SSH pages
     'ssh-cas', 'ssh-certificates',
     // Governance pages
-    'keyRecovery'
+    'keyRecovery', 'policies', 'approvals', 'reports', 'discovery'
   ]
   const hasHelp = pagesWithHelp.includes(activePage) || activePage === ''
 
