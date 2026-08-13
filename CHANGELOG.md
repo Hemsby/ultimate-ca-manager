@@ -15,7 +15,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 - ACME client accounts: deactivate an account upstream (RFC 8555 §7.3.6) — permanent and removes the local record (#278)
 
 ### Fixed
-- Certificate, SSH certificate, and user certificate lists now search the entire inventory (server-side) instead of only the current page (#280)
+- Certificate, SSH certificate, user certificate, and discovered-certificate lists now search the entire inventory (server-side) instead of only the current page (#280)
 
 ## [2.208] - 2026-08-12
 
