@@ -13,7 +13,7 @@ export default function ProviderTypeGrid({ label, providers, value, onChange, di
     p.description.toLowerCase().includes(search.toLowerCase())
   )
 
-  const popularOrder = ['cloudflare', 'route53', 'azure', 'gcloud', 'ovh', 'hetzner', 'digitalocean', 'gandi', 'porkbun']
+  const popularOrder = ['cloudflare', 'route53', 'azure', 'gcloud', 'ovh', 'hetzner', 'digitalocean', 'gandi', 'porkbun', 'tencentcloud']
   const manualProvider = filtered.find(p => p.type === 'manual')
   const rfc2136Provider = filtered.find(p => p.type === 'rfc2136')
   const popularProviders = popularOrder
