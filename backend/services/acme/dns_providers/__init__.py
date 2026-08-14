@@ -94,6 +94,7 @@ PROVIDER_REGISTRY: Dict[str, Type[BaseDnsProvider]] = {
     'godaddy': GoDaddyDnsProvider,
     'namecheap': NamecheapDnsProvider,
     'desec': DesecDnsProvider,
+    'tencentcloud': TencentCloudDnsProvider,
     # Free DNS services
     'duckdns': DuckDnsDnsProvider,
     'freedns': FreeDnsDnsProvider,
