@@ -21,6 +21,7 @@ from .gandi import GandiDnsProvider
 from .digitalocean import DigitalOceanDnsProvider
 from .infomaniak import InfomaniakDnsProvider
 from .route53 import Route53DnsProvider
+from .tencentcloud import TencentCloudDnsProvider
 from .azure import AzureDnsProvider
 from .scaleway import ScalewayDnsProvider
 from .ionos import IonosDnsProvider
