@@ -75,7 +75,7 @@ class TencentCloudDnsProvider(BaseDnsProvider):
         secret_id = self.credentials["secret_id"]
         secret_key = self.credentials["secret_key"]
         timestamp = int(time.time())
-        date = datetime.datetime.utcfromtimestamp(timestamp).strftime("%Y-%m-%d")
+        date = datetime.datetime.fromtimestamp(timestamp, datetime.UTC).strftime("%Y-%m-%d")
 
         host = self.BASE_URL.split("://")[1]
         canonical_headers = f"content-type:application/json\nhost:{host}\n"
@@ -230,4 +230,3 @@ class TencentCloudDnsProvider(BaseDnsProvider):
             {"name": "secret_key", "label": "SecretKey", "type": "password", "required": True,
              "help": "Tencent Cloud API SecretKey"},
         ]
-        
