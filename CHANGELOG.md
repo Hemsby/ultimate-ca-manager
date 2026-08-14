@@ -10,6 +10,8 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+## [2.210] - 2026-08-14
+
 ### Added
 - ACME client accounts: multiple accounts can share the same CA directory URL — administrative separation for dns-persist-01 and multi-domain setups (#276)
 - DNS providers: Tencent Cloud DNSPod (#284, contributed by @wxtewx)
