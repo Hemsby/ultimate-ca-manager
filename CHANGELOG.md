@@ -10,6 +10,8 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+## [2.209] - 2026-08-14
+
 ### Added
 - SCEP profiles: Microsoft Intune challenge validation — live per-device challenge validation against Intune's `ScepActions` API with Entra app registration, forced auto-approve, and success/failure notification before issuance (#228, contributed by @Hemsby)
 - ACME client accounts: import the private key of an existing account at creation (algorithm derived from the key) (#277)
