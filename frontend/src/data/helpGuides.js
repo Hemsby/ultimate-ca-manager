@@ -843,6 +843,15 @@ Use any RFC 8555-compliant CA, not just Let's Encrypt:
 
 Set your CA's directory URL in **Settings** → **Custom ACME Server**.
 
+### External CA Accounts
+Manage every external CA account UCM registers with:
+
+- **Multiple accounts per CA allowed** — several accounts can share the same directory URL (e.g. two Let's Encrypt accounts with different contact emails for administrative separation, useful alongside dns-persist-01). The account row, not the URL, is the identity.
+- **Empty Directory URL** — defaults to Let's Encrypt Production.
+- **Default account** — picked when a request selects no CA account; URL-based lookups resolve to the default.
+- **Import** — bring an existing account's private key at creation (algorithm derived from the key).
+- **Per-account proxy endpoint** — each account can expose \`/acme/proxy/<slug>/directory\` with its own slug.
+
 ### External Account Binding (EAB)
 Some CAs require EAB credentials to link your ACME account with an existing account at the CA:
 
@@ -884,9 +893,11 @@ When requesting a certificate, choose where the private key comes from:
 Configure DNS-01 challenge providers for domain validation. Supported providers include:
 - Cloudflare
 - AWS Route 53
+- Azure DNS
 - Google Cloud DNS
 - DigitalOcean
 - OVH
+- Tencent Cloud DNSPod
 - And more
 
 Each provider requires API credentials specific to the DNS service.

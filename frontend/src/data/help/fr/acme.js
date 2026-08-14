@@ -17,11 +17,12 @@ export default {
         title: 'Client ACME',
         items: [
           { label: 'Client', text: 'Demander des certificats depuis tout CA ACME — Let\'s Encrypt, ZeroSSL, Buypass, HARICA ou personnalisé' },
+          { label: 'Comptes CA externes', text: 'Un ou plusieurs comptes par CA — plusieurs comptes peuvent partager la même URL de répertoire (ex. deux comptes Let\'s Encrypt pour une séparation administrative) ; une URL de répertoire vide vaut Let\'s Encrypt Production' },
           { label: 'Serveur personnalisé', text: 'Définir une URL de répertoire ACME personnalisée pour utiliser tout CA conforme RFC 8555' },
           { label: 'EAB', text: 'Prise en charge de la liaison de compte externe pour les CA nécessitant une pré-inscription (ZeroSSL, HARICA, etc.)' },
           { label: 'Types de clés', text: 'RSA-2048, RSA-4096, ECDSA P-256, ECDSA P-384 pour les clés de certificat' },
           { label: 'Clés de compte', text: 'Algorithmes ES256 (P-256), ES384 (P-384) ou RS256 pour les clés de compte ACME' },
-          { label: 'Fournisseurs DNS', text: 'Configurer les fournisseurs de défi DNS-01 (Cloudflare, Route53, etc.)' },
+          { label: 'Fournisseurs DNS', text: 'Configurer les fournisseurs de défi DNS-01 (Cloudflare, Route53, Tencent DNSPod, etc.)' },
           { label: 'Custom Command', text: 'Type de fournisseur DNS exécutant des commandes locales configurées par l\'admin pour créer/supprimer les TXT — détails de l\'enregistrement passés via les variables d\'environnement DOMAIN, RECORD_NAME, RECORD_VALUE, TTL, ACTION. Chemin binaire absolu requis, sans shell, timeout configurable' },
           { label: 'Domaines', text: 'Associer des domaines aux fournisseurs DNS pour la validation automatique' },
         ]
@@ -161,6 +162,15 @@ Utilisez tout CA conforme RFC 8555, pas seulement Let's Encrypt :
 
 Définissez l'URL du répertoire de votre CA dans **Paramètres** → **Serveur ACME personnalisé**.
 
+### Comptes CA externes
+Gérez tous les comptes externes avec lesquels UCM s'enregistre :
+
+- **Plusieurs comptes par CA autorisés** — plusieurs comptes peuvent partager la même URL de répertoire (ex. deux comptes Let's Encrypt avec des e-mails de contact différents pour la séparation administrative, utile avec dns-persist-01). La ligne du compte, pas l'URL, sert d'identité.
+- **URL de répertoire vide** — vaut par défaut Let's Encrypt Production.
+- **Compte par défaut** — utilisé quand une demande ne sélectionne aucun compte ; les recherches par URL renvoient le compte par défaut.
+- **Import** — importez la clé privée d'un compte existant à la création (algorithme déduit de la clé).
+- **Point de terminaison proxy dédié** — chaque compte peut exposer \`/acme/proxy/<slug>/directory\` avec son propre slug.
+
 ### Liaison de compte externe (EAB)
 Certains CA nécessitent des identifiants EAB pour lier votre compte ACME à un compte existant chez le CA :
 
@@ -205,6 +215,7 @@ Configurez les fournisseurs de défi DNS-01 pour la validation de domaine. Les f
 - Google Cloud DNS
 - DigitalOcean
 - OVH
+- Tencent Cloud DNSPod
 - Et plus encore
 
 Chaque fournisseur nécessite des identifiants API spécifiques au service DNS.

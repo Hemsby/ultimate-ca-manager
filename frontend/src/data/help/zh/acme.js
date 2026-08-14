@@ -17,11 +17,12 @@ export default {
         title: 'ACME 客户端',
         items: [
           { label: '客户端', text: '从任何 ACME CA 请求证书——Let\'s Encrypt、ZeroSSL、Buypass、HARICA 或自定义' },
+          { label: '外部 CA 账户', text: '每个 CA 可以有多个账户 —— 多个账户可以共享同一个目录 URL（例如两个 Let\'s Encrypt 账户用于管理分离）；目录 URL 留空默认为 Let\'s Encrypt 生产环境' },
           { label: '自定义服务器', text: '设置自定义 ACME 目录 URL 以使用任何符合 RFC 8555 的 CA' },
           { label: 'EAB', text: '支持外部账户绑定，用于需要预注册的 CA（ZeroSSL、HARICA 等）' },
           { label: '密钥类型', text: '证书密钥支持 RSA-2048、RSA-4096、ECDSA P-256、ECDSA P-384' },
           { label: '账户密钥', text: 'ACME 账户密钥支持 ES256 (P-256)、ES384 (P-384) 或 RS256 算法' },
-          { label: 'DNS 提供商', text: '配置 DNS-01 挑战提供商（Cloudflare、Route53 等）' },
+          { label: 'DNS 提供商', text: '配置 DNS-01 挑战提供商（Cloudflare、Route53、Tencent DNSPod 等）' },
           { label: '自定义命令', text: '运行管理员配置的本地命令来创建/删除 TXT 记录的 DNS 提供商类型——记录详情通过 DOMAIN、RECORD_NAME、RECORD_VALUE、TTL、ACTION 环境变量传递。要求二进制文件绝对路径，不经过 shell，超时可配置' },
           { label: '域名', text: '将域名映射到 DNS 提供商以进行自动验证' },
         ]
@@ -161,6 +162,15 @@ UCM 支持两种 ACME（自动化证书管理环境）模式：
 
 在**设置** → **自定义 ACME 服务器**中设置 CA 的目录 URL。
 
+### 外部 CA 账户
+管理 UCM 注册的所有外部 CA 账户：
+
+- **每个 CA 允许多个账户** —— 多个账户可共享相同的目录 URL（例如两个使用不同联系邮箱的 Let's Encrypt 账户用于管理分离，配合 dns-persist-01 很有用）。账户行本身是身份标识，而非 URL。
+- **目录 URL 留空** —— 默认为 Let's Encrypt 生产环境。
+- **默认账户** —— 当请求未选择账户时使用；基于 URL 的查找解析到默认账户。
+- **导入** —— 创建时导入现有账户的私钥（算法从私钥推导）。
+- **专用代理端点** —— 每个账户可以使用自己的 slug 公开 \`/acme/proxy/<slug>/directory\`。
+
 ### 外部账户绑定（EAB）
 某些 CA 需要 EAB 凭据将您的 ACME 账户与 CA 上的现有账户关联：
 
@@ -205,6 +215,7 @@ ECDSA 密钥推荐用于现代部署——更小、更快且同样安全。
 - Google Cloud DNS
 - DigitalOcean
 - OVH
+- Tencent Cloud DNSPod
 - 等等
 
 每个提供商需要特定于该 DNS 服务的 API 凭据。

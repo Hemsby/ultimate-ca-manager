@@ -519,11 +519,12 @@ export const helpContent = {
         icon: Globe,
         items: [
           { label: 'Client', text: 'Request certificates from any ACME CA — Let\'s Encrypt, ZeroSSL, Buypass, HARICA, or custom' },
+          { label: 'External CA Accounts', text: 'One or more accounts per CA — several accounts can share the same CA directory URL (e.g. two Let\'s Encrypt accounts for administrative separation); an empty Directory URL defaults to Let\'s Encrypt Production' },
           { label: 'Custom Server', text: 'Set a custom ACME directory URL to use any RFC 8555-compliant CA' },
           { label: 'EAB', text: 'External Account Binding support for CAs that require pre-registration (ZeroSSL, HARICA, etc.)' },
           { label: 'Key Types', text: 'RSA-2048, RSA-4096, ECDSA P-256, ECDSA P-384 for certificate keys' },
           { label: 'Account Keys', text: 'ES256 (P-256), ES384 (P-384), or RS256 algorithms for ACME account keys' },
-          { label: 'DNS Providers', text: 'Configure DNS-01 challenge providers (Cloudflare, Route53, etc.)' },
+          { label: 'DNS Providers', text: 'Configure DNS-01 challenge providers (Cloudflare, Route53, Tencent DNSPod, etc.)' },
           { label: 'Custom Command', text: 'DNS provider type running admin-configured local commands for TXT create/delete — record details passed via DOMAIN, RECORD_NAME, RECORD_VALUE, TTL, ACTION environment variables. Absolute binary path required, no shell, configurable timeout' },
           { label: 'Domains', text: 'Map domains to DNS providers for automatic validation' },
         ]

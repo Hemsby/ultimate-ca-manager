@@ -17,11 +17,12 @@ export default {
         title: 'Cliente ACME',
         items: [
           { label: 'Cliente', text: 'Solicita certificados de cualquier CA ACME — Let\'s Encrypt, ZeroSSL, Buypass, HARICA o personalizada' },
+          { label: 'Cuentas CA externas', text: 'Una o varias cuentas por CA — varias cuentas pueden compartir la misma URL de directorio (p. ej. dos cuentas de Let\'s Encrypt para separación administrativa); una URL de directorio vacía equivale a Let\'s Encrypt Production' },
           { label: 'Servidor personalizado', text: 'Establece una URL de directorio ACME personalizada para usar cualquier CA compatible con RFC 8555' },
           { label: 'EAB', text: 'Soporte de External Account Binding para CAs que requieren pre-registro (ZeroSSL, HARICA, etc.)' },
           { label: 'Tipos de clave', text: 'RSA-2048, RSA-4096, ECDSA P-256, ECDSA P-384 para claves de certificado' },
           { label: 'Claves de cuenta', text: 'Algoritmos ES256 (P-256), ES384 (P-384) o RS256 para claves de cuenta ACME' },
-          { label: 'Proveedores DNS', text: 'Configura proveedores de desafío DNS-01 (Cloudflare, Route53, etc.)' },
+          { label: 'Proveedores DNS', text: 'Configura proveedores de desafío DNS-01 (Cloudflare, Route53, Tencent DNSPod, etc.)' },
           { label: 'Custom Command', text: 'Tipo de proveedor DNS que ejecuta comandos locales configurados por el administrador para crear/eliminar registros TXT — los detalles del registro se pasan mediante las variables de entorno DOMAIN, RECORD_NAME, RECORD_VALUE, TTL, ACTION. Ruta absoluta al binario obligatoria, sin shell, tiempo límite configurable' },
           { label: 'Dominios', text: 'Mapea dominios a proveedores DNS para validación automática' },
         ]
@@ -161,6 +162,15 @@ Usa cualquier CA compatible con RFC 8555, no solo Let's Encrypt:
 
 Establece la URL del directorio de tu CA en **Configuración** → **Servidor ACME personalizado**.
 
+### Cuentas CA externas
+Gestiona todas las cuentas externas con las que UCM se registra:
+
+- **Varias cuentas por CA permitidas** — varias cuentas pueden compartir la misma URL de directorio (p. ej. dos cuentas de Let's Encrypt con correos de contacto distintos para separación administrativa, útil con dns-persist-01). La fila de la cuenta, no la URL, es la identidad.
+- **URL de directorio vacía** — equivale por defecto a Let's Encrypt Production.
+- **Cuenta predeterminada** — se usa cuando una solicitud no selecciona ninguna cuenta; las búsquedas por URL resuelven a la predeterminada.
+- **Importar** — importa la clave privada de una cuenta existente al crearla (el algoritmo se deriva de la clave).
+- **Endpoint proxy dedicado** — cada cuenta puede exponer \`/acme/proxy/<slug>/directory\` con su propio slug.
+
 ### External Account Binding (EAB)
 Algunas CAs requieren credenciales EAB para vincular tu cuenta ACME con una cuenta existente en la CA:
 
@@ -205,6 +215,7 @@ Configura proveedores de desafío DNS-01 para la validación de dominio. Los pro
 - Google Cloud DNS
 - DigitalOcean
 - OVH
+- Tencent Cloud DNSPod
 - Y más
 
 Cada proveedor requiere credenciales API específicas del servicio DNS.

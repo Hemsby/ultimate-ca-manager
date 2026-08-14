@@ -17,11 +17,12 @@ export default {
         title: 'ACMEクライアント',
         items: [
           { label: 'クライアント', text: '任意のACME CAから証明書を要求 — Let\'s Encrypt、ZeroSSL、Buypass、HARICA、またはカスタム' },
+          { label: '外部 CA アカウント', text: 'CA ごとに複数のアカウントを登録可能 — 同じディレクトリ URL を共有できます（例: 管理分離のための 2 つの Let\'s Encrypt アカウント）。ディレクトリ URL が空欄の場合は Let\'s Encrypt Production になります' },
           { label: 'カスタムサーバー', text: 'カスタムACMEディレクトリURLを設定して、任意のRFC 8555準拠CAを使用します' },
           { label: 'EAB', text: '事前登録が必要なCA（ZeroSSL、HARICAなど）のための外部アカウントバインディングサポート' },
           { label: 'キータイプ', text: '証明書キー用のRSA-2048、RSA-4096、ECDSA P-256、ECDSA P-384' },
           { label: 'アカウントキー', text: 'ACMEアカウントキー用のES256 (P-256)、ES384 (P-384)、またはRS256アルゴリズム' },
-          { label: 'DNSプロバイダー', text: 'DNS-01チャレンジプロバイダーの設定（Cloudflare、Route53など）' },
+          { label: 'DNSプロバイダー', text: 'DNS-01チャレンジプロバイダーの設定（Cloudflare、Route53、Tencent DNSPodなど）' },
           { label: 'カスタムコマンド', text: '管理者が設定したローカルコマンドをTXTレコードの作成/削除に実行するDNSプロバイダータイプ — レコード情報はDOMAIN、RECORD_NAME、RECORD_VALUE、TTL、ACTION環境変数で渡されます。バイナリの絶対パスが必須、シェルなし、タイムアウト設定可能' },
           { label: 'ドメイン', text: '自動検証のためにドメインをDNSプロバイダーにマッピングします' },
         ]
@@ -161,6 +162,15 @@ Let's Encryptだけでなく、任意のRFC 8555準拠CAを使用できます：
 
 **設定** → **カスタムACMEサーバー**でCAのディレクトリURLを設定してください。
 
+### 外部 CA アカウント
+UCM が登録する外部 CA のすべてのアカウントを管理します:
+
+- **CA ごとに複数アカウント可** — 複数のアカウントが同じディレクトリ URL を共有できます（例: 連絡先メールが異なる 2 つの Let's Encrypt アカウントによる管理分離、dns-persist-01 と併用に有効）。アカウントの行が ID であり、URL ではありません。
+- **ディレクトリ URL が空** — 既定は Let's Encrypt Production です。
+- **既定アカウント** — リクエストでアカウントを選択しない場合に使用されます。URL ベースの解決は既定アカウントに解決されます。
+- **インポート** — 作成時に既存アカウントの秘密鍵をインポートできます（アルゴリズムは鍵から導出）。
+- **専用プロキシエンドポイント** — 各アカウントが固有のスラグで \`/acme/proxy/<slug>/directory\` を公開できます。
+
 ### 外部アカウントバインディング (EAB)
 一部のCAは、ACMEアカウントをCAの既存アカウントにリンクするためにEAB資格情報を要求します：
 
@@ -205,6 +215,7 @@ ECDSAキーは最新のデプロイに推奨されます — より小さく、�
 - Google Cloud DNS
 - DigitalOcean
 - OVH
+- Tencent Cloud DNSPod
 - その他
 
 各プロバイダーにはDNSサービス固有のAPI資格情報が必要です。
