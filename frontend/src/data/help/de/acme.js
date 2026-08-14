@@ -168,7 +168,7 @@ Verwalten Sie alle externen Konten, mit denen sich UCM registriert:
 - **Mehrere Konten pro CA erlaubt** — mehrere Konten können dieselbe Verzeichnis-URL teilen (z. B. zwei Let's-Encrypt-Konten mit unterschiedlichen Kontakt-E-Mails zur administrativen Trennung, nützlich mit dns-persist-01). Die Kontenzeile, nicht die URL, ist die Identität.
 - **Leere Verzeichnis-URL** — steht standardmäßig für Let's Encrypt Production.
 - **Standardkonto** — wird verwendet, wenn eine Anfrage kein Konto auswählt; URL-basierte Auflösungen liefern das Standardkonto.
-- **Import** — beim Anlegen den privaten Schlüssel eines bestehenden Kontos importieren (Algorithmus wird aus dem Schlüssel abgeleitet).
+- **Import** — beim Anlegen den privaten Schlüssel eines bestehenden Kontos importieren: die Hüllen PKCS#8, SEC1/X9.62 (\`BEGIN EC PRIVATE KEY\`) und PKCS#1 (\`BEGIN RSA PRIVATE KEY\`) werden akzeptiert; der Algorithmus wird automatisch abgeleitet.
 - **Dedizierter Proxy-Endpunkt** — jedes Konto kann \`/acme/proxy/<slug>/directory\` mit eigenem Slug bereitstellen.
 
 ### External Account Binding (EAB)

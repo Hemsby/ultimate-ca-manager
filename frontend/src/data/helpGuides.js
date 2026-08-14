@@ -849,7 +849,7 @@ Manage every external CA account UCM registers with:
 - **Multiple accounts per CA allowed** — several accounts can share the same directory URL (e.g. two Let's Encrypt accounts with different contact emails for administrative separation, useful alongside dns-persist-01). The account row, not the URL, is the identity.
 - **Empty Directory URL** — defaults to Let's Encrypt Production.
 - **Default account** — picked when a request selects no CA account; URL-based lookups resolve to the default.
-- **Import** — bring an existing account's private key at creation (algorithm derived from the key).
+- **Import** — bring an existing account's private key at creation: PKCS#8, SEC1/X9.62 (\`BEGIN EC PRIVATE KEY\`) and PKCS#1 (\`BEGIN RSA PRIVATE KEY\`) envelopes are all accepted; the algorithm is derived automatically.
 - **Per-account proxy endpoint** — each account can expose \`/acme/proxy/<slug>/directory\` with its own slug.
 
 ### External Account Binding (EAB)

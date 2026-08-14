@@ -168,7 +168,7 @@ Gestisci tutti gli account esterni con cui UCM si registra:
 - **Più account per CA consentiti** — più account possono condividere lo stesso URL di directory (es. due account Let's Encrypt con email di contatto diverse per la separazione amministrativa, utile con dns-persist-01). La riga dell'account, non l'URL, è l'identità.
 - **URL di directory vuoto** — corrisponde per impostazione predefinita a Let's Encrypt Production.
 - **Account predefinito** — utilizzato quando una richiesta non seleziona alcun account; le ricerche per URL risolvono verso l'account predefinito.
-- **Importa** — importa la chiave privata di un account esistente alla creazione (l'algoritmo è derivato dalla chiave).
+- **Importa** — importa la chiave privata di un account esistente alla creazione: gli involucri PKCS#8, SEC1/X9.62 (\`BEGIN EC PRIVATE KEY\`) e PKCS#1 (\`BEGIN RSA PRIVATE KEY\`) sono tutti accettati; l'algoritmo è derivato automaticamente.
 - **Endpoint proxy dedicato** — ogni account può esporre \`/acme/proxy/<slug>/directory\` con il proprio slug.
 
 ### External Account Binding (EAB)

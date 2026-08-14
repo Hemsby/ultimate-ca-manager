@@ -1595,7 +1595,7 @@
     "confirmDeactivateCaAccount": "¿Desactivar esta cuenta en la AC (RFC 8555 §7.3.6)? Es permanente — la AC rechazará cualquier uso futuro de esta cuenta y el registro local se eliminará en caso de éxito.",
     "caAccountDeactivated": "Cuenta desactivada en la AC y eliminada",
     "importAccountKey": "Importar clave de cuenta existente (opcional)",
-    "importAccountKeyHelper": "Pegue una clave privada RSA o ECDSA sin cifrar (PEM) para registrar una cuenta ACME existente. El algoritmo de clave se deduce automáticamente.",
+    "importAccountKeyHelper": "Pegue una clave privada RSA o ECDSA sin cifrar (PEM) para registrar una cuenta ACME existente. Se aceptan los formatos PKCS#8 (BEGIN PRIVATE KEY), SEC1/X9.62 (BEGIN EC PRIVATE KEY) y PKCS#1 (BEGIN RSA PRIVATE KEY). El algoritmo de clave se deduce automáticamente.",
     "registrationFailed": "Error de registro",
     "profiles": "Perfiles de certificado",
     "profilesDesc": "Políticas de emisión con nombre anunciadas en el directorio ACME. Los clientes pueden elegir una al crear un pedido; dejar vacío para no anunciar ninguna.",

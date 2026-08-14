@@ -168,7 +168,7 @@ Gérez tous les comptes externes avec lesquels UCM s'enregistre :
 - **Plusieurs comptes par CA autorisés** — plusieurs comptes peuvent partager la même URL de répertoire (ex. deux comptes Let's Encrypt avec des e-mails de contact différents pour la séparation administrative, utile avec dns-persist-01). La ligne du compte, pas l'URL, sert d'identité.
 - **URL de répertoire vide** — vaut par défaut Let's Encrypt Production.
 - **Compte par défaut** — utilisé quand une demande ne sélectionne aucun compte ; les recherches par URL renvoient le compte par défaut.
-- **Import** — importez la clé privée d'un compte existant à la création (algorithme déduit de la clé).
+- **Import** — importez la clé privée d'un compte existant à la création : les enveloppes PKCS#8, SEC1/X9.62 (\`BEGIN EC PRIVATE KEY\`) et PKCS#1 (\`BEGIN RSA PRIVATE KEY\`) sont acceptées ; l'algorithme est déduit automatiquement.
 - **Point de terminaison proxy dédié** — chaque compte peut exposer \`/acme/proxy/<slug>/directory\` avec son propre slug.
 
 ### Liaison de compte externe (EAB)

@@ -16,6 +16,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ### Fixed
 - ACME CA account form: the directory URL field is no longer marked required, and an empty URL defaults to Let's Encrypt Production — the helper text and the form now agree (#276)
+- ACME account key import now documents the accepted legacy PEM envelopes — SEC1/X9.62 (BEGIN EC PRIVATE KEY) and PKCS#1 (BEGIN RSA PRIVATE KEY) already worked but the UI/helper only mentioned PKCS#8 (#285)
 
 ## [2.209] - 2026-08-14
 

@@ -1595,7 +1595,7 @@
     "confirmDeactivateCaAccount": "Deactivate this account at the CA (RFC 8555 §7.3.6)? This is permanent — the CA will reject all future use of this account, and the local record is removed on success.",
     "caAccountDeactivated": "Account deactivated at the CA and removed",
     "importAccountKey": "Import existing account key (optional)",
-    "importAccountKeyHelper": "Paste an unencrypted RSA or ECDSA private key (PEM) to register an existing ACME account. The key algorithm is derived automatically.",
+    "importAccountKeyHelper": "Paste an unencrypted RSA or ECDSA private key (PEM) to register an existing ACME account. PKCS#8 (BEGIN PRIVATE KEY), SEC1/X9.62 (BEGIN EC PRIVATE KEY) and PKCS#1 (BEGIN RSA PRIVATE KEY) formats are accepted. The key algorithm is derived automatically.",
     "registrationFailed": "Registration failed",
     "profiles": "Certificate profiles",
     "profilesDesc": "Named issuance policies advertised in the ACME directory. Clients may select one when placing an order; leave empty to advertise none.",

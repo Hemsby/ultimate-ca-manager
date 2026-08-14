@@ -99,6 +99,51 @@ class TestCreateWithImportedKey:
         assert res.status_code == 413
 
 
+# --- legacy PEM container formats (#285) -------------------------------------
+
+def _pem_traditional(key):
+    """SEC1 for EC, PKCS#1 for RSA (TraditionalOpenSSL serialization)."""
+    return key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    ).decode()
+
+
+class TestLegacyPemContainers:
+    """X9.62 / SEC1 and PKCS#1 wraps must be importable — the validator must not
+    demand a PKCS8 BEGIN PRIVATE KEY envelope."""
+
+    def test_x962_p256_map_to_es256(self):
+        pem = _pem_traditional(ec.generate_private_key(ec.SECP256R1()))
+        assert 'BEGIN EC PRIVATE KEY' in pem
+        assert _validate_imported_account_key(pem) == 'ES256'
+
+    def test_x962_p384_map_to_es384(self):
+        pem = _pem_traditional(ec.generate_private_key(ec.SECP384R1()))
+        assert _validate_imported_account_key(pem) == 'ES384'
+
+    def test_pkcs1_rsa_map_to_rs256(self):
+        pem = _pem_traditional(rsa.generate_private_key(65537, 2048))
+        assert 'BEGIN RSA PRIVATE KEY' in pem
+        assert _validate_imported_account_key(pem) == 'RS256'
+
+    def test_x962_crlf_endings_accepted(self):
+        pem = _pem_traditional(ec.generate_private_key(ec.SECP256R1())).replace('\n', '\r\n')
+        assert _validate_imported_account_key(pem) == 'ES256'
+
+    def test_create_imports_x962_key(self, auth_client, fresh_account_table, app):
+        pem = _pem_traditional(ec.generate_private_key(ec.SECP256R1()))
+        res = auth_client.post('/api/v2/acme/client/accounts', json={
+            'directory_url': 'https://acme.example.com/directory',
+            'label': 'X962 CA',
+            'email': 'ops@example.com',
+            'account_key_pem': pem,
+        })
+        assert res.status_code == 201, res.get_json()
+        assert res.get_json()['data']['account_key_algorithm'] == 'ES256'
+
+
 # --- POST deactivate (#278) ----------------------------------------------------
 
 def _registered_account(app):
