@@ -229,7 +229,6 @@ export default function CaAccountsManager({
               onChange={(e) => setForm(p => ({ ...p, directory_url: e.target.value }))}
               placeholder="https://acme.example.com/directory"
               disabled={!!editingId}
-              required
               helperText={editingId ? t('acme.directoryUrlImmutable') : t('acme.directoryUrlHelper')}
             />
 

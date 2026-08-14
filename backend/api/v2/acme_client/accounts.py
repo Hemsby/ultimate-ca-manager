@@ -184,8 +184,9 @@ def create_ca_account():
     label = (data.get('label') or '').strip()
     email = (data.get('email') or '').strip()
 
+    # Empty URL defaults to Let's Encrypt Production (matches the UI helper).
     if not directory_url:
-        return error_response('directory_url is required', 400)
+        directory_url = AcmeClientAccount.LE_PRODUCTION_URL
     if not directory_url.startswith('https://'):
         return error_response('directory_url must be an https:// URL', 400)
     if len(directory_url) > 500:
@@ -204,8 +205,8 @@ def create_ca_account():
     except ValueError as exc:
         return error_response(str(exc), 400)
 
-    if AcmeClientAccount.query.filter_by(directory_url=directory_url).first():
-        return error_response('An account for this directory_url already exists', 409)
+    # Multiple accounts per directory URL are explicitly allowed (#276) — the
+    # row id is the account identity.
 
     algorithm = data.get('account_key_algorithm') or 'ES256'
     imported_key_pem = None

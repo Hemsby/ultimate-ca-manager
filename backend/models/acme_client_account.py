@@ -17,7 +17,9 @@ class AcmeClientAccount(db.Model):
     DEFAULT_HTTP_TIMEOUT_SEC = 60
 
     id = db.Column(db.Integer, primary_key=True)
-    directory_url = db.Column(db.String(500), unique=True, nullable=False, index=True)
+    # Several accounts may share the same directory_url (#276): the row id is
+    # the account identity, the URL is a plain indexed column.
+    directory_url = db.Column(db.String(500), nullable=False, index=True)
     label = db.Column(db.String(100), nullable=False)  # "Let's Encrypt Production", etc.
     email = db.Column(db.String(255), nullable=False)
     account_url = db.Column(db.String(500), nullable=True)  # populated after registration

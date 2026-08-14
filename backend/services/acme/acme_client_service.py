@@ -191,7 +191,16 @@ class AcmeClientService:
             target_url = AcmeClientAccount.LE_STAGING_URL
             target_label = "Let's Encrypt Staging"
 
-        existing = AcmeClientAccount.query.filter_by(directory_url=target_url).first()
+        def _first_for_url(url):
+            """When several accounts share a directory URL (#276), prefer the
+            default one, otherwise deterministically the oldest row."""
+            return (AcmeClientAccount.query
+                    .filter_by(directory_url=url)
+                    .order_by(AcmeClientAccount.is_default.desc(),
+                              AcmeClientAccount.id.asc())
+                    .first())
+
+        existing = _first_for_url(target_url)
         if existing:
             return existing
 
@@ -215,7 +224,7 @@ class AcmeClientService:
         except Exception:
             db.session.rollback()
             # Race: another request created it. Re-query.
-            existing = AcmeClientAccount.query.filter_by(directory_url=target_url).first()
+            existing = _first_for_url(target_url)
             if existing:
                 return existing
             raise

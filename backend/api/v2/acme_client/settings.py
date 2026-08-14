@@ -170,7 +170,11 @@ def update_settings():
                       else AcmeClientAccount.LE_PRODUCTION_URL)
         # Clear all defaults, then set on target (creates row if missing)
         AcmeClientAccount.query.update({AcmeClientAccount.is_default: False})
-        target = AcmeClientAccount.query.filter_by(directory_url=target_url).first()
+        target = (AcmeClientAccount.query
+                  .filter_by(directory_url=target_url)
+                  .order_by(AcmeClientAccount.is_default.desc(),
+                            AcmeClientAccount.id.asc())
+                  .first())
         if target:
             target.is_default = True
         else:
@@ -311,7 +315,11 @@ def update_settings():
             # Clear creds on any account row that targets the OLD directory URL
             from models import AcmeClientAccount
             if old_val:
-                old_account = AcmeClientAccount.query.filter_by(directory_url=old_val).first()
+                old_account = (AcmeClientAccount.query
+                               .filter_by(directory_url=old_val)
+                               .order_by(AcmeClientAccount.is_default.desc(),
+                                         AcmeClientAccount.id.asc())
+                               .first())
                 if old_account:
                     old_account.account_url = None
                     old_account.account_key = None

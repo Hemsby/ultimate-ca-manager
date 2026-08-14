@@ -115,7 +115,12 @@ def resolve_proxy_account(explicit_id: Optional[int] = None) -> AcmeClientAccoun
         return acct
 
     legacy_url = legacy_upstream_directory_url()
-    acct = AcmeClientAccount.query.filter_by(directory_url=legacy_url).first()
+    # Prefer the default account when several share this URL (#276)
+    acct = (AcmeClientAccount.query
+            .filter_by(directory_url=legacy_url)
+            .order_by(AcmeClientAccount.is_default.desc(),
+                      AcmeClientAccount.id.asc())
+            .first())
     if acct:
         return acct
 
@@ -123,9 +128,11 @@ def resolve_proxy_account(explicit_id: Optional[int] = None) -> AcmeClientAccoun
     if default:
         return default
 
-    acct = AcmeClientAccount.query.filter_by(
-        directory_url=AcmeClientAccount.LE_STAGING_URL
-    ).first()
+    acct = (AcmeClientAccount.query
+            .filter_by(directory_url=AcmeClientAccount.LE_STAGING_URL)
+            .order_by(AcmeClientAccount.is_default.desc(),
+                      AcmeClientAccount.id.asc())
+            .first())
     if acct:
         return acct
 
