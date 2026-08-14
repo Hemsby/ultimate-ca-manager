@@ -10,6 +10,13 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+### Added
+- ACME client accounts: multiple accounts can share the same CA directory URL — administrative separation for dns-persist-01 and multi-domain setups (#276)
+- DNS providers: Tencent Cloud DNSPod (#284, contributed by @wxtewx)
+
+### Fixed
+- ACME CA account form: the directory URL field is no longer marked required, and an empty URL defaults to Let's Encrypt Production — the helper text and the form now agree (#276)
+
 ## [2.209] - 2026-08-14
 
 ### Added
