@@ -10,6 +10,8 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+## [2.211] - 2026-08-15
+
 ### Added
 - Certificates: mutable display name independent from the CN — rename from the certificates list, defaults to CN or first SAN DNS name for CN-less certificates (CA/B Forum profiles, Let's Encrypt tlsserver/shortlived), shown in lists and selectors with the key type to distinguish otherwise identical certificates (#286)
 
