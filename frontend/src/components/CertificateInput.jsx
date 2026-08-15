@@ -332,7 +332,7 @@ export function CertificateInput({
               { value: '', label: t('certInput.chooseCertificate') },
               ...(managedCerts || []).map(c => ({
                 value: String(c.id),
-                label: `${c.common_name || c.subject || c.descr || `#${c.id}`}${c.has_private_key ? ' 🔑' : ''}`,
+                label: `${c.descr || c.common_name || c.subject || `#${c.id}`}${c.key_type ? ` (${c.key_type})` : ''}${c.has_private_key ? ' 🔑' : ''}`,
               }))
             ]}
             disabled={loadingCerts}

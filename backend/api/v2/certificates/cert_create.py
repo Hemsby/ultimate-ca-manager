@@ -515,7 +515,7 @@ def create_certificate():
 
         db_cert = Certificate(
             refid=str(uuid.uuid4())[:8],
-            descr=data.get('description', data['cn']),
+            descr=data.get('description') or data['cn'] or (final_san_dns[0] if final_san_dns else ''),
             caref=ca.refid,
             crt=base64.b64encode(cert_pem.encode()).decode(),
             prv=base64.b64encode(key_pem.encode()).decode(),

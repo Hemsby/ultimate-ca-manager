@@ -143,7 +143,7 @@ export default function CertificatePickerModal({ isOpen, onClose, onSelect, filt
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="font-medium text-text-primary truncate max-w-[250px]">
-                          {cert.common_name || t('common.certificate')}
+                          {cert.descr || cert.common_name || t('common.certificate')}
                         </div>
                         {cert.san_count > 0 && (
                           <div className="text-xs text-text-secondary">

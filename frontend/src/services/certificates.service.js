@@ -20,6 +20,10 @@ export const certificatesService = {
     return apiClient.post('/certificates', data)
   },
 
+  async rename(id, descr) {
+    return apiClient.patch(`/certificates/${id}`, { descr })
+  },
+
   async revoke(id, reason) {
     return apiClient.post(`/certificates/${id}/revoke`, { reason })
   },

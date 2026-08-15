@@ -51,7 +51,7 @@ export function CertificateCompareModal({ open, onClose, certificates = [], init
     { value: '', label: t('compare.selectCertificate') },
     ...certificates.map(c => ({
       value: String(c.id),
-      label: c.common_name || c.subject || `${t('common.certificate')} #${c.id}`
+      label: `${c.descr || c.common_name || c.subject || `${t('common.certificate')} #${c.id}`}${c.key_type ? ` (${c.key_type})` : ''}`
     }))
   ], [certificates, t])
   

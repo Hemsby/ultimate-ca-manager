@@ -133,7 +133,7 @@ def import_certificate():
             refid = str(uuid.uuid4())
             ca = CA(
                 refid=refid,
-                descr=name or cert_info['cn'] or file.filename,
+                descr=name or cert_info['cn'] or filename,
                 crt=base64.b64encode(cert_pem).decode('utf-8'),
                 prv=encrypted_prv,
                 serial=0,
@@ -174,7 +174,8 @@ def import_certificate():
                 )
 
             # Update existing certificate
-            existing_cert.descr = name or cert_info['cn'] or existing_cert.descr
+            first_san = (cert_info.get('san_dns') or [None])[0]
+            existing_cert.descr = name or cert_info['cn'] or first_san or existing_cert.descr
             existing_cert.crt = base64.b64encode(cert_pem).decode('utf-8')
             if key_pem:
                 existing_cert.prv = encrypted_prv
@@ -236,9 +237,10 @@ def import_certificate():
 
         # Create certificate record
         refid = str(uuid.uuid4())
+        first_san = (cert_info.get('san_dns') or [None])[0]
         certificate = Certificate(
             refid=refid,
-            descr=name or cert_info['cn'] or file.filename,
+            descr=name or cert_info['cn'] or first_san or filename,
             crt=base64.b64encode(cert_pem).decode('utf-8'),
             prv=encrypted_prv,
             caref=caref,

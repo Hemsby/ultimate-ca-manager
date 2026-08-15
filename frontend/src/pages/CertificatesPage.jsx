@@ -9,7 +9,8 @@ import { useTranslation } from 'react-i18next'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { 
   Certificate, Download, Trash, X, Plus, Info,
-  CheckCircle, Warning, UploadSimple, Clock, ArrowClockwise, LinkBreak, Star, ArrowsLeftRight
+  CheckCircle, Warning, UploadSimple, Clock, ArrowClockwise, LinkBreak, Star, ArrowsLeftRight,
+  PencilSimple
 } from '@phosphor-icons/react'
 import {
   ResponsiveLayout, ResponsiveDataTable, Badge, Button, Modal, HelpCard,
@@ -298,6 +299,23 @@ export default function CertificatesPage() {
     }
   }
 
+  // Rename certificate (mutable display name, independent from CN — issue #286)
+  const handleRename = async (row) => {
+    const newName = await showPrompt(t('certificates.renamePrompt'), {
+      title: t('certificates.renameCertificate'),
+      defaultValue: row.descr || row.cn || row.common_name || '',
+      confirmText: t('common.save')
+    })
+    if (!newName || !newName.trim() || newName.trim() === row.descr) return
+    try {
+      await certificatesService.rename(row.id, newName.trim())
+      showSuccess(t('certificates.renameSuccess'))
+      loadData()
+    } catch (error) {
+      showError(error.message || t('certificates.renameFailed'))
+    }
+  }
+
   // Delete certificate
   const handleDelete = async (id) => {
     const confirmed = await showConfirm(t('messages.confirm.delete.certificate'), {
@@ -336,7 +354,7 @@ export default function CertificatesPage() {
     let result = certificates.map(cert => ({
       ...cert,
       status: cert.revoked ? 'revoked' : cert.status,
-      cn: cert.cn || cert.common_name || extractCN(cert.subject) || cert.descr || (cert.san_dns ? JSON.parse(cert.san_dns)[0] : null) || 'Certificate',
+      cn: cert.descr || cert.cn || cert.common_name || extractCN(cert.subject) || (cert.san_dns ? JSON.parse(cert.san_dns)[0] : null) || 'Certificate',
       isOrphan: cert.caref && !caRefIds.has(cert.caref)
     }))
     
@@ -419,6 +437,9 @@ export default function CertificatesPage() {
   const rowActions = useCallback((row) => [
     { label: t('common.details'), icon: Info, onClick: () => handleSelectCert(row) },
     { label: t('export.title'), icon: Download, onClick: () => setExportRowCert(row) },
+    ...(canWrite('certificates') ? [
+      { label: t('certificates.rename'), icon: PencilSimple, onClick: () => handleRename(row) }
+    ] : []),
     ...(canWrite('certificates') && !row.revoked && (row.has_private_key || row.source === 'msca') ? [
       { label: t('certificates.renewCertificate').split(' ')[0], icon: ArrowClockwise, onClick: () => handleRenew(row.id) }
     ] : []),

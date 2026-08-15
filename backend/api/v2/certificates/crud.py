@@ -10,6 +10,7 @@ from . import (  # noqa: F401
     cert_get,
     cert_lifecycle,
     cert_upload,
+    cert_update,
     cert_renew,
     cert_import,
     lint,

@@ -341,6 +341,49 @@ class TestDeleteCertificate:
         assert r.status_code == 404
 
 
+class TestRenameCertificate:
+    """Tests for PATCH /api/v2/certificates/<id> — mutable display name (issue #286)"""
+
+    def _patch(self, client, cert_id, body):
+        return client.patch(f'{BASE}/{cert_id}', data=json.dumps(body),
+                            content_type=CONTENT_JSON)
+
+    def test_rename_requires_auth(self, client):
+        assert self._patch(client, 1, {'descr': 'x'}).status_code == 401
+
+    def test_rename(self, auth_client, create_cert):
+        cert = create_cert(cn='rename-me.example.com')
+        r = self._patch(auth_client, cert['id'], {'descr': 'Web Server (RSA)'})
+        assert r.status_code == 200
+        assert get_json(r)['data']['descr'] == 'Web Server (RSA)'
+
+    def test_rename_persists(self, auth_client, create_cert):
+        cert = create_cert(cn='rename-persist.example.com')
+        self._patch(auth_client, cert['id'], {'descr': 'Renamed Label'})
+        r = auth_client.get(f'{BASE}/{cert["id"]}')
+        assert get_json(r)['data']['descr'] == 'Renamed Label'
+
+    def test_rename_strips_whitespace(self, auth_client, create_cert):
+        cert = create_cert(cn='rename-strip.example.com')
+        r = self._patch(auth_client, cert['id'], {'descr': '  padded  '})
+        assert get_json(r)['data']['descr'] == 'padded'
+
+    def test_rename_nonexistent(self, auth_client):
+        assert self._patch(auth_client, 999999, {'descr': 'x'}).status_code == 404
+
+    def test_rename_missing_descr(self, auth_client, create_cert):
+        cert = create_cert(cn='rename-missing.example.com')
+        assert self._patch(auth_client, cert['id'], {}).status_code == 400
+
+    def test_rename_empty_descr(self, auth_client, create_cert):
+        cert = create_cert(cn='rename-empty.example.com')
+        assert self._patch(auth_client, cert['id'], {'descr': '   '}).status_code == 400
+
+    def test_rename_too_long(self, auth_client, create_cert):
+        cert = create_cert(cn='rename-long.example.com')
+        assert self._patch(auth_client, cert['id'], {'descr': 'x' * 256}).status_code == 400
+
+
 # ============================================================================
 # Export all certificates
 # ============================================================================
