@@ -178,6 +178,21 @@ fi
 
 # Create venv and install dependencies
 echo "Creating Python virtual environment..."
+
+# requests-kerberos and pyspnego[kerberos] are optional (excluded from
+# requirements.txt, see there for why) and admin-installed manually. The
+# rm -rf below would silently drop them on every upgrade even though the
+# admin already opted in, breaking MS CA Kerberos auth / Autoenrollment's
+# SPNEGO binding a few days after every update. Remember what was there and
+# reinstall it after, rather than making either package part of the default
+# install for everyone.
+HAD_REQUESTS_KERBEROS=""
+HAD_PYSPNEGO_KERBEROS=""
+if [ -x "$UCM_HOME/venv/bin/pip" ]; then
+    "$UCM_HOME/venv/bin/pip" show requests-kerberos >/dev/null 2>&1 && HAD_REQUESTS_KERBEROS=1 || true
+    "$UCM_HOME/venv/bin/pip" show gssapi >/dev/null 2>&1 && HAD_PYSPNEGO_KERBEROS=1 || true
+fi
+
 rm -rf "$UCM_HOME/venv" 2>/dev/null || true
 python3 -m venv "$UCM_HOME/venv"
 "$UCM_HOME/venv/bin/pip" install --quiet --upgrade pip
@@ -187,6 +202,17 @@ python3 -m venv "$UCM_HOME/venv"
 # only used by pyjks for the BKS UBER format which UCM does not export).
 # See backend/requirements.txt for full rationale.
 "$UCM_HOME/venv/bin/pip" install --quiet --no-deps pyjks==20.0.0
+
+if [ -n "$HAD_REQUESTS_KERBEROS" ]; then
+    echo "Reinstalling requests-kerberos (was present before upgrade)..."
+    "$UCM_HOME/venv/bin/pip" install --quiet requests-kerberos || \
+        echo "WARNING: requests-kerberos reinstall failed, Kerberos auth to the upstream CA is unavailable until 'pip install requests-kerberos' is run manually in $UCM_HOME/venv"
+fi
+if [ -n "$HAD_PYSPNEGO_KERBEROS" ]; then
+    echo "Reinstalling pyspnego[kerberos] (was present before upgrade)..."
+    "$UCM_HOME/venv/bin/pip" install --quiet 'pyspnego[kerberos]' || \
+        echo "WARNING: pyspnego[kerberos] reinstall failed (needs libkrb5-dev/gcc), Autoenrollment's Kerberos/SPNEGO binding is unavailable until 'pip install pyspnego[kerberos]' is run manually in $UCM_HOME/venv"
+fi
 
 # Set permissions
 chown -R %{name}:%{name} $UCM_HOME
