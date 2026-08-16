@@ -32,7 +32,8 @@ def delete_certificate(cert_id):
         # Delegate to the service so cert/key/csr files on disk are unlinked
         # along with the DB row instead of leaving them orphaned (audit log
         # and webhook are emitted by the service itself).
-        CertificateService.delete_certificate(cert_id=cert_id, username=username)
+        if not CertificateService.delete_certificate(cert_id=cert_id, username=username):
+            return error_response('Failed to delete certificate', 500)
 
         return no_content_response()
     except Exception as e:

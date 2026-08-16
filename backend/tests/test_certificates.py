@@ -340,6 +340,14 @@ class TestDeleteCertificate:
         r = auth_client.get(f'{BASE}/{cert_id}')
         assert r.status_code == 404
 
+    def test_delete_service_failure_returns_500(self, auth_client, create_cert, monkeypatch):
+        cert = create_cert(cn='delete-fail.example.com')
+        from services.cert_service import CertificateService
+        monkeypatch.setattr(CertificateService, 'delete_certificate',
+                            staticmethod(lambda cert_id, username='system': False))
+        r = auth_client.delete(f'{BASE}/{cert["id"]}')
+        assert r.status_code == 500
+
 
 class TestRenameCertificate:
     """Tests for PATCH /api/v2/certificates/<id> — mutable display name (issue #286)"""
