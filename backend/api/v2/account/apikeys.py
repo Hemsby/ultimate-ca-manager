@@ -87,12 +87,14 @@ def create_api_key():
                 403,
             )
 
-    # Check limit (max 10 keys per user by default)
+    # Check limit (max 10 keys per user by default). Expired keys don't
+    # count - is_active alone doesn't capture that, expiry is derived live
+    # (APIKey.is_expired) rather than persisted.
     max_keys = current_app.config.get('API_KEY_MAX_PER_USER', 10)
-    existing_count = APIKey.query.filter_by(
-        user_id=g.user_id,
-        is_active=True
-    ).count()
+    existing_count = sum(
+        1 for k in APIKey.query.filter_by(user_id=g.user_id, is_active=True).all()
+        if not k.is_expired
+    )
 
     if existing_count >= max_keys:
         return error_response(
@@ -208,6 +210,11 @@ def delete_api_key(key_id):
     Revoke/delete API key
 
     DELETE /api/account/apikeys/:id
+
+    First call on a still-usable key revokes it (is_active=False, kept for
+    audit history). Calling it again - or calling it on a key that has
+    already expired - permanently removes the row; this is the only way
+    to actually delete one.
     """
     api_key = APIKey.query.filter_by(
         id=key_id,
@@ -217,9 +224,26 @@ def delete_api_key(key_id):
     if not api_key:
         return error_response('API key not found', 404)
 
-    # Soft delete (set is_active=False)
-    api_key.is_active = False
     key_name = api_key.name
+
+    if api_key.is_active and not api_key.is_expired:
+        api_key.is_active = False
+        ok, _err = safe_commit(logger, "Failed to revoke API key")
+        if not ok:
+            return _err
+
+        AuditService.log_action(
+            action='apikey_revoke',
+            resource_type='api_key',
+            resource_id=str(key_id),
+            resource_name=key_name,
+            details=f'Revoked API key: {key_name}',
+            success=True
+        )
+
+        return success_response(message='API key revoked')
+
+    db.session.delete(api_key)
     ok, _err = safe_commit(logger, "Failed to delete API key")
     if not ok:
         return _err
@@ -229,11 +253,11 @@ def delete_api_key(key_id):
         resource_type='api_key',
         resource_id=str(key_id),
         resource_name=key_name,
-        details=f'Revoked API key: {key_name}',
+        details=f'Deleted API key: {key_name}',
         success=True
     )
 
-    return success_response(message='API key revoked')
+    return success_response(message='API key deleted')
 
 
 @bp.route('/api/v2/account/apikeys/<int:key_id>/regenerate', methods=['POST'])

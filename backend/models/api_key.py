@@ -47,7 +47,13 @@ class APIKey(db.Model if db else object):
     
     # Relationship to User
     user = db.relationship('User', backref='api_keys')
-    
+
+    @property
+    def is_expired(self):
+        """Expiry is derived live from expires_at, never persisted - same
+        approach as certificate expiry (see Certificate.valid_to)."""
+        return bool(self.expires_at and self.expires_at < utc_now())
+
     def to_dict(self):
         """
         Convert to dict for API response
@@ -61,7 +67,8 @@ class APIKey(db.Model if db else object):
             'created_at': utc_isoformat(self.created_at),
             'expires_at': utc_isoformat(self.expires_at),
             'last_used_at': utc_isoformat(self.last_used_at),
-            'is_active': self.is_active
+            'is_active': self.is_active,
+            'is_expired': self.is_expired
         }
     
     def __repr__(self):
