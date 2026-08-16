@@ -180,6 +180,14 @@ def find_local_domain_ca(domain: str) -> int | None:
 
 
 def _is_valid_domain(domain: str) -> bool:
-    """Validate domain format"""
-    pattern = r'^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$'
+    """Validate domain format.
+
+    Accepts standard domains, subdomains and wildcards, plus bare TLDs
+    (e.g. "local", "internal") so admins can register a whole private TLD
+    and let find_local_domain_ca's parent-walking cover every subdomain.
+
+    Accepted: local, *.local, example.com, *.example.com, foo.example.com
+    Rejected: *, ..com, com., single-char or numeric-only TLDs
+    """
+    pattern = r'^(\*\.)?(([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+)?[a-zA-Z]{2,}\Z'
     return bool(re.match(pattern, domain))
