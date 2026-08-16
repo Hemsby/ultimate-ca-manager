@@ -4,9 +4,9 @@
  */
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
-import { 
-  User, Key, FloppyDisk, Fingerprint, Certificate, 
-  PencilSimple, Trash, Plus, Warning, ShieldCheck, Download, Copy
+import {
+  User, Key, FloppyDisk, Fingerprint, Certificate,
+  PencilSimple, Trash, Plus, Warning, ShieldCheck, Download, Copy, X
 } from '@phosphor-icons/react'
 import {
   ResponsiveLayout,
@@ -348,6 +348,23 @@ export default function AccountPage() {
     }
   }
 
+  const handleRevokeApiKey = async (keyId) => {
+    const confirmed = await showConfirm(t('account.revokeAPIKeyConfirm'), {
+      title: t('account.revokeAPIKey'),
+      confirmText: t('common.revoke'),
+      variant: 'danger'
+    })
+    if (!confirmed) return
+
+    try {
+      await accountService.deleteApiKey(keyId)
+      showSuccess(t('messages.success.delete.apiKey'))
+      await loadApiKeys()
+    } catch (error) {
+      showError(error.message || t('messages.errors.deleteFailed.generic'))
+    }
+  }
+
   const handleDeleteApiKey = async (keyId) => {
     const confirmed = await showConfirm(t('account.deleteAPIKeyConfirm'), {
       title: t('account.deleteAPIKey'),
@@ -355,10 +372,10 @@ export default function AccountPage() {
       variant: 'danger'
     })
     if (!confirmed) return
-    
+
     try {
       await accountService.deleteApiKey(keyId)
-      showSuccess(t('messages.success.delete.generic'))
+      showSuccess(t('messages.success.delete.apiKeyPermanent'))
       await loadApiKeys()
     } catch (error) {
       showError(error.message || t('messages.errors.deleteFailed.generic'))
@@ -765,17 +782,20 @@ export default function AccountPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {apiKeys.map(key => (
-              <div 
-                key={key.id} 
+            {apiKeys.map(key => {
+              const effectivelyActive = key.is_active && !key.is_expired
+              return (
+              <div
+                key={key.id}
                 className="flex items-center justify-between p-3 bg-tertiary-50 border border-border rounded-lg"
               >
                 <div className="flex items-center gap-3">
-                  <Key size={20} className={key.is_active ? 'text-accent-primary' : 'text-text-tertiary'} />
+                  <Key size={20} className={effectivelyActive ? 'text-accent-primary' : 'text-text-tertiary'} />
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium text-text-primary">{key.name}</p>
-                      {!key.is_active && <Badge variant="secondary" size="xs">{t('common.inactive')}</Badge>}
+                      {!key.is_active && <Badge variant="secondary" size="xs">{t('common.revoked')}</Badge>}
+                      {key.is_active && key.is_expired && <Badge variant="secondary" size="xs">{t('common.expired')}</Badge>}
                     </div>
                     <p className="text-xs text-text-tertiary font-mono inline-flex items-center gap-1">
                       {key.key_prefix ? (
@@ -794,23 +814,32 @@ export default function AccountPage() {
                         <span className="italic">{t('account.apiKeyPrefixUnavailable')}</span>
                       )}
                     </p>
-                    <p className="text-xs text-text-tertiary">
-                      {key.permissions && (
+                    {key.permissions && (
+                      <p className="text-xs text-text-tertiary">
                         <span className="font-mono">
                           {Array.isArray(key.permissions) ? key.permissions.join(', ') : key.permissions}
-                          {' • '}
                         </span>
-                      )}
-                      {t('common.created')} {formatDate(key.created_at)}
-                      {key.expires_at && ` • ${t('common.expires')} ${formatDate(key.expires_at)}`}
-                    </p>
+                      </p>
+                    )}
+                    <div className="grid grid-cols-3 gap-2 text-xs text-text-tertiary mt-0.5">
+                      <span className="text-left">{t('common.created')}: {formatDate(key.created_at)}</span>
+                      <span className="text-center">{t('account.apiKeyLastUsed')}: {key.last_used_at ? formatDate(key.last_used_at) : t('common.never')}</span>
+                      <span className="text-right">{key.expires_at ? `${t('common.expires')}: ${formatDate(key.expires_at)}` : ''}</span>
+                    </div>
                   </div>
                 </div>
-                <Button type="button" size="sm" variant="ghost" onClick={() => handleDeleteApiKey(key.id)} aria-label={t('common.delete')}>
-                  <Trash size={16} className="text-status-danger" />
-                </Button>
+                {effectivelyActive ? (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => handleRevokeApiKey(key.id)} aria-label={t('common.revoke')}>
+                    <X size={16} className="text-status-danger" />
+                  </Button>
+                ) : (
+                  <Button type="button" size="sm" variant="ghost" onClick={() => handleDeleteApiKey(key.id)} aria-label={t('common.delete')}>
+                    <Trash size={16} className="text-status-danger" />
+                  </Button>
+                )}
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </DetailSection>
