@@ -10,6 +10,12 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+### Added
+- API keys: proper revoke/delete lifecycle — revoke an active key, permanently delete a revoked or expired one; expired keys no longer count against the per-user limit; "Last used" now shown in the account page (#291, contributed by @Hemsby)
+
+### Fixed
+- Deleting a certificate (single or bulk) or a CA now removes its cert/key/csr files on disk instead of leaving them orphaned (#289, contributed by @Hemsby)
+
 ## [2.211] - 2026-08-15
 
 ### Added
