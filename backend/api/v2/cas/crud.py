@@ -693,8 +693,6 @@ def delete_ca(ca_id):
             409
         )
 
-    ca_snapshot = ca.to_dict()
-
     try:
         # Delete dependent records before deleting CA
         from models.crl import CRLMetadata
@@ -706,24 +704,11 @@ def delete_ca(ca_id):
         if crl_count or ocsp_count:
             logger.info(f"Deleted {crl_count} CRL(s) and {ocsp_count} OCSP response(s) for CA {ca_name}")
 
-        db.session.delete(ca)
-        ok, err = safe_commit(logger, "Failed to delete CA")
-        if not ok:
-            return err
-
-        # Audit log
-        AuditService.log_action(
-            action='ca_deleted',
-            resource_type='ca',
-            resource_id=ca_id,
-            resource_name=ca_name,
-            details=f'Deleted CA: {ca_name} (cleaned {crl_count} CRLs, {ocsp_count} OCSP responses)',
-            success=True
-        )
-
         username = g.current_user.username if hasattr(g, 'current_user') else 'system'
-        from services.webhook_service import emit_ca_deleted
-        emit_ca_deleted(ca_snapshot, actor=username)
+        # Delegate to the service so the CA cert/key files on disk are
+        # unlinked along with the DB row instead of leaving them orphaned
+        # (audit log and webhook are emitted by the service itself).
+        CAService.delete_ca(ca_id=ca_id, username=username)
 
         return no_content_response()
     except Exception as e:
