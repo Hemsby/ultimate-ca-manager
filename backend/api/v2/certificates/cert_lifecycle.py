@@ -26,30 +26,13 @@ def delete_certificate(cert_id):
         return error_response('Certificate not found', 404)
 
     cert_name = cert.descr or f'Certificate #{cert_id}'
-    cert_snapshot = cert.to_dict()
-    cert_caref = cert.caref
 
     try:
-        # Clean up dependent records
-        from models import ApprovalRequest
-        ApprovalRequest.query.filter_by(certificate_id=cert_id).delete()
-
-        db.session.delete(cert)
-        db.session.commit()
-
-        # Audit log
-        AuditService.log_action(
-            action='certificate_deleted',
-            resource_type='certificate',
-            resource_id=cert_id,
-            resource_name=cert_name,
-            details=f'Deleted certificate: {cert_name}',
-            success=True
-        )
-
         username = g.current_user.username if hasattr(g, 'current_user') else 'system'
-        from services.webhook_service import emit_cert_deleted
-        emit_cert_deleted(cert_snapshot, ca_refid=cert_caref, actor=username)
+        # Delegate to the service so cert/key/csr files on disk are unlinked
+        # along with the DB row instead of leaving them orphaned (audit log
+        # and webhook are emitted by the service itself).
+        CertificateService.delete_certificate(cert_id=cert_id, username=username)
 
         return no_content_response()
     except Exception as e:

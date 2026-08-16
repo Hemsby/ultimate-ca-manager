@@ -77,6 +77,6 @@ class CAcrudMixin:
             raise
 
         from services.webhook_service import emit_ca_deleted
-        emit_ca_deleted(_ca_snapshot)
+        emit_ca_deleted(_ca_snapshot, actor=username)
 
         return True

@@ -204,24 +204,21 @@ def bulk_delete_certificates():
         return error_response('ids array required', 400)
 
     ids = data['ids']
+    username = g.current_user.username if hasattr(g, 'current_user') else 'system'
     results = {'success': [], 'failed': []}
 
     for cert_id in ids:
         try:
-            cert = db.session.get(Certificate, cert_id)
-            if not cert:
+            if not db.session.get(Certificate, cert_id):
                 results['failed'].append({'id': cert_id, 'error': 'Not found'})
                 continue
 
-            from models import ApprovalRequest
-            ApprovalRequest.query.filter_by(certificate_id=cert_id).delete()
-
-            db.session.delete(cert)
-            ok, err = safe_commit(logger, f"Bulk delete failed for cert {cert_id}")
-            if not ok:
+            # Delegate to the service so cert/key/csr files on disk are
+            # unlinked along with the DB row instead of leaving them orphaned.
+            if CertificateService.delete_certificate(cert_id=cert_id, username=username):
+                results['success'].append(cert_id)
+            else:
                 results['failed'].append({'id': cert_id, 'error': 'Deletion failed'})
-                continue
-            results['success'].append(cert_id)
         except Exception as e:
             db.session.rollback()
             logger.error(f"Bulk delete failed for cert {cert_id}: {e}")
