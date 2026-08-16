@@ -12,9 +12,11 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ### Added
 - API keys: proper revoke/delete lifecycle — revoke an active key, permanently delete a revoked or expired one; expired keys no longer count against the per-user limit; "Last used" now shown in the account page (#291, contributed by @Hemsby)
+- ACME local domains: bare private TLDs (e.g. `local`, `internal`) can now be registered, covering all their subdomains through the existing parent matching (#290, contributed by @gb-123-git)
 
 ### Fixed
 - Deleting a certificate (single or bulk) or a CA now removes its cert/key/csr files on disk instead of leaving them orphaned (#289, contributed by @Hemsby)
+- `app.config['DATA_DIR']` is now set, so the session cleanup task no longer silently falls back to the default data directory on custom layouts (#290, contributed by @gb-123-git)
 
 ## [2.211] - 2026-08-15
 
