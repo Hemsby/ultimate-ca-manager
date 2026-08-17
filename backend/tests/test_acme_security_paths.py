@@ -847,6 +847,7 @@ class TestRfc8555StateMachine:
 
             class Response:
                 text = 'wrong-key-authorization'
+                status_code = 200
 
                 @staticmethod
                 def raise_for_status():

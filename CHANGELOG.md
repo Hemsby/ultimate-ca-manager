@@ -15,6 +15,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 - ACME local domains: bare private TLDs (e.g. `local`, `internal`) can now be registered, covering all their subdomains through the existing parent matching (#290, contributed by @gb-123-git)
 
 ### Fixed
+- ACME server: http-01 validation now follows HTTP redirects (RFC 8555 §8.3) — a site-wide http→https 301 on the challenge path no longer fails with "Key authorization mismatch". Up to 5 hops, http/https on default ports only, TLS not verified on https hops (the target usually serves the certificate being renewed), and every hop re-vetted by the SSRF policy (cloud metadata always refused; targets resolved, vetted and pinned when private IPs are disallowed)
 - Deleting a certificate (single or bulk) or a CA now removes its cert/key/csr files on disk instead of leaving them orphaned (#289, contributed by @Hemsby)
 - `app.config['DATA_DIR']` is now set, so the session cleanup task no longer silently falls back to the default data directory on custom layouts (#290, contributed by @gb-123-git)
 
