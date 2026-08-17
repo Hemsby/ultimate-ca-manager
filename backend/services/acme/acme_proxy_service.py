@@ -1,15 +1,20 @@
-
 """
 ACME Proxy Service
 Acts as a gateway between internal ACME clients and upstream ACME providers (Let's Encrypt)
 """
 import json
 import base64
+import re
 import requests
 import secrets
 import logging
+import threading
+import time
 from datetime import datetime
 from typing import Dict, Any, Optional, Tuple, Union
+
+from flask import current_app
+from sqlalchemy import and_, or_
 
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, ec, padding, utils as asym_utils
@@ -42,6 +47,106 @@ class ProxyResourceNotFoundError(LookupError):
     """No local proxy order tracks the requested upstream resource."""
 
 
+# --- Process-level caches -------------------------------------------------
+#
+# AcmeProxyService is instantiated per request, so anything memoized on the
+# instance is always cold: every proxied call used to pay an extra
+# GET /directory plus a HEAD /new-nonce upstream. These caches are advisory —
+# every lookup falls back to the upstream round-trip on a miss, so a restart or
+# a second worker process only costs performance, never correctness.
+
+_DIRECTORY_CACHE_TTL_SEC = 300
+_FINALIZE_CACHE_TTL_SEC = 3600
+_CHALLENGE_ORDER_CACHE_TTL_SEC = 3600
+_NONCE_POOL_MAX = 8
+_NONCE_POOL_TTL_SEC = 60
+_CERT_SCAN_LIMIT = 25
+
+# RFC 8288 link-value: '<uri>' followed by its own ';'-separated parameters.
+_LINK_VALUE_RE = re.compile(r'<([^>]*)>([^,]*)')
+# 'rel' may be quoted or bare; the trailing guard keeps rel="upstream" out.
+_LINK_REL_UP_RE = re.compile(
+    r'rel\s*=\s*(?:"up"|\'up\'|up(?=\s*(?:;|$)))', re.IGNORECASE
+)
+
+_cache_lock = threading.Lock()
+_directory_cache = {}        # upstream directory URL -> (stored_at, directory)
+_finalize_url_cache = {}     # upstream order URL     -> (stored_at, finalize URL)
+_challenge_order_cache = {}  # upstream challenge URL -> (stored_at, (order id, domain))
+_nonce_pool = {}             # upstream directory URL -> [(stored_at, nonce), ...]
+
+
+def _cache_get(store: dict, key: str, ttl: int):
+    """Return a live cache entry, dropping it when expired."""
+    if not key:
+        return None
+    with _cache_lock:
+        entry = store.get(key)
+        if not entry:
+            return None
+        stored_at, value = entry
+        if time.monotonic() - stored_at > ttl:
+            store.pop(key, None)
+            return None
+        return value
+
+
+def _cache_put(store: dict, key: str, value, max_entries: int = 512) -> None:
+    """Store a cache entry, evicting the oldest one when the bound is hit."""
+    if not key:
+        return
+    with _cache_lock:
+        if key not in store and len(store) >= max_entries:
+            oldest = min(store.items(), key=lambda item: item[1][0])[0]
+            store.pop(oldest, None)
+        store[key] = (time.monotonic(), value)
+
+
+def _nonce_pool_pop(directory_url: str) -> Optional[str]:
+    """Take a single-use pooled nonce (popped under lock: never handed out twice).
+
+    Newest first, and anything older than _NONCE_POOL_TTL_SEC is discarded
+    rather than spent: an expired nonce would cost a badNonce round-trip, which
+    is exactly what the pool exists to avoid.
+    """
+    now = time.monotonic()
+    with _cache_lock:
+        pool = _nonce_pool.get(directory_url)
+        while pool:
+            stored_at, nonce = pool.pop()
+            if now - stored_at <= _NONCE_POOL_TTL_SEC:
+                return nonce
+    return None
+
+
+def _nonce_pool_push(directory_url: str, nonce: Optional[str]) -> None:
+    """Harvest a Replay-Nonce from an upstream response (RFC 8555 §6.5)."""
+    if not nonce or not directory_url:
+        return
+    with _cache_lock:
+        pool = _nonce_pool.setdefault(directory_url, [])
+        if any(entry[1] == nonce for entry in pool):
+            return
+        pool.append((time.monotonic(), nonce))
+        del pool[:-_NONCE_POOL_MAX]
+
+
+def reset_proxy_caches() -> None:
+    """Drop every process-level cache.
+
+    These caches outlive a single request by design, which also means they
+    outlive a single test: two test modules that stub the same upstream
+    directory URL with different payloads would otherwise see each other's
+    entries. Call this from an autouse fixture, and after changing an upstream
+    account's directory URL in place.
+    """
+    with _cache_lock:
+        _directory_cache.clear()
+        _finalize_url_cache.clear()
+        _challenge_order_cache.clear()
+        _nonce_pool.clear()
+
+
 class AcmeProxyService:
     # Default upstream (Let's Encrypt Staging for safety by default, user can change)
     DEFAULT_UPSTREAM = "https://acme-staging-v02.api.letsencrypt.org/directory"
@@ -56,7 +161,6 @@ class AcmeProxyService:
         self._account_jwk = None
         self.verify_ssl = self._get_verify_ssl()
         self.directory = None
-        self.nonces = []
         if not self.verify_ssl:
             logger.warning(
                 "ACME proxy upstream SSL verification disabled by settings "
@@ -160,6 +264,20 @@ class AcmeProxyService:
             )
             raise ValueError("Proxy ID host does not match upstream ACME server")
         return url
+
+    @staticmethod
+    def _proxy_id(url: str) -> str:
+        """base64url proxy ID for an upstream URL (inverse of _decode_proxy_id)."""
+        return base64.urlsafe_b64encode(url.encode()).rstrip(b'=').decode()
+
+    @staticmethod
+    def _strip_wildcard(domain: str) -> str:
+        """Drop a leading '*.' label.
+
+        Prefix strip, not ``lstrip('*.')`` — the latter strips *characters* and
+        is only accidentally correct for hostnames.
+        """
+        return domain[2:] if domain.startswith('*.') else domain
 
     @staticmethod
     def _get_verify_ssl() -> bool:
@@ -280,10 +398,11 @@ class AcmeProxyService:
     def _refresh_account_session(self) -> None:
         """Re-bind the linked AcmeClientAccount to the current SQLAlchemy session.
 
-        Background threads push their own app context (and therefore their own
-        session). ORM objects loaded on the request thread are detached here;
-        signing upstream JWS in _bg_respond_challenge would raise DetachedInstanceError
-        without this refresh.
+        Kept for callers that reuse a service instance across app contexts.
+        Background threads started by this service no longer rely on it: they
+        build their own AcmeProxyService instead, because rebinding shared
+        instance state from a worker thread raced with the request thread (and
+        with the sibling threads a multi-domain order starts).
         """
         from models.acme_client_account import AcmeClientAccount
 
@@ -382,33 +501,58 @@ class AcmeProxyService:
         return AcmeClientAccount.DEFAULT_HTTP_TIMEOUT_SEC
 
     def _ensure_directory(self):
-        """Fetch upstream directory"""
-        if not self.directory:
-            self._validate_outbound_acme_url(self.upstream_directory_url)
-            try:
-                resp = ssrf_protection.safe_request_get(
-                    self.upstream_directory_url,
-                    allow_loopback=acme_allow_loopback_upstream(),
-                    timeout=15,
-                    verify=self.verify_ssl,
-                )
-                resp.raise_for_status()
-                self.directory = resp.json()
-            except requests.exceptions.ConnectionError as e:
-                raise RuntimeError(
-                    f"Cannot connect to upstream ACME server at {self.upstream_directory_url}: {e}"
-                )
-            except requests.exceptions.Timeout:
-                raise RuntimeError(
-                    f"Timeout connecting to upstream ACME server at {self.upstream_directory_url}"
-                )
-            except requests.exceptions.HTTPError as e:
-                raise RuntimeError(
-                    f"Upstream ACME server returned error: {e.response.status_code} {e.response.reason}"
-                )
+        """Fetch upstream directory (process-cached for _DIRECTORY_CACHE_TTL_SEC).
+
+        The service is per-request, so without the cache every proxied call
+        paid an extra upstream GET /directory.
+        """
+        if self.directory:
+            return
+        cached = _cache_get(
+            _directory_cache, self.upstream_directory_url, _DIRECTORY_CACHE_TTL_SEC
+        )
+        if cached:
+            # Hand out a copy: the cached mapping is shared by every request
+            # and thread using this upstream.
+            self.directory = dict(cached)
+            return
+        self._validate_outbound_acme_url(self.upstream_directory_url)
+        try:
+            resp = ssrf_protection.safe_request_get(
+                self.upstream_directory_url,
+                allow_loopback=acme_allow_loopback_upstream(),
+                timeout=15,
+                verify=self.verify_ssl,
+            )
+            resp.raise_for_status()
+            self.directory = resp.json()
+            _cache_put(
+                _directory_cache, self.upstream_directory_url, dict(self.directory)
+            )
+        except requests.exceptions.ConnectionError as e:
+            raise RuntimeError(
+                f"Cannot connect to upstream ACME server at {self.upstream_directory_url}: {e}"
+            )
+        except requests.exceptions.Timeout:
+            raise RuntimeError(
+                f"Timeout connecting to upstream ACME server at {self.upstream_directory_url}"
+            )
+        except requests.exceptions.HTTPError as e:
+            raise RuntimeError(
+                f"Upstream ACME server returned error: {e.response.status_code} {e.response.reason}"
+            )
 
     def _get_nonce(self):
-        """Get nonce from upstream"""
+        """Get nonce from upstream, reusing pooled Replay-Nonce values first.
+
+        Every upstream response carries a fresh Replay-Nonce (RFC 8555 §6.5),
+        so harvesting them removes one HEAD /new-nonce round-trip per proxied
+        request. Pooled values are single-use, and a stale one is still covered
+        by the badNonce retry in _post_jws.
+        """
+        pooled = _nonce_pool_pop(self.upstream_directory_url)
+        if pooled:
+            return pooled
         self._ensure_directory()
         nonce_url = self.directory['newNonce']
         self._validate_outbound_acme_url(nonce_url)
@@ -449,7 +593,7 @@ class AcmeProxyService:
 
         headers = {"Content-Type": "application/jose+json"}
         self._validate_outbound_acme_url(url)
-        return ssrf_protection.safe_request_post(
+        resp = ssrf_protection.safe_request_post(
             url,
             allow_loopback=acme_allow_loopback_upstream(),
             json=data,
@@ -457,6 +601,14 @@ class AcmeProxyService:
             timeout=self._http_timeout(),
             verify=self.verify_ssl
         )
+        # Harvest the fresh nonce for the next request. HTTP 400 is skipped: a
+        # badNonce error's Replay-Nonce is consumed by the retry below, and
+        # pooling it too would hand the same nonce to two requests.
+        if resp.status_code != 400:
+            _nonce_pool_push(
+                self.upstream_directory_url, resp.headers.get('Replay-Nonce')
+            )
+        return resp
 
     def _post_jws(self, url: str, payload: Union[Dict, str], kid: str = None) -> requests.Response:
         """Sign and post JWS to upstream, with automatic badNonce retry (RFC 8555 §6.5).
@@ -612,7 +764,7 @@ class AcmeProxyService:
         domain_providers = {}
         for domain in domains:
             # Remove wildcard prefix for lookup (removeprefix not lstrip — chars vs prefix)
-            lookup_domain = domain[2:] if domain.startswith('*.') else domain
+            lookup_domain = self._strip_wildcard(domain)
             provider = find_provider_for_domain(lookup_domain)
             if not provider:
                 raise Exception(f"No DNS provider configured for domain: {domain}. Configure it in ACME > Domains.")
@@ -684,16 +836,21 @@ class AcmeProxyService:
             logger.error(f"Failed to save ACME proxy order: {e}")
             raise
 
+        # Remember the upstream finalize URL so finalize_order does not have to
+        # re-fetch the order upstream just to read it.
+        if upstream_order.get('finalize'):
+            _cache_put(
+                _finalize_url_cache, upstream_location, upstream_order['finalize']
+            )
+
         # Rewrite URLs in response to point to Proxy
         # We encode upstream URLs into base64 IDs
-        order_id = base64.urlsafe_b64encode(upstream_location.encode()).rstrip(b'=').decode()
+        order_id = self._proxy_id(upstream_location)
 
-        proxy_authzs = []
-        for authz_url in upstream_order['authorizations']:
-            authz_id = base64.urlsafe_b64encode(authz_url.encode()).rstrip(b'=').decode()
-            proxy_authzs.append(f"{self.base_url}/authz/{authz_id}")
-
-        upstream_order['authorizations'] = proxy_authzs
+        upstream_order['authorizations'] = [
+            f"{self.base_url}/authz/{self._proxy_id(authz_url)}"
+            for authz_url in upstream_order['authorizations']
+        ]
         upstream_order['finalize'] = f"{self.base_url}/order/{order_id}/finalize"
 
         return upstream_order, order_id
@@ -704,10 +861,13 @@ class AcmeProxyService:
         """Refuse serving an owner-bound proxy order to another account (#260).
 
         Orders carry their owner's local ACME account id and/or client JWK
-        thumbprint since creation; a verified requester identity matching
-        neither is rejected, and an owner-bound order with no derivable
-        requester identity fails closed. Orders with no owner binding (legacy
-        rows created before ownership tracking) are served as before.
+        thumbprint since creation. An owner-bound order requires a *positive*
+        match on one of those fields: the absence of a contradiction is not
+        enough, otherwise a half-populated binding (an account row without a
+        stored thumbprint, a thumbprint that resolved to no account) would
+        silently authorize any verified requester. Orders with no owner binding
+        at all (legacy rows created before ownership tracking) are served as
+        before.
 
         Raises PermissionError when ownership cannot be established.
         """
@@ -715,7 +875,18 @@ class AcmeProxyService:
             raise PermissionError(f"{resource} does not belong to this account")
         if not (local_order.account_id or local_order.client_jwk_thumbprint):
             return
-        denied = None
+        matched = bool(
+            (local_order.account_id
+             and local_order.account_id == requester_account_id)
+            or (local_order.client_jwk_thumbprint
+                and local_order.client_jwk_thumbprint == requester_thumbprint)
+        )
+        if matched:
+            return
+        if AcmeProxyService._owner_matches_via_account_row(
+            local_order, requester_account_id, requester_thumbprint
+        ):
+            return
         if not requester_account_id and not requester_thumbprint:
             denied = 'no requester identity'
         elif requester_account_id and local_order.account_id and \
@@ -724,12 +895,82 @@ class AcmeProxyService:
         elif local_order.client_jwk_thumbprint and requester_thumbprint and \
                 local_order.client_jwk_thumbprint != requester_thumbprint:
             denied = 'JWK thumbprint mismatch'
-        if denied:
-            logger.warning(
-                "ACME proxy: refused %s access on order %s (%s)",
-                resource.lower(), local_order.id, denied,
-            )
-            raise PermissionError(f"{resource} does not belong to this account")
+        else:
+            denied = 'no matching owner binding'
+        logger.warning(
+            "ACME proxy: refused %s access on order %s (%s)",
+            resource.lower(), local_order.id, denied,
+        )
+        raise PermissionError(f"{resource} does not belong to this account")
+
+    @staticmethod
+    def _owner_matches_via_account_row(local_order, requester_account_id,
+                                       requester_thumbprint):
+        """Establish a positive owner match across a half-populated binding.
+
+        An order that recorded only one of the two owner fields still belongs to
+        exactly one local ACME account, so the missing half is resolved through
+        the AcmeAccount row before access is refused. This keeps orders created
+        before both fields were populated (or whose thumbprint never resolved to
+        an account at new-order time) usable, without falling back to the old
+        "no contradiction means allowed" rule. Runs only on the deny path.
+        """
+        from models import AcmeAccount
+
+        try:
+            if (local_order.client_jwk_thumbprint and not local_order.account_id
+                    and requester_account_id):
+                owner = AcmeAccount.query.filter_by(
+                    jwk_thumbprint=local_order.client_jwk_thumbprint
+                ).first()
+                return bool(owner and owner.account_id == requester_account_id)
+            if (local_order.account_id and not local_order.client_jwk_thumbprint
+                    and requester_thumbprint):
+                requester = AcmeAccount.query.filter_by(
+                    jwk_thumbprint=requester_thumbprint
+                ).first()
+                return bool(requester
+                            and requester.account_id == local_order.account_id)
+        except Exception as exc:
+            logger.warning("ACME proxy: owner reconciliation failed: %s", exc)
+        return False
+
+    @staticmethod
+    def _order_authz_urls(order):
+        """Upstream authz URLs recorded on a proxy order, as an exact list."""
+        raw = getattr(order, 'upstream_authz_urls', None)
+        if not raw:
+            return []
+        if isinstance(raw, list):
+            urls = raw
+        else:
+            try:
+                urls = json.loads(raw)
+            except (TypeError, ValueError):
+                return []
+        if not isinstance(urls, list):
+            return []
+        return [url for url in urls if isinstance(url, str)]
+
+    def _find_order_by_authz_url(self, authz_url: str):
+        """Proxy order owning an upstream authz URL — matched exactly.
+
+        ``contains()`` is only a prefilter: as a LIKE '%url%' it also matches a
+        *prefix* of a stored URL (".../authz-v3/99" inside ".../authz-v3/999"),
+        so a client could bind a foreign authz to an order it does own and pass
+        the ownership check with it. Candidate rows are therefore re-checked
+        against the decoded URL list.
+        """
+        from models import AcmeClientOrder
+
+        candidates = AcmeClientOrder.query.filter(
+            AcmeClientOrder.is_proxy_order.is_(True),
+            AcmeClientOrder.upstream_authz_urls.contains(authz_url),
+        ).all()
+        for order in candidates:
+            if authz_url in self._order_authz_urls(order):
+                return order
+        return None
 
     def get_authz(self, authz_id_b64, requester_account_id=None,
                   requester_thumbprint=None):
@@ -743,7 +984,6 @@ class AcmeProxyService:
         belong to a tracked proxy order owned by the requester (#260).
         """
         from api.v2.acme_domains import find_provider_for_domain
-        from models import AcmeClientOrder
 
         # Fix padding + validate upstream host (anti-SSRF)
         authz_url = self._decode_proxy_id(authz_id_b64)
@@ -751,10 +991,7 @@ class AcmeProxyService:
         # Find the proxy order that contains this authz URL — every proxy
         # order records its upstream authz URLs at creation, so an untracked
         # URL is either foreign or no longer served.
-        order = AcmeClientOrder.query.filter(
-            AcmeClientOrder.is_proxy_order == True,
-            AcmeClientOrder.upstream_authz_urls.contains(authz_url)
-        ).first()
+        order = self._find_order_by_authz_url(authz_url)
         if order is None:
             raise ProxyResourceNotFoundError("Authorization not found")
         self._verify_order_ownership(
@@ -772,7 +1009,21 @@ class AcmeProxyService:
 
         # Extract identifier (domain)
         identifier = authz.get('identifier', {})
-        domain = identifier.get('value', '').lstrip('*.')
+        domain = self._strip_wildcard(identifier.get('value', ''))
+
+        # The automation domain comes from the *upstream* response, so make sure
+        # it is actually covered by the order we just authorized against before
+        # anything is written into the operator's DNS zone.
+        covered = {
+            self._strip_wildcard(d).lower()
+            for d in (order.domains_list or [])
+        }
+        if domain and domain.lower() not in covered:
+            logger.warning(
+                "ACME proxy: authz identifier %s is not covered by order %s (%s)",
+                domain, order.id, sorted(covered),
+            )
+            raise ProxyResourceNotFoundError("Authorization not found")
 
         # Filter to dns-01 only — the proxy handles DNS record creation
         # automatically. http-01/tls-alpn-01 cannot work through a proxy
@@ -783,11 +1034,15 @@ class AcmeProxyService:
                 continue
 
             chall_url = chall['url']
-            chall_id = base64.urlsafe_b64encode(chall_url.encode()).rstrip(b'=').decode()
+            chall_id = self._proxy_id(chall_url)
+
+            # Remember which order (and identifier) this challenge belongs to so
+            # respond_challenge can authorize before any upstream round-trip.
+            _cache_put(_challenge_order_cache, chall_url, (order.id, domain))
 
             # Check if we should trigger automation for this challenge
             # We trigger it as soon as the client fetches the authorization
-            if order and chall.get('status') == 'pending':
+            if chall.get('status') == 'pending':
                 challenges_data = order.challenges_dict
                 if chall_url not in challenges_data or challenges_data[chall_url].get('status') != 'initiated':
                     # Trigger automation in background
@@ -798,13 +1053,15 @@ class AcmeProxyService:
                     # Ensure DNS provider exists
                     provider_info = find_provider_for_domain(domain)
                     if provider_info:
-                        import threading
-                        from flask import current_app
                         app = current_app._get_current_object()
+                        # Resolve the account id on this thread: the worker must
+                        # not touch this instance's ORM state.
+                        account_db_id = self.account.id
 
                         thread = threading.Thread(
                             target=self._bg_respond_challenge,
-                            args=(app, chall_url, key_authz, domain, order.id)
+                            args=(app, chall_url, key_authz, domain, order.id,
+                                  account_db_id)
                         )
                         thread.name = f"ACMEProxy-AutoDNS-{domain}"
                         thread.daemon = True
@@ -841,18 +1098,27 @@ class AcmeProxyService:
         """Proxy challenge response. If automation is already running/done, just return status.
 
         Ownership is enforced before any challenge data is returned or
-        automation is triggered (#260). Challenge and authz URLs live in
-        disjoint namespaces on most CAs (e.g. LE's ``/acme/chall-v3/`` vs
-        ``/acme/authz-v3/``), so the owning order is resolved through the
-        authz URL upstream itself returns in the Link rel="up" header
-        (mandatory per RFC 8555 §7.5.1) and matched exactly against the
-        order's recorded authz URLs.  If upstream omits the Link header or
-        the authz URL is not tracked, the request fails closed.
+        automation is triggered (#260), and before the upstream call whenever
+        the challenge can be mapped to an order locally. Only Let's Encrypt
+        style CAs, which keep ``/acme/chall-v3/`` and ``/acme/authz-v3/`` in
+        disjoint namespaces, still need the upstream fetch first: their owning
+        authz is taken from the Link rel="up" header (mandatory per RFC 8555
+        §7.5.1) and matched exactly against the order's recorded authz URLs.
+        If neither route resolves, the request fails closed.
         """
         from api.v2.acme_domains import find_provider_for_domain
-        from models import AcmeClientOrder
 
         chall_url = self._decode_proxy_id(chall_id_b64)
+
+        # Resolve and authorize *before* any upstream call when possible, so an
+        # unauthorized caller cannot make the proxy sign a request with the
+        # upstream CA account key at all.
+        order, domain = self._resolve_challenge_order(chall_url)
+        if order is not None:
+            self._verify_order_ownership(
+                order, requester_account_id, requester_thumbprint,
+                resource='Challenge',
+            )
 
         # Fetch the challenge to get token and status
         resp = self._post_with_account(chall_url, "")
@@ -864,28 +1130,26 @@ class AcmeProxyService:
         challenge_type = challenge_data.get('type')
         status = challenge_data.get('status')
 
-        # Resolve the owning order from the authoritative authz URL returned
-        # in the upstream Link rel="up" header (RFC 8555 §7.5.1).  The
-        # previous _find_order_for_challenge fallback used
-        # chall_url.startswith(authz_url) which never matched on LE/Pebble
-        # because challenge and authz path namespaces are disjoint
-        # (chall-v3/ vs authz-v3/).  Fail closed when no Link header or
-        # no tracked order matches.
+        # Last resort for CAs that do not nest challenge URLs under their authz
+        # (Let's Encrypt): the authoritative authz URL from the Link rel="up"
+        # header (RFC 8555 §7.5.1). The removed _find_order_for_challenge fell
+        # back to the most recent pending order whenever its startswith() match
+        # failed — which on LE was always — running DNS automation for an
+        # unrelated domain.
         authz_url = self._upstream_authz_url_from_link(resp.headers.get('Link'))
-        if not authz_url:
-            raise ProxyResourceNotFoundError(
-                "Challenge not found: upstream returned no Link rel=\"up\" header"
-            )
-        order = AcmeClientOrder.query.filter(
-            AcmeClientOrder.is_proxy_order == True,
-            AcmeClientOrder.upstream_authz_urls.contains(authz_url)
-        ).first()
         if order is None:
-            raise ProxyResourceNotFoundError("Challenge not found")
-        self._verify_order_ownership(
-            order, requester_account_id, requester_thumbprint,
-            resource='Challenge',
-        )
+            if not authz_url:
+                raise ProxyResourceNotFoundError(
+                    "Challenge not found: upstream returned no Link rel=\"up\" header"
+                )
+            order = self._find_order_by_authz_url(authz_url)
+            if order is None:
+                raise ProxyResourceNotFoundError("Challenge not found")
+            self._verify_order_ownership(
+                order, requester_account_id, requester_thumbprint,
+                resource='Challenge',
+            )
+            _cache_put(_challenge_order_cache, chall_url, (order.id, None))
 
         if challenge_type != 'dns-01':
             raise ProxyDns01OnlyError(
@@ -899,19 +1163,21 @@ class AcmeProxyService:
             return challenge_data, self._get_authz_link(resp.headers.get('Link'))
 
         # If still pending, check if we already triggered automation in get_authz
-        if order:
-            challenges_data = order.challenges_dict
-            if chall_url in challenges_data and challenges_data[chall_url].get('status') == 'initiated':
-                # Already triggered, just return 'processing'
-                challenge_data['status'] = 'processing'
-                challenge_data['url'] = f"{self.base_url}/challenge/{chall_id_b64}"
-                return challenge_data, self._get_authz_link(resp.headers.get('Link'))
+        challenges_data = order.challenges_dict
+        if chall_url in challenges_data and challenges_data[chall_url].get('status') == 'initiated':
+            # Already triggered, just return 'processing'
+            challenge_data['status'] = 'processing'
+            challenge_data['url'] = f"{self.base_url}/challenge/{chall_id_b64}"
+            return challenge_data, self._get_authz_link(resp.headers.get('Link'))
 
         # Fallback: Trigger if not already triggered (should be rare now)
         if not token:
             raise RuntimeError("Challenge has no token")
 
-        domain = order.domains_list[0].lstrip('*.') if order else "unknown"
+        if not domain:
+            domain = self._challenge_domain(order, authz_url)
+            _cache_put(_challenge_order_cache, chall_url, (order.id, domain))
+
         provider_info = find_provider_for_domain(domain)
         if not provider_info:
             raise RuntimeError(f"No DNS provider configured for domain: {domain}")
@@ -919,13 +1185,14 @@ class AcmeProxyService:
         jwk_thumbprint = self._get_account_thumbprint()
         key_authz = f"{token}.{jwk_thumbprint}"
 
-        import threading
-        from flask import current_app
         app = current_app._get_current_object()
+        # Resolve the account id on this thread: the worker must not touch this
+        # instance's ORM state.
+        account_db_id = self.account.id
 
         thread = threading.Thread(
             target=self._bg_respond_challenge,
-            args=(app, chall_url, key_authz, domain, order.id if order else None)
+            args=(app, chall_url, key_authz, domain, order.id, account_db_id)
         )
         thread.name = f"ACMEProxy-DNS-{domain}"
         thread.daemon = True
@@ -936,28 +1203,99 @@ class AcmeProxyService:
 
         return challenge_data, self._get_authz_link(resp.headers.get('Link'))
 
+    def _resolve_challenge_order(self, chall_url):
+        """(order, identifier) for a challenge URL, without any upstream call.
+
+        Two local routes, both exact:
+
+        1. the mapping get_authz recorded when the client fetched the
+           authorization (also carries the identifier);
+        2. CAs that nest the challenge under its authorization (Boulder's
+           ``/acme/authz-v3/<id>/<n>``, Pebble, step-ca) — candidate authz URLs
+           are formed by dropping trailing path segments and looked up as exact
+           recorded values.
+
+        Returns (None, None) when only the upstream Link rel="up" header can
+        resolve it. There is deliberately no host-only match and no "most recent
+        pending order" fallback: an approximate match would run DNS automation
+        against a foreign domain.
+        """
+        from models import AcmeClientOrder
+
+        cached = _cache_get(
+            _challenge_order_cache, chall_url, _CHALLENGE_ORDER_CACHE_TTL_SEC
+        )
+        if cached:
+            order_id, domain = cached
+            order = db.session.get(AcmeClientOrder, order_id)
+            if order is not None:
+                return order, domain
+
+        parts = chall_url.split('/')
+        # Bounded: only the two nearest parent paths, and never above
+        # scheme://host/<segment>.
+        for depth in range(len(parts) - 1, max(len(parts) - 3, 3), -1):
+            order = self._find_order_by_authz_url('/'.join(parts[:depth]))
+            if order is not None:
+                return order, None
+        return None, None
+
+    def _challenge_domain(self, order, authz_url):
+        """Identifier a challenge validates, for the DNS-01 automation.
+
+        A single-domain order is unambiguous. For a multi-SAN order the first
+        domain is *not* necessarily the one this challenge belongs to (taking it
+        created the TXT record under the wrong name), so the authz is fetched
+        and its own identifier used.
+        """
+        domains = order.domains_list or []
+        if len(domains) == 1:
+            return self._strip_wildcard(domains[0])
+        if authz_url:
+            resp = self._post_with_account(authz_url, "")
+            if resp.status_code == 200:
+                value = (resp.json().get('identifier') or {}).get('value', '')
+                if value:
+                    return self._strip_wildcard(value)
+        raise RuntimeError(
+            f"Cannot determine which identifier of order {order.id} this "
+            "challenge validates"
+        )
+
     @staticmethod
     def _upstream_authz_url_from_link(upstream_link):
-        """Raw upstream authz URL from a challenge response Link rel="up" header."""
+        """Raw upstream authz URL from a challenge response Link rel="up" header.
+
+        requests joins repeated Link headers with ', ', so every link-value is
+        scanned and only rel="up" is accepted — RFC 8288 allows the relation to
+        be quoted or bare. There is deliberately no "first link wins" fallback:
+        rel="index" (the directory) is commonly listed first, and picking it
+        would bind the challenge to an unrelated resource.
+        """
         if not upstream_link:
             return None
-        import re
-        match = re.search(r'<([^>]+)>;\s*rel="up"', upstream_link)
-        if not match:
-            # Try without rel="up" just in case
-            match = re.search(r'<([^>]+)>', upstream_link)
-        return match.group(1) if match else None
+        for match in _LINK_VALUE_RE.finditer(upstream_link):
+            url, params = match.group(1), match.group(2) or ''
+            if _LINK_REL_UP_RE.search(params):
+                return url
+        return None
 
     def _get_authz_link(self, upstream_link):
         """Extract and rewrite authz Link header from upstream response"""
         authz_url = self._upstream_authz_url_from_link(upstream_link)
         if authz_url:
-            authz_id = base64.urlsafe_b64encode(authz_url.encode()).rstrip(b'=').decode()
-            return f'<{self.base_url}/authz/{authz_id}>;rel="up"'
+            return f'<{self.base_url}/authz/{self._proxy_id(authz_url)}>;rel="up"'
         return None
 
-    def _bg_respond_challenge(self, app, chall_url, key_authz, domain, order_id):
-        """Background task for DNS setup and upstream validation trigger"""
+    def _bg_respond_challenge(self, app, chall_url, key_authz, domain, order_id,
+                              account_db_id=None):
+        """Background task for DNS setup and upstream validation trigger.
+
+        Upstream signing runs on a service instance owned by this thread. The
+        previous _refresh_account_session() call rebound the *shared* instance's
+        account to this thread's session, racing both the request thread that
+        keeps using it and the sibling threads a multi-domain order starts.
+        """
         import hashlib
         from api.v2.acme_domains import find_provider_for_domain
         from services.acme.dns_providers import create_provider
@@ -965,7 +1303,11 @@ class AcmeProxyService:
 
         with app.app_context():
             try:
-                self._refresh_account_session()
+                worker = AcmeProxyService(
+                    self.base_url,
+                    account_id=account_db_id if account_db_id is not None
+                    else self._account_id,
+                )
 
                 # Calculate TXT value
                 digest = hashlib.sha256(key_authz.encode()).digest()
@@ -1027,7 +1369,7 @@ class AcmeProxyService:
                 # Trigger upstream validation
                 logger.info(f"[ACME Proxy BG] Triggering upstream validation for {domain}")
                 payload = {}
-                resp = self._post_with_account(chall_url, payload)
+                resp = worker._post_with_account(chall_url, payload)
 
                 if resp.status_code != 200:
                     logger.error(f"[ACME Proxy BG] Upstream challenge validation error: {resp.text}")
@@ -1094,12 +1436,17 @@ class AcmeProxyService:
             db.session.rollback()
             logger.warning(f"ACME proxy: failed to persist certificate URL: {exc}")
 
-    def _find_order_for_certificate(self, cert_url: str):
+    def _find_order_for_certificate(self, cert_url: str, requester_account_id=None,
+                                    requester_thumbprint=None):
         """Match a proxy order to the upstream certificate download URL.
 
-        Fast path: indexed lookup on the persisted certificate_url. The
-        upstream scan only remains as a fallback for orders that predate the
-        persistence (#219) and skips rows that already carry a URL.
+        Fast path: indexed lookup on the persisted certificate_url. The upstream
+        scan only remains as a fallback for orders that predate the persistence
+        (#219) and skips rows that already carry a URL. Each candidate costs one
+        signed upstream POST, so the scan is capped and restricted to rows the
+        requester could own (plus legacy rows with no owner binding, which
+        _verify_order_ownership also serves) — an unrestricted scan let any
+        caller burn the upstream account's rate limit.
         """
         from models import AcmeClientOrder
 
@@ -1109,11 +1456,26 @@ class AcmeProxyService:
         if order:
             return order
 
+        owner_filters = [
+            and_(
+                AcmeClientOrder.account_id.is_(None),
+                AcmeClientOrder.client_jwk_thumbprint.is_(None),
+            )
+        ]
+        if requester_account_id:
+            owner_filters.append(AcmeClientOrder.account_id == requester_account_id)
+        if requester_thumbprint:
+            owner_filters.append(
+                AcmeClientOrder.client_jwk_thumbprint == requester_thumbprint
+            )
+
         pending_orders = AcmeClientOrder.query.filter(
-            AcmeClientOrder.is_proxy_order == True,
+            AcmeClientOrder.is_proxy_order.is_(True),
             AcmeClientOrder.status == 'pending',
             AcmeClientOrder.certificate_url.is_(None),
-        ).all()
+            or_(*owner_filters),
+        ).order_by(AcmeClientOrder.id.desc()).limit(_CERT_SCAN_LIMIT).all()
+
         for order in pending_orders:
             if not order.upstream_order_url:
                 continue
@@ -1129,12 +1491,6 @@ class AcmeProxyService:
                     "ACME proxy: failed to resolve order for cert URL: %s", exc
                 )
         return None
-
-    @staticmethod
-    def _urls_share_ca(url1, url2):
-        """Check if two URLs belong to the same CA (same host)."""
-        from urllib.parse import urlparse
-        return urlparse(url1).netloc == urlparse(url2).netloc
 
     def _get_account_thumbprint(self):
         """Get JWK thumbprint of our upstream account key"""
@@ -1174,6 +1530,28 @@ class AcmeProxyService:
             "signature": sig_b64
         }
 
+    def _rewrite_order_urls(self, order, order_id_b64, order_url):
+        """Point an upstream order representation back at the proxy.
+
+        Shared by get_order/finalize_order, and caches the upstream finalize URL
+        on the way through so finalize_order can skip its extra round-trip.
+        """
+        if order.get('finalize'):
+            _cache_put(_finalize_url_cache, order_url, order['finalize'])
+        order['finalize'] = f"{self.base_url}/order/{order_id_b64}/finalize"
+
+        if 'certificate' in order:
+            cert_url = order['certificate']
+            self._persist_certificate_url(order_url, cert_url)
+            order['certificate'] = f"{self.base_url}/cert/{self._proxy_id(cert_url)}"
+
+        if 'authorizations' in order:
+            order['authorizations'] = [
+                f"{self.base_url}/authz/{self._proxy_id(authz_url)}"
+                for authz_url in order['authorizations']
+            ]
+        return order
+
     def get_order(self, order_id_b64, requester_account_id=None,
                   requester_thumbprint=None):
         """Get order status (POST-as-GET) — the order must be a tracked proxy
@@ -1195,25 +1573,7 @@ class AcmeProxyService:
         if resp.status_code != 200:
             raise Exception(f"Upstream error: {resp.text}")
 
-        order = resp.json()
-
-        # Rewrite URLs
-        order['finalize'] = f"{self.base_url}/order/{order_id_b64}/finalize"
-        if 'certificate' in order:
-            cert_url = order['certificate']
-            self._persist_certificate_url(order_url, cert_url)
-            cert_id = base64.urlsafe_b64encode(cert_url.encode()).rstrip(b'=').decode()
-            order['certificate'] = f"{self.base_url}/cert/{cert_id}"
-
-        # Rewrite authorization URLs
-        if 'authorizations' in order:
-            proxy_authzs = []
-            for authz_url in order['authorizations']:
-                authz_id = base64.urlsafe_b64encode(authz_url.encode()).rstrip(b'=').decode()
-                proxy_authzs.append(f"{self.base_url}/authz/{authz_id}")
-            order['authorizations'] = proxy_authzs
-
-        return order
+        return self._rewrite_order_urls(resp.json(), order_id_b64, order_url)
 
     def finalize_order(self, order_id_b64, csr_pem, requester_account_id=None,
                        requester_thumbprint=None):
@@ -1238,16 +1598,8 @@ class AcmeProxyService:
             local_order, requester_account_id, requester_thumbprint,
         )
 
-        # ACME expects CSR in base64url-encoded DER (without headers) inside JSON
-        # We assume csr_pem comes from our API handler which decoded the client's JWS
-        # Client sends base64url(DER). API handler decodes to PEM?
-        # Wait, standard ACME API handler usually extracts payload. payload['csr'] is base64url string.
-        # We can just pass that string along!
-
-        # Actually our API handler parses everything. We should pass the raw CSR string if possible.
-        # But let's assume we get PEM and need to convert back to DER B64URL for upstream.
-
-        # Convert PEM to DER
+        # ACME expects the CSR as base64url-encoded DER inside the JSON payload;
+        # the API handler decoded the client's JWS into PEM, so convert back.
         from cryptography import x509
         csr = x509.load_pem_x509_csr(csr_pem.encode(), default_backend())
         csr_der = csr.public_bytes(serialization.Encoding.DER)
@@ -1255,42 +1607,33 @@ class AcmeProxyService:
 
         payload = {"csr": csr_b64}
 
-        # The finalize URL is usually order_url/finalize, but we should look it up from the order object
-        # But here we just use the ID which IS the order URL (from previous steps)
-        # Wait, the finalize endpoint on upstream is provided in the order object.
-        # We need to fetch the order first to get the REAL upstream finalize URL?
-        # Or we assume standard ACME URL structure?
-        # Better: Fetch order, get finalize URL.
-
-        order_resp = self._post_with_account(order_url, "")
-        order_data = order_resp.json()
-        finalize_url = order_data['finalize']
+        # The finalize URL is authoritative from the upstream order object. It
+        # is captured at new-order (and on every get_order), so the extra
+        # POST-as-GET only runs on a cache miss.
+        finalize_url = _cache_get(
+            _finalize_url_cache, order_url, _FINALIZE_CACHE_TTL_SEC
+        )
+        if not finalize_url:
+            order_resp = self._post_with_account(order_url, "")
+            if order_resp.status_code != 200:
+                raise RuntimeError(
+                    f"Upstream order fetch failed: HTTP {order_resp.status_code}"
+                )
+            try:
+                finalize_url = order_resp.json()['finalize']
+            except (ValueError, KeyError) as exc:
+                raise RuntimeError(
+                    "Upstream order response carries no finalize URL"
+                ) from exc
+            _cache_put(_finalize_url_cache, order_url, finalize_url)
 
         # Call finalize
         resp = self._post_with_account(finalize_url, payload)
 
         if resp.status_code != 200:
-             raise Exception(f"Upstream finalize error: {resp.text}")
+            raise Exception(f"Upstream finalize error: {resp.text}")
 
-        order = resp.json()
-
-        # Rewrite URLs
-        order['finalize'] = f"{self.base_url}/order/{order_id_b64}/finalize"
-        if 'certificate' in order:
-            cert_url = order['certificate']
-            self._persist_certificate_url(order_url, cert_url)
-            cert_id = base64.urlsafe_b64encode(cert_url.encode()).rstrip(b'=').decode()
-            order['certificate'] = f"{self.base_url}/cert/{cert_id}"
-
-        # Rewrite authorization URLs
-        if 'authorizations' in order:
-            proxy_authzs = []
-            for authz_url in order['authorizations']:
-                authz_id = base64.urlsafe_b64encode(authz_url.encode()).rstrip(b'=').decode()
-                proxy_authzs.append(f"{self.base_url}/authz/{authz_id}")
-            order['authorizations'] = proxy_authzs
-
-        return order
+        return self._rewrite_order_urls(resp.json(), order_id_b64, order_url)
 
     def get_certificate(self, cert_id_b64, requester_account_id=None,
                         requester_thumbprint=None):
@@ -1305,7 +1648,11 @@ class AcmeProxyService:
 
         cert_url = self._decode_proxy_id(cert_id_b64)
 
-        order = self._find_order_for_certificate(cert_url)
+        order = self._find_order_for_certificate(
+            cert_url,
+            requester_account_id=requester_account_id,
+            requester_thumbprint=requester_thumbprint,
+        )
         if order is None:
             raise ProxyResourceNotFoundError("Certificate not found")
         self._verify_order_ownership(
@@ -1387,52 +1734,49 @@ class AcmeProxyService:
             except Exception as e:
                 # Log but don't fail - cert was obtained
                 logger.error(f"[ACME Proxy] Error storing certificate: {e}")
-            
+
             # Link certificate to order (resolved before the upstream fetch);
             # DNS cleanup runs in the background so the client is not blocked
             # on DNS-provider API latency (#218).
-            if order:
-                records_to_cleanup = []
+            records_to_cleanup = []
+            try:
+                # Link certificate to order
+                if stored_cert:
+                    order.certificate_id = stored_cert.id
+
+                # Snapshot DNS records, then commit the order state before
+                # any provider round-trip.
+                if order.dns_records_created:
+                    records_to_cleanup = json.loads(order.dns_records_created)
+
+                order.status = 'valid'
+                order.dns_records_created = None  # Cleanup dispatched below
                 try:
-                    # Link certificate to order
-                    if stored_cert:
-                        order.certificate_id = stored_cert.id
-
-                    # Snapshot DNS records, then commit the order state before
-                    # any provider round-trip.
-                    if order.dns_records_created:
-                        records_to_cleanup = json.loads(order.dns_records_created)
-
-                    order.status = 'valid'
-                    order.dns_records_created = None  # Cleanup dispatched below
-                    try:
-                        db.session.commit()
-                    except Exception as e:
-                        db.session.rollback()
-                        logger.error(f"Failed to update order status: {e}")
+                    db.session.commit()
                 except Exception as e:
                     db.session.rollback()
-                    logger.error(f"Failed during certificate cleanup: {e}")
+                    logger.error(f"Failed to update order status: {e}")
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"Failed during certificate cleanup: {e}")
 
-                # Opt-in: purge certificates superseded by this renewal (#240)
-                if stored_cert:
-                    try:
-                        self._prune_replaced_certificates(order, stored_cert.id)
-                    except Exception as e:
-                        logger.error(f"[ACME Proxy] Prune of replaced certificates failed: {e}")
+            # Opt-in: purge certificates superseded by this renewal (#240)
+            if stored_cert:
+                try:
+                    self._prune_replaced_certificates(order, stored_cert.id)
+                except Exception as e:
+                    logger.error(f"[ACME Proxy] Prune of replaced certificates failed: {e}")
 
-                if records_to_cleanup:
-                    import threading
-                    from flask import current_app
-                    app = current_app._get_current_object()
+            if records_to_cleanup:
+                app = current_app._get_current_object()
 
-                    thread = threading.Thread(
-                        target=self._bg_cleanup_dns_records,
-                        args=(app, records_to_cleanup)
-                    )
-                    thread.name = "ACMEProxy-DNS-Cleanup"
-                    thread.daemon = True
-                    thread.start()
+                thread = threading.Thread(
+                    target=self._bg_cleanup_dns_records,
+                    args=(app, records_to_cleanup)
+                )
+                thread.name = "ACMEProxy-DNS-Cleanup"
+                thread.daemon = True
+                thread.start()
 
         # Cert response is PEM stream usually
         return response_body, resp.headers.get('Content-Type', 'application/pem-certificate-chain'), link_header

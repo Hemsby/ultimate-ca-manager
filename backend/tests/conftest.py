@@ -308,6 +308,12 @@ def set_acme_public_config(app, clear_acme_public_vhost_settings):
 
     return _set
 
+@pytest.fixture(autouse=True)
+def _reset_acme_proxy_caches():
+    from services.acme.acme_proxy_service import reset_proxy_caches
+    reset_proxy_caches()
+    yield
+    reset_proxy_caches()
 
 # ============================================================
 # Helpers
