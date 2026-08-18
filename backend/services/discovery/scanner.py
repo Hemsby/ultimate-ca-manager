@@ -1,17 +1,19 @@
 """
 Scanner mixin — async scan orchestration and core scan logic.
 """
+import itertools
 import threading
 import time
 import ipaddress
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Tuple, Dict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
 
 from models import db, ScanRun, DiscoveredCertificate, ScanProfile
 
-from .helpers import _validate_port, _scan_semaphore, _MAX_CONCURRENT_SCANS, _MAX_SCAN_HOSTS, _parse_target, _parse_iso
+from .helpers import (_validate_port, _scan_semaphore, _MAX_CONCURRENT_SCANS,
+                      _MAX_SCAN_HOSTS, _MAX_SCAN_JOBS, _parse_target, _parse_iso)
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +84,14 @@ class ScannerMixin:
             scan_ports = [custom_port] if custom_port else ports
             for p in scan_ports:
                 jobs.append((host, p))
+
+        # Cap total probes, not just hosts per subnet: a /16 across 9 ports is
+        # ~590k probes — unfinishable within any realistic schedule interval
+        if len(jobs) > _MAX_SCAN_JOBS:
+            raise ValueError(
+                f"Scan expands to {len(jobs)} host/port probes "
+                f"(max {_MAX_SCAN_JOBS} per scan) — narrow the subnet or the port list"
+            )
 
         # Create scan run record
         run = ScanRun(
@@ -171,6 +181,10 @@ class ScannerMixin:
         # Build fingerprint index for matching
         fp_index = self._build_fingerprint_index()
 
+        # Only cert-bearing results and TLS-level errors are kept: connection
+        # failures (refused/timeout/dns/network) are counted then dropped —
+        # on large subnet scans they are the overwhelming majority and
+        # retaining every result dict exhausts memory (#293)
         results = []
         scanned = 0
         found = 0
@@ -180,35 +194,50 @@ class ScannerMixin:
         now = datetime.now(timezone.utc)
         last_progress = time.time()
 
+        # Submit probes in a bounded window instead of all at once: queueing
+        # every (host, port) up front keeps one Future per job alive for the
+        # whole scan — ~65k live objects on the largest allowed scan (#293)
+        window = max(max_workers * 4, 64)
+        jobs_iter = iter(jobs)
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            futures = {pool.submit(self.probe_tls, h, p, timeout, resolve_dns): (h, p) for h, p in jobs}
+            pending = {pool.submit(self.probe_tls, h, p, timeout, resolve_dns)
+                       for h, p in itertools.islice(jobs_iter, window)}
 
-            for future in as_completed(futures):
-                r = future.result()
-                results.append(r)
-                scanned += 1
+            while pending:
+                done, pending = wait(pending, return_when=FIRST_COMPLETED)
+                for future in done:
+                    r = future.result()
+                    scanned += 1
 
-                # Emit progress every 10 targets or every 3 seconds
-                if scanned % 10 == 0 or (time.time() - last_progress) > 3:
-                    on_discovery_scan_progress(run_id, scanned, len(jobs), found)
-                    last_progress = time.time()
-                    # Update run record periodically
-                    run.targets_scanned = scanned
-                    try:
-                        db.session.commit()
-                    except Exception as _commit_err:
-                        db.session.rollback()
-                        logger.error(f"Commit failed in services/discovery/scanner.py:178: {_commit_err}", exc_info=True)
-                        raise
+                    # Emit progress every 10 targets or every 3 seconds
+                    if scanned % 10 == 0 or (time.time() - last_progress) > 3:
+                        on_discovery_scan_progress(run_id, scanned, len(jobs), found)
+                        last_progress = time.time()
+                        # Update run record periodically
+                        run.targets_scanned = scanned
+                        try:
+                            db.session.commit()
+                        except Exception as _commit_err:
+                            db.session.rollback()
+                            logger.error(f"Commit failed in services/discovery/scanner.py:178: {_commit_err}", exc_info=True)
+                            raise
 
-                has_cert = 'fingerprint_sha256' in r
-                has_error = 'error' in r
-                is_refused = r.get('error_type') == 'refused'
+                    has_cert = 'fingerprint_sha256' in r
+                    has_error = 'error' in r
+                    is_refused = r.get('error_type') == 'refused'
 
-                if has_cert:
-                    found += 1
-                elif has_error and not is_refused:
-                    errors_real += 1
+                    if has_cert:
+                        found += 1
+                        results.append(r)
+                    elif has_error:
+                        if not is_refused:
+                            errors_real += 1
+                        if r.get('error_type') not in ('refused', 'network', 'timeout', 'dns'):
+                            results.append(r)
+
+                # Refill the window with one new probe per completed one
+                pending.update(pool.submit(self.probe_tls, h, p, timeout, resolve_dns)
+                               for h, p in itertools.islice(jobs_iter, len(done)))
 
         # SNI probing — re-probe IP targets with SAN hostnames to discover multi-cert proxies
         sni_jobs = {}  # (host, port, sni) -> default_fingerprint

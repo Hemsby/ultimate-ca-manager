@@ -15,8 +15,32 @@ from .helpers import _is_blocked_ip
 
 logger = logging.getLogger(__name__)
 
+# Sentinel: resolve the PTR-hostname SNI fallback lazily, only when needed
+_PTR_FALLBACK = object()
+
 
 class TLSProbeMixin:
+
+    @staticmethod
+    def _resolve_ptr_sni(host: str):
+        """PTR hostname usable as SNI, validated to resolve back to host.
+
+        SEC-06: the PTR name must resolve back to the same IP (anti-rebinding).
+        """
+        try:
+            ptr_host, _, _ = socket.gethostbyaddr(host)
+        except (socket.herror, socket.gaierror, OSError):
+            return None
+        if not ptr_host or ptr_host == host:
+            return None
+        try:
+            resolved = socket.getaddrinfo(ptr_host, None)[0][4][0]
+        except (socket.gaierror, OSError):
+            return None
+        if resolved != host:
+            logger.debug(f"PTR rebinding blocked: {ptr_host} resolves to {resolved}, expected {host}")
+            return None
+        return ptr_host
 
     def probe_tls(self, host: str, port: int = 443, timeout: int = None,
                   resolve_dns: bool = False, sni_hostname: str = None) -> Dict:
@@ -46,22 +70,11 @@ class TLSProbeMixin:
         if sni_hostname:
             sni_attempts = [sni_hostname]
         elif is_ip:
-            # For IPs: try without SNI first, then with PTR hostname
-            sni_attempts = [None]
-            try:
-                ptr_host, _, _ = socket.gethostbyaddr(host)
-                if ptr_host and ptr_host != host:
-                    # SEC-06: Validate PTR hostname resolves back to same IP (anti-rebinding)
-                    try:
-                        resolved = socket.getaddrinfo(ptr_host, None)[0][4][0]
-                        if resolved == host:
-                            sni_attempts.append(ptr_host)
-                        else:
-                            logger.debug(f"PTR rebinding blocked: {ptr_host} resolves to {resolved}, expected {host}")
-                    except (socket.gaierror, OSError):
-                        pass
-            except (socket.herror, socket.gaierror, OSError):
-                pass
+            # For IPs: try without SNI first, then with PTR hostname. The PTR
+            # is resolved lazily, only when the server demands SNI — an
+            # up-front reverse lookup per probed IP hammers DNS on large
+            # subnet scans where most targets are dead (#293)
+            sni_attempts = [None, _PTR_FALLBACK]
         else:
             # For hostnames: resolve and check SSRF before connecting
             try:
@@ -80,6 +93,10 @@ class TLSProbeMixin:
 
         last_error = None
         for sni in sni_attempts:
+            if sni is _PTR_FALLBACK:
+                sni = self._resolve_ptr_sni(host)
+                if not sni:
+                    break  # No usable PTR hostname — nothing left to try
             try:
                 with socket.create_connection((host, port), timeout=connect_timeout) as sock:
                     kwargs = {}

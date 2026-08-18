@@ -30,6 +30,11 @@ _scan_semaphore = threading.Semaphore(_MAX_CONCURRENT_SCANS)
 # materialise millions of job tuples and exhaust memory before scanning starts.
 _MAX_SCAN_HOSTS = 65536
 
+# Upper bound on total probes (host × port pairs) for one scan. The host cap
+# alone still lets a /16 across 9 ports expand to ~590k probes — days of
+# scanning and hundreds of MB of queued work (#293).
+_MAX_SCAN_JOBS = 65536
+
 
 def _is_blocked_ip(host: str) -> bool:
     """Check if host IP is in a blocked range (link-local/multicast/reserved only)."""

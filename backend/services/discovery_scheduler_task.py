@@ -4,15 +4,52 @@ Checks for scan profiles due for execution and triggers background scans.
 Registered with SchedulerService — runs every 60 seconds.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
-from models import db, ScanProfile
+from models import db, ScanProfile, ScanRun
 
 logger = logging.getLogger(__name__)
 
 
 class DiscoverySchedulerTask:
     """Automatic discovery scan scheduler."""
+
+    @staticmethod
+    def recover_stale_runs() -> int:
+        """Mark scan runs orphaned by a process restart as failed.
+
+        A scan run lives in a daemon thread; if the process dies mid-scan the
+        row stays 'running' forever and would block future scheduled scans of
+        its profile. Called once at startup, before the scheduler starts.
+        """
+        try:
+            stale = ScanRun.query.filter_by(status='running').update(
+                {'status': 'failed', 'completed_at': datetime.now(timezone.utc)}
+            )
+            db.session.commit()
+            if stale:
+                logger.warning(f"Marked {stale} orphaned discovery scan run(s) as failed")
+            return stale
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to recover stale discovery scan runs: {e}", exc_info=True)
+            return 0
+
+    @staticmethod
+    def _advance_next_scan(profile, now) -> None:
+        """Push next_scan_at one interval forward, BEFORE the scan runs.
+
+        The scanner also recomputes it on completion, but a scan that crashes
+        or outlives the interval must not leave next_scan_at in the past —
+        that re-triggered the same giant scan on every restart (#293).
+        """
+        profile.next_scan_at = now + timedelta(minutes=profile.schedule_interval_minutes or 1440)
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to advance next_scan_at for profile '{profile.name}': {e}",
+                         exc_info=True)
 
     @staticmethod
     def execute() -> None:
@@ -32,6 +69,7 @@ class DiscoverySchedulerTask:
             from flask import current_app
             service = DiscoveryService()
 
+            triggered = 0
             for profile in due_profiles:
                 try:
                     targets = profile.targets_list
@@ -39,6 +77,15 @@ class DiscoverySchedulerTask:
                     if not targets:
                         logger.warning(f"Discovery profile '{profile.name}' has no targets, skipping")
                         continue
+
+                    if ScanRun.query.filter_by(scan_profile_id=profile.id,
+                                               status='running').count():
+                        logger.info(f"Discovery profile '{profile.name}' still has a scan "
+                                    f"running, deferring to next interval")
+                        DiscoverySchedulerTask._advance_next_scan(profile, now)
+                        continue
+
+                    DiscoverySchedulerTask._advance_next_scan(profile, now)
 
                     logger.info(f"Starting scheduled scan for profile '{profile.name}' "
                                 f"({len(targets)} targets, ports {ports})")
@@ -54,12 +101,14 @@ class DiscoverySchedulerTask:
                         max_workers=profile.max_workers,
                         resolve_dns=profile.resolve_dns,
                     )
+                    triggered += 1
 
                 except Exception as e:
                     logger.error(f"Error starting scheduled scan for profile "
                                  f"'{profile.name}': {e}", exc_info=True)
 
-            logger.info(f"Discovery scheduler: triggered {len(due_profiles)} profile scan(s)")
+            if triggered:
+                logger.info(f"Discovery scheduler: triggered {triggered} profile scan(s)")
 
         except Exception as e:
             logger.error(f"Error in discovery scheduler task: {e}", exc_info=True)
