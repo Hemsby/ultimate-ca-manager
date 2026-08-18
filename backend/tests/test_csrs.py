@@ -331,6 +331,27 @@ class TestListCSRs:
         data = _json(r)
         assert data['data'] == []
 
+    def test_list_csrs_search(self, auth_client):
+        """Server-side search across the whole inventory (#294)."""
+        _create_csr(auth_client, cn='searchable-csr.example.com')
+        r = auth_client.get('/api/v2/csrs?search=searchable-csr')
+        assert r.status_code == 200
+        data = _json(r)
+        assert any(c['cn'] == 'searchable-csr.example.com' for c in data['data'])
+        assert data['meta']['total'] >= 1
+
+    def test_list_csrs_search_no_match(self, auth_client):
+        r = auth_client.get('/api/v2/csrs?search=no-such-csr-anywhere')
+        assert r.status_code == 200
+        data = _json(r)
+        assert data['data'] == []
+        assert data['meta']['total'] == 0
+
+    def test_list_csrs_search_escapes_like_wildcards(self, auth_client):
+        r = auth_client.get('/api/v2/csrs?search=%25')
+        assert r.status_code == 200
+        assert _json(r)['data'] == []
+
 
 # ============================================================
 # CSR History

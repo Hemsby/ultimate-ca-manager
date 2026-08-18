@@ -2,7 +2,7 @@
  * Operations Page - Import, Export & Bulk Actions
  * Replaces ImportExportPage with unified operations center
  */
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { 
@@ -300,6 +300,17 @@ export default function OperationsPage() {
   const [bulkViewMode, setBulkViewMode] = useState('table') // 'table' | 'basket'
   const [resourceCounts, setResourceCounts] = useState({})
   const [bulkSearch, setBulkSearch] = useState('')
+  const [bulkPage, setBulkPage] = useState(1)
+  const [bulkPerPage, setBulkPerPage] = useState(25)
+  const [bulkTotal, setBulkTotal] = useState(0)
+  // Items selected on other pages, kept so the basket view can still render
+  // them after the page they were loaded with is replaced
+  const seenItemsRef = useRef(new Map())
+
+  // Certificates and CSRs are paginated server-side (default per_page=20), so
+  // the full inventory is fetched page by page with server-side search/filters
+  // (#294). CAs, templates and users return complete lists.
+  const serverPaged = bulkResourceType === 'certificates' || bulkResourceType === 'csrs'
 
   // Load on mount
   useEffect(() => {
@@ -320,25 +331,33 @@ export default function OperationsPage() {
     loadCAs()
   }, [])
 
-  // Load bulk data when resource type changes
+  // Server-side query inputs — the key is constant for client-paged resource
+  // types so their full-list fetch only re-runs on type/tab changes
+  const bulkQueryKey = serverPaged
+    ? [bulkPage, bulkPerPage, bulkSearch, statusFilter, caFilter].join('|')
+    : ''
+
+  // Load bulk data when resource type or the server-side query changes
   useEffect(() => {
     if (activeTab === 'bulk') loadBulkData()
-  }, [bulkResourceType, activeTab])
+  }, [bulkResourceType, activeTab, bulkQueryKey])
 
   // Load resource counts when bulk tab becomes active
   useEffect(() => {
     if (activeTab === 'bulk') {
       Promise.allSettled([
-        certificatesService.getAll(),
+        certificatesService.getAll({ per_page: 1 }),
         casService.getAll(),
-        csrsService.getAll(),
+        csrsService.getAll({ per_page: 1 }),
         templatesService.getAll(),
         usersService.getAll(),
       ]).then(([certs, cas, csrs, templates, users]) => {
+        // Paginated endpoints report the inventory size in meta.total —
+        // data.length is just the first page (#294)
         setResourceCounts({
-          certificates: certs.status === 'fulfilled' ? (certs.value.data?.length || 0) : 0,
+          certificates: certs.status === 'fulfilled' ? (certs.value.meta?.total ?? certs.value.data?.length ?? 0) : 0,
           cas: cas.status === 'fulfilled' ? (cas.value.data?.length || 0) : 0,
-          csrs: csrs.status === 'fulfilled' ? (csrs.value.data?.length || 0) : 0,
+          csrs: csrs.status === 'fulfilled' ? (csrs.value.meta?.total ?? csrs.value.data?.length ?? 0) : 0,
           templates: templates.status === 'fulfilled' ? (templates.value.data?.length || 0) : 0,
           users: users.status === 'fulfilled' ? (users.value.data?.length || 0) : 0,
         })
@@ -355,19 +374,26 @@ export default function OperationsPage() {
 
   const loadBulkData = async () => {
     setBulkLoading(true)
-    setSelectedIds(new Set())
     try {
       let response
       switch (bulkResourceType) {
-        case 'certificates':
-          response = await certificatesService.getAll()
+        case 'certificates': {
+          const params = { page: bulkPage, per_page: bulkPerPage }
+          if (bulkSearch) params.search = bulkSearch
+          if (statusFilter) params.status = statusFilter
+          if (caFilter) params.ca_id = caFilter
+          response = await certificatesService.getAll(params)
           break
+        }
         case 'cas':
           response = await casService.getAll()
           break
-        case 'csrs':
-          response = await csrsService.getAll()
+        case 'csrs': {
+          const params = { page: bulkPage, per_page: bulkPerPage }
+          if (bulkSearch) params.search = bulkSearch
+          response = await csrsService.getAll(params)
           break
+        }
         case 'templates':
           response = await templatesService.getAll()
           break
@@ -375,7 +401,10 @@ export default function OperationsPage() {
           response = await usersService.getAll()
           break
       }
-      setBulkData(response?.data || [])
+      const items = response?.data || []
+      setBulkData(items)
+      setBulkTotal(response?.meta?.total ?? items.length)
+      items.forEach(item => { if (item?.id != null) seenItemsRef.current.set(item.id, item) })
     } catch (e) {
       showError(t('operations.loadFailed', 'Failed to load data'))
     } finally {
@@ -532,17 +561,18 @@ export default function OperationsPage() {
     }
   }
 
-  // Filter bulk data
-  const filteredBulkData = useMemo(() => {
-    let data = bulkData
-    if (bulkResourceType === 'certificates') {
-      if (statusFilter === 'valid') data = data.filter(c => !c.revoked && (!c.valid_to || new Date(c.valid_to) > new Date()))
-      if (statusFilter === 'expired') data = data.filter(c => c.valid_to && new Date(c.valid_to) < new Date())
-      if (statusFilter === 'revoked') data = data.filter(c => c.revoked)
-      if (caFilter) data = data.filter(c => c.caref === caFilter || String(c.issuer_id) === caFilter)
-    }
-    return data
-  }, [bulkData, statusFilter, caFilter, bulkResourceType])
+  // Status/CA filters for certificates are applied server-side (#294); other
+  // resource types have no filters, so the loaded data is used as-is.
+  // The basket view additionally keeps items selected on other pages visible.
+  const basketItems = useMemo(() => {
+    if (!serverPaged || selectedIds.size === 0) return bulkData
+    const loaded = new Set(bulkData.map(item => item.id))
+    const offPage = [...selectedIds]
+      .filter(id => !loaded.has(id))
+      .map(id => seenItemsRef.current.get(id))
+      .filter(Boolean)
+    return offPage.length ? [...bulkData, ...offPage] : bulkData
+  }, [bulkData, selectedIds, serverPaged])
 
   // Toolbar filters for bulk table
   const bulkToolbarFilters = useMemo(() => {
@@ -551,7 +581,7 @@ export default function OperationsPage() {
       {
         key: 'status',
         value: statusFilter,
-        onChange: setStatusFilter,
+        onChange: (v) => { setStatusFilter(v); setBulkPage(1) },
         placeholder: t('common.allStatuses', 'All Statuses'),
         options: [
           { value: 'valid', label: t('common.valid', 'Valid') },
@@ -562,9 +592,9 @@ export default function OperationsPage() {
       {
         key: 'ca',
         value: caFilter,
-        onChange: setCaFilter,
+        onChange: (v) => { setCaFilter(v); setBulkPage(1) },
         placeholder: t('common.allCAs', 'All CAs'),
-        options: cas.map(ca => ({ value: ca.refid || String(ca.id), label: ca.descr || ca.subject || `CA #${ca.id}` }))
+        options: cas.map(ca => ({ value: String(ca.id), label: ca.descr || ca.subject || `CA #${ca.id}` }))
       }
     ]
   }, [bulkResourceType, statusFilter, caFilter, cas, t])
@@ -885,7 +915,7 @@ export default function OperationsPage() {
           <div className="relative">
             <select
               value={bulkResourceType}
-              onChange={(e) => { const v = e.target.value; setBulkResourceType(v); try { localStorage.setItem('ucm-ops-resource-type', v) } catch {}; setStatusFilter(''); setCaFilter(''); setSelectedIds(new Set()); setBulkSearch('') }}
+              onChange={(e) => { const v = e.target.value; setBulkResourceType(v); try { localStorage.setItem('ucm-ops-resource-type', v) } catch {}; setStatusFilter(''); setCaFilter(''); setSelectedIds(new Set()); setBulkSearch(''); setBulkPage(1); seenItemsRef.current.clear() }}
               className="w-full appearance-none px-3 py-2.5 pr-10 rounded-lg border border-border bg-bg-primary text-text-primary text-sm font-medium focus:ring-2 focus:ring-accent-primary-op30 focus:border-accent-primary"
             >
               {Object.entries(RESOURCE_TYPES).map(([key, config]) => {
@@ -910,7 +940,7 @@ export default function OperationsPage() {
                 return (
                   <button
                     key={key}
-                    onClick={() => { setBulkResourceType(key); try { localStorage.setItem('ucm-ops-resource-type', key) } catch {}; setStatusFilter(''); setCaFilter(''); setSelectedIds(new Set()); setBulkSearch('') }}
+                    onClick={() => { setBulkResourceType(key); try { localStorage.setItem('ucm-ops-resource-type', key) } catch {}; setStatusFilter(''); setCaFilter(''); setSelectedIds(new Set()); setBulkSearch(''); setBulkPage(1); seenItemsRef.current.clear() }}
                     className={cn(
                       "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] font-medium transition-all border",
                       isActive
@@ -940,7 +970,7 @@ export default function OperationsPage() {
                 <input
                   type="text"
                   value={bulkSearch}
-                  onChange={(e) => setBulkSearch(e.target.value)}
+                  onChange={(e) => { setBulkSearch(e.target.value); setBulkPage(1) }}
                   placeholder={t('common.search')}
                   className="w-full pl-8 pr-3 py-1.5 text-sm rounded-lg border border-border bg-bg-primary text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent-primary-op30 focus:border-accent-primary transition-all"
                 />
@@ -951,7 +981,7 @@ export default function OperationsPage() {
                 <>
                   <select
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value)}
+                    onChange={(e) => { setStatusFilter(e.target.value); setBulkPage(1) }}
                     className="appearance-none shrink-0 px-2.5 py-1.5 pr-7 text-[13px] rounded-lg border border-border bg-bg-primary text-text-primary focus:ring-2 focus:ring-accent-primary-op30 focus:border-accent-primary"
                   >
                     <option value="">{t('common.allStatuses', 'All Statuses')}</option>
@@ -961,12 +991,12 @@ export default function OperationsPage() {
                   </select>
                   <select
                     value={caFilter}
-                    onChange={(e) => setCaFilter(e.target.value)}
+                    onChange={(e) => { setCaFilter(e.target.value); setBulkPage(1) }}
                     className="appearance-none shrink-0 px-2.5 py-1.5 pr-7 text-[13px] rounded-lg border border-border bg-bg-primary text-text-primary focus:ring-2 focus:ring-accent-primary-op30 focus:border-accent-primary max-w-[180px] truncate"
                   >
                     <option value="">{t('common.allCAs', 'All CAs')}</option>
                     {cas.map(ca => (
-                      <option key={ca.id} value={ca.refid || String(ca.id)}>{ca.descr || ca.subject || `CA #${ca.id}`}</option>
+                      <option key={ca.id} value={String(ca.id)}>{ca.descr || ca.subject || `CA #${ca.id}`}</option>
                     ))}
                   </select>
                 </>
@@ -1004,22 +1034,32 @@ export default function OperationsPage() {
       <div className="flex-1 min-h-0">
         {(isMobile || bulkViewMode === 'table') ? (
           <ResponsiveDataTable
-            data={filteredBulkData}
+            data={bulkData}
             columns={resourceConfig.columns}
             multiSelect={true}
             selectedIds={selectedIds}
             onSelectionChange={setSelectedIds}
             bulkActions={renderBulkActionButtons()}
             searchable={isMobile}
-            externalSearch={isMobile ? undefined : bulkSearch}
-            onSearchChange={isMobile ? undefined : setBulkSearch}
+            externalSearch={serverPaged ? bulkSearch : (isMobile ? undefined : bulkSearch)}
+            onSearchChange={serverPaged
+              ? (v) => { setBulkSearch(v); setBulkPage(1) }
+              : (isMobile ? undefined : setBulkSearch)}
             searchPlaceholder={t('common.search')}
-            searchKeys={['cn', 'descr', 'name', 'subject', 'username', 'email', 'common_name']}
+            searchKeys={serverPaged ? [] : ['cn', 'descr', 'name', 'subject', 'username', 'email', 'common_name']}
             sortable
             densityStorageKey="ucm-operations-density"
             toolbarFilters={isMobile ? bulkToolbarFilters : undefined}
             loading={bulkLoading}
-            pagination={true}
+            pagination={serverPaged
+              ? {
+                  page: bulkPage,
+                  total: bulkTotal,
+                  perPage: bulkPerPage,
+                  onChange: setBulkPage,
+                  onPerPageChange: (v) => { setBulkPerPage(v); setBulkPage(1) }
+                }
+              : true}
             defaultPerPage={25}
             emptyIcon={resourceConfig.icon}
             emptyTitle={t('operations.noData', 'No items found')}
@@ -1028,7 +1068,7 @@ export default function OperationsPage() {
         ) : (
           <div className="h-full px-4 md:px-6 pb-2">
             <TransferPanel
-              items={filteredBulkData}
+              items={basketItems}
               selectedIds={selectedIds}
               onSelectionChange={setSelectedIds}
               renderItem={renderBasketItem}

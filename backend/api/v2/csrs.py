@@ -10,6 +10,7 @@ import datetime
 import base64
 import uuid
 from flask import Blueprint, request, jsonify, g, Response
+from sqlalchemy import or_
 from auth.unified import require_auth
 from utils.response import success_response, error_response, created_response, no_content_response
 from utils.dn_validation import validate_dn_field
@@ -38,13 +39,28 @@ def list_csrs():
     """List all pending CSRs (Certificates with no crt)"""
     page = max(1, request.args.get('page', 1, type=int))
     per_page = min(max(1, request.args.get('per_page', 20, type=int)), 100)
-    
+    search = request.args.get('search', '').strip()
+
     # Filter for certificates that have a CSR but no signed certificate yet
     query = Certificate.query.filter(
         Certificate.csr.isnot(None),
         Certificate.crt.is_(None)
-    ).order_by(Certificate.created_at.desc())
-    
+    )
+
+    # Apply search filter (escape LIKE wildcards) — same contract as the
+    # certificates list, so paginated consumers can search server-side (#294)
+    if search:
+        safe_search = search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        query = query.filter(
+            or_(
+                Certificate.subject.ilike(f'%{safe_search}%', escape='\\'),
+                Certificate.descr.ilike(f'%{safe_search}%', escape='\\'),
+                Certificate.created_by.ilike(f'%{safe_search}%', escape='\\')
+            )
+        )
+
+    query = query.order_by(Certificate.created_at.desc())
+
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     
     data = []
