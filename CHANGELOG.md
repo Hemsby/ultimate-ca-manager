@@ -33,6 +33,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 - **A challenge whose identifier cannot be determined fails closed** — on a multi-SAN order the first domain is not necessarily the one being validated; publishing the DNS-01 TXT record under that name was wrong. The request now fails with a problem document naming the cause
 
 ### Fixed
+- Azure Key Vault HSM provider: key generation passed an invalid `hsm` argument to `create_rsa_key`/`create_ec_key` and failed with a `TypeError` — the SDK keyword is `hardware_protected` (#295, contributed by @jeancarlor)
 - **Background DNS-01 threads no longer share ORM state with the request that started them** — the worker rebound the request's account object to its own session, racing the request thread and the sibling threads a multi-domain order starts; each worker now signs through its own service instance
 
 ### Changed
