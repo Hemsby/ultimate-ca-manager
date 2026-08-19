@@ -8,7 +8,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 ---
 
 
-## [Unreleased]
+## [2.213] - 2026-08-19
 
 > ⚠️ **Upgrade note — in-flight ACME proxy orders placed with a bare JWK must be
 > re-created.** The proxy's `new-order` now requires a kid (RFC 8555 §6.2) and binds
