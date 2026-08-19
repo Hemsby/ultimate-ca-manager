@@ -47,6 +47,15 @@ class ProxyResourceNotFoundError(LookupError):
     """No local proxy order tracks the requested upstream resource."""
 
 
+class ProxyChallengeIdentifierError(RuntimeError):
+    """The identifier a challenge validates could not be established.
+
+    Fails closed: guessing an identifier on a multi-SAN order would publish the
+    DNS-01 TXT record under the wrong name. Carried as its own type so the
+    endpoint answers with a problem document that names the cause.
+    """
+
+
 # --- Process-level caches -------------------------------------------------
 #
 # AcmeProxyService is instantiated per request, so anything memoized on the
@@ -1054,14 +1063,9 @@ class AcmeProxyService:
                     provider_info = find_provider_for_domain(domain)
                     if provider_info:
                         app = current_app._get_current_object()
-                        # Resolve the account id on this thread: the worker must
-                        # not touch this instance's ORM state.
-                        account_db_id = self.account.id
-
                         thread = threading.Thread(
                             target=self._bg_respond_challenge,
-                            args=(app, chall_url, key_authz, domain, order.id,
-                                  account_db_id)
+                            args=(app, chall_url, key_authz, domain, order.id)
                         )
                         thread.name = f"ACMEProxy-AutoDNS-{domain}"
                         thread.daemon = True
@@ -1186,13 +1190,9 @@ class AcmeProxyService:
         key_authz = f"{token}.{jwk_thumbprint}"
 
         app = current_app._get_current_object()
-        # Resolve the account id on this thread: the worker must not touch this
-        # instance's ORM state.
-        account_db_id = self.account.id
-
         thread = threading.Thread(
             target=self._bg_respond_challenge,
-            args=(app, chall_url, key_authz, domain, order.id, account_db_id)
+            args=(app, chall_url, key_authz, domain, order.id)
         )
         thread.name = f"ACMEProxy-DNS-{domain}"
         thread.daemon = True
@@ -1257,7 +1257,7 @@ class AcmeProxyService:
                 value = (resp.json().get('identifier') or {}).get('value', '')
                 if value:
                     return self._strip_wildcard(value)
-        raise RuntimeError(
+        raise ProxyChallengeIdentifierError(
             f"Cannot determine which identifier of order {order.id} this "
             "challenge validates"
         )
@@ -1287,14 +1287,22 @@ class AcmeProxyService:
             return f'<{self.base_url}/authz/{self._proxy_id(authz_url)}>;rel="up"'
         return None
 
-    def _bg_respond_challenge(self, app, chall_url, key_authz, domain, order_id,
-                              account_db_id=None):
+    def _make_worker_service(self):
+        """Build the service instance a background thread signs through.
+
+        A worker must not reuse this instance: _refresh_account_session() would
+        rebind the shared account to the worker's own session, racing both the
+        request thread that may still be using it and the sibling threads a
+        multi-domain order starts. Only the plain account id crosses the thread
+        boundary, so nothing ORM-bound is shared. Patchable in tests.
+        """
+        return AcmeProxyService(self.base_url, account_id=self._account_id)
+
+    def _bg_respond_challenge(self, app, chall_url, key_authz, domain, order_id):
         """Background task for DNS setup and upstream validation trigger.
 
-        Upstream signing runs on a service instance owned by this thread. The
-        previous _refresh_account_session() call rebound the *shared* instance's
-        account to this thread's session, racing both the request thread that
-        keeps using it and the sibling threads a multi-domain order starts.
+        Upstream signing runs on a thread-owned service instance built by
+        _make_worker_service(); this instance's ORM state is never touched here.
         """
         import hashlib
         from api.v2.acme_domains import find_provider_for_domain
@@ -1303,11 +1311,7 @@ class AcmeProxyService:
 
         with app.app_context():
             try:
-                worker = AcmeProxyService(
-                    self.base_url,
-                    account_id=account_db_id if account_db_id is not None
-                    else self._account_id,
-                )
+                worker = self._make_worker_service()
 
                 # Calculate TXT value
                 digest = hashlib.sha256(key_authz.encode()).digest()
@@ -1446,7 +1450,8 @@ class AcmeProxyService:
         signed upstream POST, so the scan is capped and restricted to rows the
         requester could own (plus legacy rows with no owner binding, which
         _verify_order_ownership also serves) — an unrestricted scan let any
-        caller burn the upstream account's rate limit.
+        caller make the proxy POST for every other tenant's order and burn the
+        upstream account's rate limit.
         """
         from models import AcmeClientOrder
 

@@ -10,14 +10,33 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
-### Added
-- API keys: proper revoke/delete lifecycle — revoke an active key, permanently delete a revoked or expired one; expired keys no longer count against the per-user limit; "Last used" now shown in the account page (#291, contributed by @Hemsby)
-- ACME local domains: bare private TLDs (e.g. `local`, `internal`) can now be registered, covering all their subdomains through the existing parent matching (#290, contributed by @gb-123-git)
+> ⚠️ **Upgrade note — in-flight ACME proxy orders placed with a bare JWK must be
+> re-created.** The proxy's `new-order` now requires a kid (RFC 8555 §6.2) and binds
+> every order to an RFC 7638 thumbprint. A **pending** proxy order created before this
+> release through a **jwk-signed** new-order carries only the legacy thumbprint of the
+> raw JWK dict, which no longer equals the value derived from the requesting key — and
+> the account-row reconciliation cannot resolve it either, because that legacy hash
+> never equals a stored account thumbprint. Those orders become inaccessible and must
+> be re-created. ACME automation self-heals (the client simply places a new order on
+> its next run), and already-issued certificates are unaffected — but a client that
+> polls a saved order URL forever will need a nudge.
+
+### Security
+- **ACME proxy `new-order` requires a kid** — a jwk-signed JWS is verified against its own inline key with no account lookup, so accepting one skipped the account existence/status check *and* the per-EAB identifier restrictions whenever EAB was not mandatory, and left the resulting order with no owner recorded — which the ownership check then served to every other client of that proxy. Identifier and challenge-type validation still runs first, so a client with an unsupported identifier keeps getting `unsupportedIdentifier` rather than an authentication error (#260)
+- **Deactivated *and* revoked accounts are refused on `new-order`** — the status check only covered `deactivated`, so a revoked account could keep ordering certificates
+- **Proxy resources require a positive owner match** — authz, challenge, order and certificate access previously allowed any verified requester when an order's owner binding was half-populated (an account id without a stored thumbprint, or a thumbprint that resolved to no account): the absence of a contradiction was treated as authorization. A match is now required on one of the two fields, and a half-populated binding is reconciled through the owning `AcmeAccount` row rather than waved through (#260)
+- **Owner thumbprints follow RFC 7638** — the thumbprint was computed over the raw JWK dict, so a client sending optional members (`alg`, `kid`, `use`) turned a legitimate owner into a mismatch; only the required members are hashed now, by a single implementation shared with the value stored on the account
+- **Upstream authorizations are matched exactly** — the candidate lookup is a `LIKE '%url%'` prefilter, which also matches a *prefix* of a stored URL (`.../authz-v3/99` inside `.../authz-v3/999`); a client could bind a foreign authorization to an order it does own and pass the ownership check with it. Prefilter hits are now re-checked against the decoded URL list
+- **Challenge-to-order resolution has no approximate fallback** — the owning order is resolved from the recorded authz mapping, from the challenge's parent authz path, or from the upstream `Link rel="up"` header only. There is no host-only match and no "most recent pending order" guess, either of which could run DNS-01 automation against a foreign domain; `rel="up"` is also selected explicitly rather than taking the first link, since `rel="index"` is commonly listed first
+- **The certificate-download fallback scan is owner-scoped** — resolving an untracked certificate URL scanned every pending proxy order and signed one upstream POST per candidate, letting any caller drive the proxy's upstream account (cross-tenant probing, rate-limit burn). The scan is now restricted to rows the requester could own and capped
+- **Ownership is verified before any upstream call** — a denial no longer costs a signed request to the CA
+- **A challenge whose identifier cannot be determined fails closed** — on a multi-SAN order the first domain is not necessarily the one being validated; publishing the DNS-01 TXT record under that name was wrong. The request now fails with a problem document naming the cause
 
 ### Fixed
-- ACME server: http-01 validation now follows HTTP redirects (RFC 8555 §8.3) — a site-wide http→https 301 on the challenge path no longer fails with "Key authorization mismatch". Up to 5 hops, http/https on default ports only, TLS not verified on https hops (the target usually serves the certificate being renewed), and every hop re-vetted by the SSRF policy (cloud metadata always refused; targets resolved, vetted and pinned when private IPs are disallowed)
-- Deleting a certificate (single or bulk) or a CA now removes its cert/key/csr files on disk instead of leaving them orphaned (#289, contributed by @Hemsby)
-- `app.config['DATA_DIR']` is now set, so the session cleanup task no longer silently falls back to the default data directory on custom layouts (#290, contributed by @gb-123-git)
+- **Background DNS-01 threads no longer share ORM state with the request that started them** — the worker rebound the request's account object to its own session, racing the request thread and the sibling threads a multi-domain order starts; each worker now signs through its own service instance
+
+### Changed
+- **Proxied ACME requests reuse the upstream directory, finalize URL and challenge mapping, and pool `Replay-Nonce` values** — every proxied call previously paid an extra `GET /directory` plus `HEAD /new-nonce` upstream. All caches are advisory: a miss falls back to the upstream round-trip, so a restart or a second worker costs performance, never correctness
 
 ## [2.211] - 2026-08-15
 
