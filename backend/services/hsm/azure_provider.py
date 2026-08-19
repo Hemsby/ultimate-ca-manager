@@ -269,7 +269,7 @@ class AzureKeyVaultProvider(BaseHsmProvider):
                 key = self._key_client.create_rsa_key(
                     name=label,
                     size=param,
-                    hsm=True,  # Always use HSM-backed
+                    hardware_protected=True,  # Always use HSM-backed
                     key_operations=key_ops,
                     exportable=extractable
                 )
@@ -277,7 +277,7 @@ class AzureKeyVaultProvider(BaseHsmProvider):
                 key = self._key_client.create_ec_key(
                     name=label,
                     curve=param,
-                    hsm=True,
+                    hardware_protected=True,
                     key_operations=key_ops,
                     exportable=extractable
                 )
