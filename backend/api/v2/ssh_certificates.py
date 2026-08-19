@@ -461,7 +461,7 @@ def delete_ssh_certificate(cert_id):
         return no_content_response()
 
     except ValueError as e:
-        return error_response(str(e), 404)
+        return error_response(str(e), 409)
     except Exception as e:
         logger.error(f"Failed to delete SSH certificate {cert_id}: {e}")
         return error_response('Failed to delete certificate', 500)
