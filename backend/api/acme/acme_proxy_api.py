@@ -21,6 +21,7 @@ from models import AcmeClientOrder, Certificate
 from services.acme.acme_client_service import AcmeClientService
 from services.acme.acme_proxy_service import (
     AcmeProxyService,
+    ProxyChallengeIdentifierError,
     ProxyDns01OnlyError,
     ProxyResourceNotFoundError,
 )
@@ -162,6 +163,48 @@ def _kid_account_thumbprint(protected):
         return None
 
 
+# RFC 7638 §3.2: only the required members, lexicographic order, no whitespace.
+_JWK_THUMBPRINT_MEMBERS = {
+    'RSA': ('e', 'kty', 'n'),
+    'EC': ('crv', 'kty', 'x', 'y'),
+    'OKP': ('crv', 'kty', 'x'),
+}
+
+
+def _rfc7638_thumbprint(jwk):
+    """RFC 7638 JWK thumbprint, computed from the required members only."""
+    members = _JWK_THUMBPRINT_MEMBERS.get(jwk.get('kty'))
+    if not members:
+        return None
+    canonical = json.dumps(
+        {member: jwk[member] for member in members},
+        separators=(',', ':'),
+        sort_keys=True,
+    )
+    return base64.urlsafe_b64encode(
+        hashlib.sha256(canonical.encode()).digest()
+    ).rstrip(b'=').decode()
+
+
+def _jwk_thumbprint(jwk):
+    """RFC 7638 thumbprint of a request JWK, or None when not computable.
+
+    Single implementation on purpose: _rfc7638_thumbprint is byte-identical to
+    the AcmeService helper that fills AcmeAccount.jwk_thumbprint for RSA and EC
+    keys, so a value derived from a request header stays comparable with the
+    stored account thumbprint without a second implementation to drift from
+    (and it also covers OKP). Hashing the raw JWK dict (the previous behaviour)
+    diverged as soon as a client sent optional members such as 'alg', 'kid' or
+    'use', which turned a legitimate owner into a thumbprint mismatch.
+    """
+    if not isinstance(jwk, dict):
+        return None
+    try:
+        return _rfc7638_thumbprint(jwk)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def _requester_identity(jwk=None):
     """(account_id, thumbprint) of the verified requester, for ownership checks.
 
@@ -174,17 +217,7 @@ def _requester_identity(jwk=None):
     """
     protected = _request_protected_header()
     account_id = _kid_account_id(protected)
-    thumbprint = None
-    if jwk:
-        try:
-            jwk_canonical = json.dumps(jwk, separators=(',', ':'), sort_keys=True)
-            thumbprint = base64.urlsafe_b64encode(
-                hashlib.sha256(jwk_canonical.encode()).digest()
-            ).rstrip(b'=').decode()
-        except Exception:
-            pass
-    if not thumbprint:
-        thumbprint = _kid_account_thumbprint(protected)
+    thumbprint = _jwk_thumbprint(jwk) or _kid_account_thumbprint(protected)
     return account_id, thumbprint
 
 
@@ -400,76 +433,78 @@ def new_account(slug=None):
 @_dual_route('/new-order', methods=['POST'], endpoint='proxy_new_order')
 def new_order(slug=None):
     """New order (RFC 8555 §7.4)"""
-    from models import SystemConfig
-
     is_valid, payload, jwk, err = verify_proxy_jws()
     if not is_valid:
         return proxy_error("malformed", err)
 
-    # SECURITY: Always verify the requesting account exists and is active,
-    # regardless of whether EAB is required so that deactivated accounts 
-    # are not allowed to create new orders.
-    requester_account_id = _kid_account_id(_request_protected_header())
-    if requester_account_id:
-        acme_svc = AcmeService()
-        account = acme_svc.get_account_by_kid(requester_account_id)
-        if not account:
-            return proxy_error('accountDoesNotExist', 'Account not found', 404)
-        if account.status == 'deactivated':
-            return proxy_error('unauthorized', 'Account is deactivated', 401)
+    if not isinstance(payload, dict):
+        return proxy_error("malformed", "Payload must be a JSON object")
 
-    eab_cfg = SystemConfig.query.filter_by(key='acme_eab_required').first()
-    eab_required = (eab_cfg.value if eab_cfg else 'false').lower() == 'true'
-    if eab_required:
-        # _request_protected_header() returns {} on undecodable input — the
-        # missing kid then fails closed below.
-        if not requester_account_id:
-            return proxy_error('malformed', 'Account kid required when EAB is enabled')
+    # Payload shape first: these checks need no account lookup, and an auth
+    # error must not mask an unsupported identifier or challenge type that
+    # the client can actually fix.
+    identifiers = payload.get('identifiers')
+    if not identifiers:
+        return proxy_error("malformed", "Missing 'identifiers' in payload")
+    if not isinstance(identifiers, list):
+        return proxy_error("malformed", "'identifiers' must be an array")
+    if any(
+        not isinstance(identifier, dict) or identifier.get('type') != 'dns'
+        for identifier in identifiers
+    ):
+        return proxy_error(
+            'unsupportedIdentifier',
+            'The ACME proxy supports DNS identifiers with dns-01 only; '
+            'IP identifiers are not supported.',
+            400,
+        )
+
+    requested_challenge = payload.get('challenge_type') or payload.get('challengeType')
+    if requested_challenge and requested_challenge != 'dns-01':
+        return proxy_error(
+            'malformed',
+            f'Challenge type {requested_challenge} is not supported by the '
+            'ACME proxy; use dns-01.',
+            400,
+        )
+
+    # SECURITY: new-order MUST be kid-signed (RFC 8555 §6.2), and requiring
+    # the kid unconditionally is what makes the checks below reachable.
+    # verify_jws validates a jwk-signed JWS against its own inline key
+    # without any account lookup, so tolerating one here would skip the
+    # account existence/status check *and* the EAB identifier restrictions
+    # whenever EAB is not mandatory, and would leave the resulting order
+    # unbound — which _verify_order_ownership then serves to every client.
+    requester_account_id = _kid_account_id(_request_protected_header())
+    if not requester_account_id:
+        return proxy_error('malformed', 'Account kid required in protected header')
+
+    acme_svc = AcmeService()
+    account = acme_svc.get_account_by_kid(requester_account_id)
+    if not account:
+        return proxy_error('accountDoesNotExist', 'Account not found', 404)
+    # RFC 8555 §7.3.6: 'revoked' is as unusable as 'deactivated'.
+    if account.status in ('deactivated', 'revoked'):
+        return proxy_error('unauthorized', f'Account is {account.status}', 401)
+
+    # Per-EAB domain restrictions (mirrors local ACME new-order)
+    eab_cred = acme_svc.get_bound_eab_credential(requester_account_id)
+    if eab_cred is not None:
+        denied = [
+            str(identifier.get('value'))
+            for identifier in identifiers
+            if not eab_cred.allows_identifier(identifier)
+        ]
+        if denied:
+            return proxy_error(
+                'rejectedIdentifier',
+                'Identifier(s) not permitted by the External Account '
+                'Binding credential bound to this account: '
+                + ', '.join(denied),
+                400,
+            )
 
     try:
-        identifiers = payload.get('identifiers')
-        if not identifiers:
-            return proxy_error("malformed", "Missing 'identifiers' in payload")
-        if any(
-            not isinstance(identifier, dict) or identifier.get('type') != 'dns'
-            for identifier in identifiers
-        ):
-            return proxy_error(
-                'unsupportedIdentifier',
-                'The ACME proxy supports DNS identifiers with dns-01 only; '
-                'IP identifiers are not supported.',
-                400,
-            )
-
-        # Per-EAB domain restrictions (mirrors local ACME new-order)
-        if requester_account_id:
-            eab_cred = AcmeService().get_bound_eab_credential(
-                requester_account_id
-            )
-            if eab_cred is not None:
-                denied = [
-                    str(identifier.get('value'))
-                    for identifier in identifiers
-                    if not eab_cred.allows_identifier(identifier)
-                ]
-                if denied:
-                    return proxy_error(
-                        'rejectedIdentifier',
-                        'Identifier(s) not permitted by the External Account '
-                        'Binding credential bound to this account: '
-                        + ', '.join(denied),
-                        400,
-                    )
-
-        requested_challenge = payload.get('challenge_type') or payload.get('challengeType')
-        if requested_challenge and requested_challenge != 'dns-01':
-            return proxy_error(
-                'malformed',
-                f'Challenge type {requested_challenge} is not supported by the '
-                'ACME proxy; use dns-01.',
-                400,
-            )
-
         not_before = payload.get('notBefore')
         if not_before:
             not_before = datetime.fromisoformat(not_before.replace('Z', '+00:00'))
@@ -481,20 +516,10 @@ def new_order(slug=None):
             return proxy_error("malformed", "Invalid replacement certificate identifier")
 
         # Bind the order to its owner so finalize can reject cross-account use.
-        # RFC 8555 new-order is kid-signed, so derive the binding from the
-        # account the kid resolves to; fall back to the header JWK if present.
-        client_thumbprint = None
-        if jwk:
-            try:
-                import hashlib
-                jwk_canonical = json.dumps(jwk, separators=(',', ':'), sort_keys=True)
-                client_thumbprint = base64.urlsafe_b64encode(
-                    hashlib.sha256(jwk_canonical.encode()).digest()
-                ).rstrip(b'=').decode()
-            except Exception:
-                pass
-        if not client_thumbprint:
-            client_thumbprint = _kid_account_thumbprint(_request_protected_header())
+        # RFC 8555 §6.2 makes 'jwk' and 'kid' mutually exclusive and new-order
+        # is kid-signed (enforced above), so there is no header JWK to prefer:
+        # the thumbprint resolves through the account the kid names.
+        _, client_thumbprint = _requester_identity()
 
         svc = get_proxy_service(slug)
         order_data, order_id = svc.new_order(
@@ -557,8 +582,6 @@ def authz(authz_id, slug=None):
         return proxy_error("malformed", str(e), 404)
     except ProxyDns01OnlyError as e:
         return proxy_error('malformed', str(e), 400)
-    except PermissionError as e:
-        return proxy_error("unauthorized", str(e), 403)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except ProxyEndpointNotConfiguredError as e:
@@ -597,12 +620,15 @@ def challenge(chall_id, slug=None):
         return proxy_error("malformed", str(e), 404)
     except ProxyDns01OnlyError as e:
         return proxy_error('malformed', str(e), 400)
-    except PermissionError as e:
-        return proxy_error("unauthorized", str(e), 403)
     except ValueError as e:
         return proxy_error("malformed", str(e), 400)
     except ProxyEndpointNotConfiguredError as e:
         return proxy_error("malformed", str(e), 404)
+    except ProxyChallengeIdentifierError as e:
+        # Fail closed, but with a problem document that states the cause
+        # instead of a bare "Internal server error".
+        logger.warning(f"ACME proxy challenge: {e}")
+        return proxy_error("serverInternal", str(e), 500)
     except RuntimeError as e:
         logger.warning(f"ACME proxy challenge: {e}")
         return proxy_error("serverInternal", "Failed to respond to challenge", 500)
@@ -661,6 +687,9 @@ def finalize(order_id, slug=None):
     requester_account_id, requester_thumbprint = _requester_identity(jwk)
     if not requester_account_id and not requester_thumbprint:
         logger.warning("ACME proxy finalize: no requester identity from verified JWS")
+
+    if not isinstance(payload, dict):
+        return proxy_error("malformed", "Payload must be a JSON object")
 
     try:
         csr_b64 = payload.get('csr')

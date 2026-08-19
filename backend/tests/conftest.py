@@ -92,6 +92,24 @@ def _deterministic_dns(monkeypatch):
     monkeypatch.setattr(_ssrf, 'socket', _GuardResolverProxy(_socket))
 
 
+@pytest.fixture(autouse=True)
+def _reset_acme_proxy_caches():
+    """Drop the ACME proxy's process-level caches around every test.
+
+    The upstream directory, finalize-URL, challenge->order and Replay-Nonce
+    caches are module-level by design — they outlive a request, which also
+    means they outlive a test. Two modules that stub the same upstream
+    directory URL with different payloads would otherwise see each other's
+    entries, and a pooled nonce would make _get_nonce() skip the HEAD request
+    a later test asserts on. Cleared on both sides so run order cannot matter.
+    """
+    from services.acme.acme_proxy_service import reset_proxy_caches
+
+    reset_proxy_caches()
+    yield
+    reset_proxy_caches()
+
+
 @pytest.fixture(scope='session')
 def app():
     """Create Flask app with test configuration (shared across all tests)."""
