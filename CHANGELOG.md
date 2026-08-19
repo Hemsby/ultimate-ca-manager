@@ -31,9 +31,12 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 - **The certificate-download fallback scan is owner-scoped** — resolving an untracked certificate URL scanned every pending proxy order and signed one upstream POST per candidate, letting any caller drive the proxy's upstream account (cross-tenant probing, rate-limit burn). The scan is now restricted to rows the requester could own and capped
 - **Ownership is verified before any upstream call** — a denial no longer costs a signed request to the CA
 - **A challenge whose identifier cannot be determined fails closed** — on a multi-SAN order the first domain is not necessarily the one being validated; publishing the DNS-01 TXT record under that name was wrong. The request now fails with a problem document naming the cause
+- SSH certificates: a valid, non-revoked certificate can no longer be deleted — deletion silently dropped the record while the certificate stayed trusted by servers until expiry; revoke it first (the API returns 409 otherwise) (#292, contributed by @gb-123-git)
 
 ### Fixed
 - Azure Key Vault HSM provider: key generation passed an invalid `hsm` argument to `create_rsa_key`/`create_ec_key` and failed with a `TypeError` — the SDK keyword is `hardware_protected` (#295, contributed by @jeancarlor)
+- Discovery: large scheduled scans no longer exhaust memory and crash-loop the service — probes are submitted through a bounded window with connection-level failures discarded immediately, a scan is capped at 65,536 host×port probes (rejected with a clear error beyond), a profile's next-run timestamp advances when a scan starts (not when it completes), scans orphaned by a restart are marked failed at startup, and reverse-DNS lookups are now lazy (#293)
+- Bulk Actions: pagination, search and status/CA filters for certificates and CSRs now run server-side against the complete inventory — the page-size selector is respected, selections survive page changes, resource count chips show real totals, and the CSR list endpoint gained server-side search (#294)
 - **Background DNS-01 threads no longer share ORM state with the request that started them** — the worker rebound the request's account object to its own session, racing the request thread and the sibling threads a multi-domain order starts; each worker now signs through its own service instance
 
 ### Changed
