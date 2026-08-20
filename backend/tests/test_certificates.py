@@ -323,9 +323,34 @@ class TestGetCertificate:
 class TestDeleteCertificate:
     """Tests for DELETE /api/v2/certificates/<id>"""
 
-    def test_delete_existing(self, auth_client, create_cert):
-        cert = create_cert(cn='to-delete.example.com')
+    def test_delete_valid_cert_blocked(self, auth_client, create_cert):
+        """Valid (non-revoked, non-expired) certs cannot be deleted."""
+        cert = create_cert(cn='valid-no-delete.example.com')
         cert_id = cert.get('id')
+        r = auth_client.delete(f'{BASE}/{cert_id}')
+        assert r.status_code == 409
+
+    def test_delete_revoked_cert_allowed(self, auth_client, create_cert):
+        """Revoked certs can be deleted (already on CRL)."""
+        cert = create_cert(cn='revoke-then-delete.example.com')
+        cert_id = cert.get('id')
+        post_json(auth_client, f'{BASE}/{cert_id}/revoke', {'reason': 'unspecified'})
+        r = auth_client.delete(f'{BASE}/{cert_id}')
+        assert r.status_code in (200, 204)
+
+    def test_delete_expired_cert_allowed(self, auth_client, create_cert):
+        """Expired certs can be deleted (no longer valid)."""
+        cert = create_cert(cn='expired-delete.example.com', validity_days=1)
+        cert_id = cert.get('id')
+        # Manually expire the cert by backdating valid_to in the DB
+        from models import Certificate, db
+        with auth_client.application.app_context():
+            row = db.session.get(Certificate, cert_id)
+            assert row is not None
+            from utils.datetime_utils import utc_now
+            from datetime import timedelta
+            row.valid_to = utc_now() - timedelta(days=1)
+            db.session.commit()
         r = auth_client.delete(f'{BASE}/{cert_id}')
         assert r.status_code in (200, 204)
 
@@ -336,16 +361,19 @@ class TestDeleteCertificate:
     def test_delete_confirms_gone(self, auth_client, create_cert):
         cert = create_cert(cn='delete-confirm.example.com')
         cert_id = cert.get('id')
+        post_json(auth_client, f'{BASE}/{cert_id}/revoke', {'reason': 'unspecified'})
         auth_client.delete(f'{BASE}/{cert_id}')
         r = auth_client.get(f'{BASE}/{cert_id}')
         assert r.status_code == 404
 
     def test_delete_service_failure_returns_500(self, auth_client, create_cert, monkeypatch):
         cert = create_cert(cn='delete-fail.example.com')
+        cert_id = cert.get('id')
+        post_json(auth_client, f'{BASE}/{cert_id}/revoke', {'reason': 'unspecified'})
         from services.cert_service import CertificateService
         monkeypatch.setattr(CertificateService, 'delete_certificate',
                             staticmethod(lambda cert_id, username='system': False))
-        r = auth_client.delete(f'{BASE}/{cert["id"]}')
+        r = auth_client.delete(f'{BASE}/{cert_id}')
         assert r.status_code == 500
 
 
@@ -796,15 +824,43 @@ class TestBulkDelete:
         r = post_json(auth_client, f'{BASE}/bulk/delete', {})
         assert r.status_code == 400
 
-    def test_bulk_delete_valid(self, auth_client, create_cert):
-        c1 = create_cert(cn='bulk-del1.example.com')
-        c2 = create_cert(cn='bulk-del2.example.com')
+    def test_bulk_delete_valid_certs_blocked(self, auth_client, create_cert):
+        """Valid certs in a bulk delete must be reported as failed."""
+        c1 = create_cert(cn='bulk-del-block1.example.com')
+        c2 = create_cert(cn='bulk-del-block2.example.com')
+        r = post_json(auth_client, f'{BASE}/bulk/delete', {
+            'ids': [c1['id'], c2['id']],
+        })
+        assert r.status_code == 200
+        data = get_json(r).get('data', get_json(r))
+        assert len(data['failed']) == 2
+        assert len(data['success']) == 0
+
+    def test_bulk_delete_revoked_allowed(self, auth_client, create_cert):
+        """Revoked certs can be bulk deleted."""
+        c1 = create_cert(cn='bulk-del-rev1.example.com')
+        c2 = create_cert(cn='bulk-del-rev2.example.com')
+        post_json(auth_client, f'{BASE}/{c1["id"]}/revoke', {'reason': 'unspecified'})
+        post_json(auth_client, f'{BASE}/{c2["id"]}/revoke', {'reason': 'unspecified'})
         r = post_json(auth_client, f'{BASE}/bulk/delete', {
             'ids': [c1['id'], c2['id']],
         })
         assert r.status_code == 200
         data = get_json(r).get('data', get_json(r))
         assert len(data['success']) == 2
+
+    def test_bulk_delete_mixed(self, auth_client, create_cert):
+        """Mix of valid (blocked) and revoked (allowed) certs."""
+        c_valid = create_cert(cn='bulk-del-mix-valid.example.com')
+        c_revoked = create_cert(cn='bulk-del-mix-revoked.example.com')
+        post_json(auth_client, f'{BASE}/{c_revoked["id"]}/revoke', {'reason': 'unspecified'})
+        r = post_json(auth_client, f'{BASE}/bulk/delete', {
+            'ids': [c_valid['id'], c_revoked['id']],
+        })
+        assert r.status_code == 200
+        data = get_json(r).get('data', get_json(r))
+        assert c_revoked['id'] in data['success']
+        assert any(f['id'] == c_valid['id'] for f in data['failed'])
 
     def test_bulk_delete_nonexistent_ids(self, auth_client):
         r = post_json(auth_client, f'{BASE}/bulk/delete', {
@@ -816,6 +872,7 @@ class TestBulkDelete:
 
     def test_bulk_delete_confirms_gone(self, auth_client, create_cert):
         c = create_cert(cn='bulk-del-confirm.example.com')
+        post_json(auth_client, f'{BASE}/{c["id"]}/revoke', {'reason': 'unspecified'})
         post_json(auth_client, f'{BASE}/bulk/delete', {'ids': [c['id']]})
         r = auth_client.get(f'{BASE}/{c["id"]}')
         assert r.status_code == 404

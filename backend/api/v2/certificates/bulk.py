@@ -209,9 +209,19 @@ def bulk_delete_certificates():
 
     for cert_id in ids:
         try:
-            if not db.session.get(Certificate, cert_id):
+            cert = db.session.get(Certificate, cert_id)
+            if not cert:
                 results['failed'].append({'id': cert_id, 'error': 'Not found'})
                 continue
+
+            # Prevent deletion of valid (non-revoked, non-expired) certificates.
+            if cert.crt and not cert.revoked:
+                if not cert.valid_to or cert.valid_to >= utc_now():
+                    results['failed'].append({
+                        'id': cert_id,
+                        'error': 'Cannot delete a valid certificate — revoke it first',
+                    })
+                    continue
 
             # Delegate to the service so cert/key/csr files on disk are
             # unlinked along with the DB row instead of leaving them orphaned.

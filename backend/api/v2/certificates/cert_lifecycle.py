@@ -27,6 +27,16 @@ def delete_certificate(cert_id):
 
     cert_name = cert.descr or f'Certificate #{cert_id}'
 
+    # Prevent deletion of valid (non-revoked, non-expired) certificates.
+    # The operator must revoke first so the CRL/OCSP reflects the change.
+    if cert.crt and not cert.revoked:
+        if not cert.valid_to or cert.valid_to >= utc_now():
+            return error_response(
+                'Cannot delete a valid certificate — revoke it first so the '
+                'CRL and OCSP responder reflect the change.',
+                409,
+            )
+
     try:
         username = g.current_user.username if hasattr(g, 'current_user') else 'system'
         # Delegate to the service so cert/key/csr files on disk are unlinked
