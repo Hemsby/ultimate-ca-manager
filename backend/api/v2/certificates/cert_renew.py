@@ -203,33 +203,12 @@ def renew_certificate(cert_id):
         old_template_overrides = cert.template_overrides
         old_owner_group_id = cert.owner_group_id
 
-        # --- Revoke the old certificate so its serial appears on the CRL/OCSP ---
-        # This also inserts a persistent RevokedSerial record that survives
-        # the deletion below, so the old serial stays revoked until expiry.
-        try:
-            CertificateService.revoke_certificate(
-                cert_id=cert_id,
-                reason='superseded',
-                username=username,
-            )
-        except ValueError:
-            # Already revoked — that's fine, the RevokedSerial already exists
-            pass
-        except RuntimeError as e:
-            # Revocation failed (e.g. couldn't persist RevokedSerial) —
-            # the old serial won't be on the CRL, so abort the renewal.
-            logger.error(f"Renewal aborted — revocation failed for cert {cert_id}: {e}")
-            return error_response(
-                f'Renewal failed: unable to revoke old certificate — {e}', 500
-            )
-
-        # Delete the old certificate row (safe — RevokedSerial persists the
-        # revocation data for CRL/OCSP until the old cert's valid_to expires)
-        CertificateService.delete_certificate(cert_id=cert_id, username=username)
-
         # --- Create a new certificate row for the renewed cert ---
+        # Build and commit the new row BEFORE revoking/deleting the old one
+        # so that a commit failure doesn't leave the old cert destroyed with
+        # no replacement (the previous revoke→delete→create flow had a
+        # data-loss window if the final commit failed).
         import uuid as _uuid
-        from cryptography.x509.oid import ExtensionOID
 
         new_serial_hex = format(new_cert.serial_number, 'x')
         new_refid = str(_uuid.uuid4())
@@ -322,6 +301,29 @@ def renew_certificate(cert_id):
         ok, err = safe_commit(logger, "Failed to renew certificate")
         if not ok:
             return err
+
+        # --- Revoke the old certificate so its serial appears on the CRL/OCSP ---
+        # This also inserts a persistent RevokedSerial record that survives
+        # the deletion below, so the old serial stays revoked until expiry.
+        # Done after the new row is committed so a failure here doesn't lose
+        # the certificate — the new cert is safe, the old one just won't be
+        # on the CRL.
+        try:
+            CertificateService.revoke_certificate(
+                cert_id=cert_id,
+                reason='superseded',
+                username=username,
+            )
+        except ValueError:
+            # Already revoked — that's fine, the RevokedSerial already exists
+            pass
+        except RuntimeError as e:
+            logger.warning(f"Revocation failed for old cert {cert_id} after renewal: {e}")
+
+        # Delete the old certificate row (safe — RevokedSerial persists the
+        # revocation data for CRL/OCSP until the old cert's valid_to expires)
+        if not CertificateService.delete_certificate(cert_id=cert_id, username=username):
+            logger.warning(f"Failed to delete old certificate {cert_id} after renewal")
 
         cert = new_cert_row
         cert_id = cert.id
