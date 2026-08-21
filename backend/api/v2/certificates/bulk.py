@@ -283,8 +283,8 @@ def bulk_renew_certificates():
             results['success'].append(new_cert_row.id)
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Bulk renew failed for cert {cert_id}: {e}")
-            results['failed'].append({'id': cert_id, 'error': 'Renewal failed'})
+            logger.error(f"Bulk renew failed for cert {cert_id}: {e}", exc_info=True)
+            results['failed'].append({'id': cert_id, 'error': f'Renewal failed: {e}'})
 
     AuditService.log_action(
         action='certificates_bulk_renewed',

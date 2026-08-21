@@ -351,8 +351,8 @@ def renew_certificate(cert_id):
 
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Failed to renew certificate: {e}")
-        return error_response('Failed to renew certificate', 500)
+        logger.error(f"Failed to renew certificate: {e}", exc_info=True)
+        return error_response(f'Failed to renew certificate: {e}', 500)
 
 
 def _renew_msca_certificate(cert):
