@@ -343,54 +343,61 @@ class LifecycleMixin:
         # Persist a revocation record that survives certificate deletion.
         # CRL generation and OCSP both consult this table as a fallback when
         # the certificate row is gone (e.g. after renewal replaces the old cert).
-        existing_rs = RevokedSerial.query.filter_by(
-            caref=certificate.caref,
-            serial_number=certificate.serial_number,
-        ).first()
-        if existing_rs:
-            # Entry already present in the revocation list — revocation succeeds.
+        # Skip for certs without a local CA (e.g. MSCA-issued) — there is no
+        # local CRL to carry the entry, and RevokedSerial.caref is NOT NULL.
+        if not certificate.caref:
             logger.info(
-                f"RevokedSerial already exists for cert {cert_id} "
-                f"(serial={certificate.serial_number}); skipping insert."
+                f"Skipping RevokedSerial insert for cert {cert_id} "
+                f"(no local CA / caref is NULL)"
             )
         else:
-            revoked_record = RevokedSerial(
+            existing_rs = RevokedSerial.query.filter_by(
                 caref=certificate.caref,
                 serial_number=certificate.serial_number,
-                revoked_at=certificate.revoked_at,
-                revoke_reason=certificate.revoke_reason,
-                invalidity_at=certificate.invalidity_at,
-                valid_to=certificate.valid_to or (utc_now() + timedelta(days=365)),
-                certificate_id=certificate.id,
-            )
-            db.session.add(revoked_record)
-            try:
-                db.session.commit()
-            except Exception as _rs_err:
-                db.session.rollback()
-                # Roll back the revocation itself — the certificate must not
-                # appear revoked if we cannot persist the revocation record.
-                certificate.revoked = False
-                certificate.revoked_at = None
-                certificate.revoke_reason = None
-                if invalidity_at is not None:
-                    certificate.invalidity_at = None
+            ).first()
+            if existing_rs:
+                logger.info(
+                    f"RevokedSerial already exists for cert {cert_id} "
+                    f"(serial={certificate.serial_number}); skipping insert."
+                )
+            else:
+                revoked_record = RevokedSerial(
+                    caref=certificate.caref,
+                    serial_number=certificate.serial_number,
+                    revoked_at=certificate.revoked_at,
+                    revoke_reason=certificate.revoke_reason,
+                    invalidity_at=certificate.invalidity_at,
+                    valid_to=certificate.valid_to or (utc_now() + timedelta(days=365)),
+                    certificate_id=certificate.id,
+                )
+                db.session.add(revoked_record)
                 try:
                     db.session.commit()
-                except Exception as _rollback_err:
+                except Exception as _rs_err:
                     db.session.rollback()
+                    # Roll back the revocation itself — the certificate must not
+                    # appear revoked if we cannot persist the revocation record.
+                    certificate.revoked = False
+                    certificate.revoked_at = None
+                    certificate.revoke_reason = None
+                    if invalidity_at is not None:
+                        certificate.invalidity_at = None
+                    try:
+                        db.session.commit()
+                    except Exception as _rollback_err:
+                        db.session.rollback()
+                        logger.error(
+                            f"Failed to roll back revocation for cert {cert_id}: {_rollback_err}",
+                            exc_info=True,
+                        )
                     logger.error(
-                        f"Failed to roll back revocation for cert {cert_id}: {_rollback_err}",
+                        f"Revocation failed for cert {cert_id}: unable to add entry "
+                        f"to revocation list: {_rs_err}",
                         exc_info=True,
                     )
-                logger.error(
-                    f"Revocation failed for cert {cert_id}: unable to add entry "
-                    f"to revocation list: {_rs_err}",
-                    exc_info=True,
-                )
-                raise RuntimeError(
-                    f"Revocation failed: Unable to add entry to revocation list"
-                ) from _rs_err
+                    raise RuntimeError(
+                        f"Revocation failed: Unable to add entry to revocation list"
+                    ) from _rs_err
 
         # Audit log
         from services.audit_service import AuditService
