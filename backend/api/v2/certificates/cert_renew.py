@@ -2,6 +2,7 @@
 import logging
 import base64
 import json
+import uuid
 from datetime import timedelta
 from flask import request, g
 from auth.unified import require_auth
@@ -208,10 +209,8 @@ def renew_certificate(cert_id):
         # so that a commit failure doesn't leave the old cert destroyed with
         # no replacement (the previous revoke→delete→create flow had a
         # data-loss window if the final commit failed).
-        import uuid as _uuid
-
         new_serial_hex = format(new_cert.serial_number, 'x')
-        new_refid = str(_uuid.uuid4())
+        new_refid = str(uuid.uuid4())
 
         # Extract SANs
         san_dns = []

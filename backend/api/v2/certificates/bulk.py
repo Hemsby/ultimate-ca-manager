@@ -9,6 +9,7 @@ import logging
 import os
 import subprocess
 import tempfile
+import uuid
 from datetime import timedelta
 from flask import request, g, Response
 from auth.unified import require_auth, has_permission
@@ -184,9 +185,8 @@ def bulk_renew_certificates():
             # Create new certificate row — build and commit BEFORE
             # revoking/deleting the old one so a commit failure doesn't
             # destroy the old cert with no replacement.
-            import uuid as _uuid
             new_serial_hex = format(new_cert.serial_number, 'x')
-            new_refid = str(_uuid.uuid4())
+            new_refid = str(uuid.uuid4())
             new_cert_pem = new_cert.public_bytes(serialization.Encoding.PEM).decode('utf-8')
             new_key_pem = new_key.private_bytes(
                 serialization.Encoding.PEM,

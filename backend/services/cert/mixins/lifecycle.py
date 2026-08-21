@@ -361,9 +361,39 @@ class LifecycleMixin:
                 serial_number=certificate.serial_number,
             ).first()
             if existing_rs:
+                # Update the existing row so the CRL carries the latest
+                # revoked_at/reason (e.g. hold → unhold → re-revoke with a
+                # different reason). Skipping would leave the original
+                # hold date/reason on the CRL forever.
+                existing_rs.revoked_at = certificate.revoked_at
+                existing_rs.revoke_reason = certificate.revoke_reason
+                existing_rs.invalidity_at = certificate.invalidity_at
+                existing_rs.valid_to = certificate.valid_to or (utc_now() + timedelta(days=365))
+                existing_rs.certificate_id = certificate.id
+                try:
+                    db.session.commit()
+                except Exception as _rs_err:
+                    db.session.rollback()
+                    certificate.revoked = False
+                    certificate.revoked_at = None
+                    certificate.revoke_reason = None
+                    if invalidity_at is not None:
+                        certificate.invalidity_at = None
+                    try:
+                        db.session.commit()
+                    except Exception as _rollback_err:
+                        db.session.rollback()
+                        logger.error(
+                            f"Failed to roll back revocation for cert {cert_id}: {_rollback_err}",
+                            exc_info=True,
+                        )
+                    raise RuntimeError(
+                        f"Revocation failed for cert {cert_id}: unable to update "
+                        f"revocation record: {_rs_err}"
+                    ) from _rs_err
                 logger.info(
-                    f"RevokedSerial already exists for cert {cert_id} "
-                    f"(serial={certificate.serial_number}); skipping insert."
+                    f"RevokedSerial updated for cert {cert_id} "
+                    f"(serial={certificate.serial_number})."
                 )
             else:
                 revoked_record = RevokedSerial(
