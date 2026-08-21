@@ -1,6 +1,7 @@
 """Certificate renewal route"""
 import logging
 import base64
+import json
 from datetime import timedelta
 from flask import request, g
 from auth.unified import require_auth
@@ -183,19 +184,147 @@ def renew_certificate(cert_id):
             encryption_algorithm=serialization.NoEncryption()
         ).decode('utf-8')
 
-        # Update existing certificate IN-PLACE (replace, no archive)
-        cert.crt = base64.b64encode(new_cert_pem.encode()).decode()
-        cert.prv = base64.b64encode(new_key_pem.encode()).decode()
-        cert.serial_number = format(new_cert.serial_number, 'x')
-        cert.valid_from = not_before
-        cert.valid_to = not_after
-        cert.revoked = False
-        cert.revoked_at = None
-        cert.revoke_reason = None
+        username = g.current_user.username if hasattr(g, 'current_user') else 'system'
+
+        # --- Snapshot old cert fields before revoke/delete (commits expire the ORM object) ---
+        from services.cert_service import CertificateService
+        old_serial = cert.serial_number
+        old_subject = cert.subject
+        old_descr = cert.descr
+        old_valid_to = cert.valid_to
+        old_caref = cert.caref
+        old_cert_type = cert.cert_type
+        old_subject_cn = cert.subject_cn
+        old_ocsp_uri = cert.ocsp_uri
+        old_ocsp_must_staple = cert.ocsp_must_staple
+        old_private_key_location = cert.private_key_location
+        old_source = cert.source or 'manual'
+        old_template_id = cert.template_id
+        old_template_overrides = cert.template_overrides
+        old_owner_group_id = cert.owner_group_id
+
+        # --- Revoke the old certificate so its serial appears on the CRL/OCSP ---
+        # This also inserts a persistent RevokedSerial record that survives
+        # the deletion below, so the old serial stays revoked until expiry.
+        try:
+            CertificateService.revoke_certificate(
+                cert_id=cert_id,
+                reason='superseded',
+                username=username,
+            )
+        except ValueError:
+            # Already revoked — that's fine, the RevokedSerial already exists
+            pass
+        except RuntimeError as e:
+            # Revocation failed (e.g. couldn't persist RevokedSerial) —
+            # the old serial won't be on the CRL, so abort the renewal.
+            logger.error(f"Renewal aborted — revocation failed for cert {cert_id}: {e}")
+            return error_response(
+                f'Renewal failed: unable to revoke old certificate — {e}', 500
+            )
+
+        # Delete the old certificate row (safe — RevokedSerial persists the
+        # revocation data for CRL/OCSP until the old cert's valid_to expires)
+        CertificateService.delete_certificate(cert_id=cert_id, username=username)
+
+        # --- Create a new certificate row for the renewed cert ---
+        import uuid as _uuid
+        from cryptography.x509.oid import ExtensionOID
+
+        new_serial_hex = format(new_cert.serial_number, 'x')
+        new_refid = str(_uuid.uuid4())
+
+        # Extract SANs
+        san_dns = []
+        san_ip = []
+        san_email = []
+        san_uri = []
+        san_upn = []
+        try:
+            san_ext = new_cert.extensions.get_extension_for_oid(
+                ExtensionOID.SUBJECT_ALTERNATIVE_NAME
+            )
+            for name in san_ext.value:
+                if name.type == x509.DNSName:
+                    san_dns.append(name.value)
+                elif name.type == x509.IPAddress:
+                    san_ip.append(str(name.value))
+                elif name.type == x509.RFC822Name:
+                    san_email.append(name.value)
+                elif name.type == x509.UniformResourceIdentifier:
+                    san_uri.append(name.value)
+                elif name.type == x509.OtherName:
+                    if name.type_id.dotted_string == '1.3.6.1.4.1.311.20.2.3':
+                        san_upn.append(name.value.decode('utf-8', errors='replace'))
+        except x509.ExtensionNotFound:
+            pass
+
+        # Extract SKI
+        try:
+            ski_ext = new_cert.extensions.get_extension_for_oid(
+                ExtensionOID.SUBJECT_KEY_IDENTIFIER
+            )
+            new_ski = ':'.join(f'{b:02x}' for b in ski_ext.value.digest)
+        except x509.ExtensionNotFound:
+            new_ski = None
+
+        # Extract AKI
+        try:
+            aki_ext = new_cert.extensions.get_extension_for_oid(
+                ExtensionOID.AUTHORITY_KEY_IDENTIFIER
+            )
+            new_aki = ':'.join(f'{b:02x}' for b in aki_ext.value.key_identifier) if aki_ext.value.key_identifier else None
+        except x509.ExtensionNotFound:
+            new_aki = None
+
+        # Determine key algo string
+        new_pub = new_cert.public_key()
+        if isinstance(new_pub, rsa.RSAPublicKey):
+            key_algo_str = f'RSA {new_pub.key_size}'
+        elif isinstance(new_pub, ec.EllipticCurvePublicKey):
+            key_algo_str = f'EC {new_pub.curve.name}'
+        else:
+            key_algo_str = 'Unknown'
+
+        new_cert_row = Certificate(
+            refid=new_refid,
+            descr=old_descr,
+            caref=old_caref,
+            crt=base64.b64encode(new_cert_pem.encode()).decode(),
+            prv=base64.b64encode(new_key_pem.encode()).decode(),
+            cert_type=old_cert_type,
+            subject=old_subject,
+            subject_cn=old_subject_cn,
+            issuer=ca_cert.subject.rfc4514_string(),
+            serial_number=new_serial_hex,
+            aki=new_aki,
+            ski=new_ski,
+            valid_from=not_before,
+            valid_to=not_after,
+            key_algo=key_algo_str,
+            san_dns=json.dumps(san_dns) if san_dns else None,
+            san_ip=json.dumps([str(ip) for ip in san_ip]) if san_ip else None,
+            san_email=json.dumps(san_email) if san_email else None,
+            san_uri=json.dumps(san_uri) if san_uri else None,
+            san_upn=json.dumps(san_upn) if san_upn else None,
+            ocsp_uri=old_ocsp_uri,
+            ocsp_must_staple=old_ocsp_must_staple,
+            private_key_location=old_private_key_location,
+            revoked=False,
+            source=old_source,
+            template_id=old_template_id,
+            template_overrides=old_template_overrides,
+            owner_group_id=old_owner_group_id,
+            created_by=username,
+        )
+        db.session.add(new_cert_row)
 
         ok, err = safe_commit(logger, "Failed to renew certificate")
         if not ok:
             return err
+
+        cert = new_cert_row
+        cert_id = cert.id
 
         # Audit log
         try:
@@ -210,7 +339,6 @@ def renew_certificate(cert_id):
         except Exception:
             pass
 
-        username = g.current_user.username if hasattr(g, 'current_user') else 'system'
         cert_dict = cert.to_dict()
         cert_caref = cert.caref
         from services.webhook_service import emit_cert_renewed

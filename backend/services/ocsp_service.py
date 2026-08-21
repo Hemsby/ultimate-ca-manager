@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import (
 from cryptography.hazmat.backends import default_backend
 from sqlalchemy import or_
 
-from models import db, CA, Certificate, OCSPResponse, SystemConfig
+from models import db, CA, Certificate, OCSPResponse, SystemConfig, RevokedSerial
 from utils.datetime_utils import utc_now
 from utils.serial_format import serial_to_hex
 
@@ -455,6 +455,19 @@ class OCSPService:
                 caref=ca.refid, serial_number=serial_hex.upper()).first()
         )
         if not certificate:
+            # Fallback: check the persistent revocation table for deleted certs
+            rs = (
+                RevokedSerial.query.filter_by(
+                    caref=ca.refid, serial_number=serial_dec).first()
+                or RevokedSerial.query.filter_by(
+                    caref=ca.refid, serial_number=serial_hex).first()
+                or RevokedSerial.query.filter_by(
+                    caref=ca.refid, serial_number=serial_hex.upper()).first()
+            )
+            if rs:
+                return None, 'revoked', rs.revoked_at or utc_now(), _REASON_MAP.get(
+                    rs.revoke_reason, x509.ReasonFlags.unspecified
+                )
             return None, 'unknown', None, None
         if not certificate.revoked:
             return certificate, 'good', None, None
@@ -675,10 +688,27 @@ class OCSPService:
             
             # Determine certificate status
             if not certificate:
-                status = ocsp.OCSPCertStatus.UNKNOWN
-                cert_status = 'unknown'
-                revocation_time = None
-                revocation_reason = None
+                # Fallback: check persistent revocation table for deleted certs
+                rs = (
+                    RevokedSerial.query.filter_by(
+                        caref=ca.refid, serial_number=cert_serial_dec).first()
+                    or RevokedSerial.query.filter_by(
+                        caref=ca.refid, serial_number=cert_serial_hex).first()
+                    or RevokedSerial.query.filter_by(
+                        caref=ca.refid, serial_number=cert_serial_hex.upper()).first()
+                )
+                if rs:
+                    status = ocsp.OCSPCertStatus.REVOKED
+                    cert_status = 'revoked'
+                    revocation_time = rs.revoked_at or utc_now()
+                    revocation_reason = _REASON_MAP.get(
+                        rs.revoke_reason, x509.ReasonFlags.unspecified
+                    )
+                else:
+                    status = ocsp.OCSPCertStatus.UNKNOWN
+                    cert_status = 'unknown'
+                    revocation_time = None
+                    revocation_reason = None
             elif certificate.revoked:
                 status = ocsp.OCSPCertStatus.REVOKED
                 cert_status = 'revoked'
