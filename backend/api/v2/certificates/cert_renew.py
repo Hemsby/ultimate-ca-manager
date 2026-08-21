@@ -308,11 +308,14 @@ def renew_certificate(cert_id):
         # Done after the new row is committed so a failure here doesn't lose
         # the certificate — the new cert is safe, the old one just won't be
         # on the CRL.
+        # _suppress_events=True avoids emitting cert_revoked/cert_deleted
+        # events and audit entries — the renewal emits a single cert_renewed.
         try:
             CertificateService.revoke_certificate(
                 cert_id=cert_id,
                 reason='superseded',
                 username=username,
+                _suppress_events=True,
             )
         except ValueError:
             # Already revoked — that's fine, the RevokedSerial already exists
@@ -322,8 +325,28 @@ def renew_certificate(cert_id):
 
         # Delete the old certificate row (safe — RevokedSerial persists the
         # revocation data for CRL/OCSP until the old cert's valid_to expires)
-        if not CertificateService.delete_certificate(cert_id=cert_id, username=username):
+        if not CertificateService.delete_certificate(cert_id=cert_id, username=username, _suppress_events=True):
             logger.warning(f"Failed to delete old certificate {cert_id} after renewal")
+
+        # --- Write cert/key files to disk for the new row ---
+        # Consistent with create_certificate which writes human-readable
+        # filenames ({cn-slug}-{refid[:8]}.crt / .key) to Config.CERT_DIR /
+        # Config.PRIVATE_DIR. Without this, the renewed cert has DB data but
+        # no on-disk files (the old set was unlinked by delete_certificate).
+        try:
+            from utils.file_naming import cert_cert_path, cert_key_path
+            _cert_path = cert_cert_path(new_cert_row)
+            _key_path = cert_key_path(new_cert_row)
+            _cert_path.parent.mkdir(parents=True, exist_ok=True)
+            _key_path.parent.mkdir(parents=True, exist_ok=True)
+            _cert_path.write_bytes(new_cert_pem.encode())
+            _key_path.write_bytes(new_key_pem.encode())
+            try:
+                _key_path.chmod(0o600)
+            except (OSError, PermissionError):
+                pass
+        except Exception as e:
+            logger.warning(f"Failed to write cert/key files for renewed cert {new_cert_row.id}: {e}")
 
         cert = new_cert_row
         cert_id = cert.id

@@ -307,6 +307,7 @@ class LifecycleMixin:
         reason: str = 'unspecified',
         username: str = 'system',
         invalidity_at=None,
+        _suppress_events: bool = False,
     ) -> Certificate:
         """
         Revoke a certificate
@@ -316,6 +317,10 @@ class LifecycleMixin:
             reason: Revocation reason
             username: User revoking
             invalidity_at: Optional RFC 5280 §5.3.2 invalidityDate (datetime)
+            _suppress_events: Skip audit log, webhook, CRL generation, and
+                OCSP cache invalidation. Used by the renewal flow which emits
+                a single `cert_renewed` event instead of cert_revoked +
+                cert_deleted + cert_renewed.
 
         Returns:
             Updated certificate
@@ -399,39 +404,49 @@ class LifecycleMixin:
                         f"Revocation failed: Unable to add entry to revocation list"
                     ) from _rs_err
 
-        # Audit log
-        from services.audit_service import AuditService
-        AuditService.log_certificate('cert_revoked', certificate, f'Revoked certificate: {certificate.descr} - Reason: {reason}')
+        if not _suppress_events:
+            # Audit log
+            from services.audit_service import AuditService
+            AuditService.log_certificate('cert_revoked', certificate, f'Revoked certificate: {certificate.descr} - Reason: {reason}')
 
-        # Auto-generate CRL if CA has CDP enabled
-        ca = CA.query.filter_by(refid=certificate.caref).first()
-        if ca and ca.cdp_enabled:
-            from services.crl_service import CRLService
-            try:
-                CRLService.generate_crl(ca.id, username=username)
-            except Exception as e:
-                # Log error but don't fail revocation
-                AuditService.log_ca('crl_auto_generation_failed', ca, f'Failed to auto-generate CRL after revocation: {str(e)}', success=False)
+            # Auto-generate CRL if CA has CDP enabled
+            ca = CA.query.filter_by(refid=certificate.caref).first()
+            if ca and ca.cdp_enabled:
+                from services.crl_service import CRLService
+                try:
+                    CRLService.generate_crl(ca.id, username=username)
+                except Exception as e:
+                    # Log error but don't fail revocation
+                    AuditService.log_ca('crl_auto_generation_failed', ca, f'Failed to auto-generate CRL after revocation: {str(e)}', success=False)
 
-        # RFC 6960 §2.2: revocation MUST take effect immediately for new
-        # responses, regardless of which CertID hash algorithm was requested.
-        if ca:
-            OCSPService.invalidate_cached_responses(
-                certificate.serial_number, ca_id=ca.id)
+            # RFC 6960 §2.2: revocation MUST take effect immediately for new
+            # responses, regardless of which CertID hash algorithm was requested.
+            if ca:
+                OCSPService.invalidate_cached_responses(
+                    certificate.serial_number, ca_id=ca.id)
 
-        from services.webhook_service import emit_cert_revoked
-        emit_cert_revoked(certificate.to_dict(), reason=reason, ca_refid=certificate.caref, actor=username)
+            from services.webhook_service import emit_cert_revoked
+            emit_cert_revoked(certificate.to_dict(), reason=reason, ca_refid=certificate.caref, actor=username)
+        else:
+            # Even in suppressed mode, invalidate OCSP cache so the old
+            # serial is immediately reported as revoked.
+            ca = CA.query.filter_by(refid=certificate.caref).first()
+            if ca:
+                OCSPService.invalidate_cached_responses(
+                    certificate.serial_number, ca_id=ca.id)
 
         return certificate
 
     @staticmethod
-    def delete_certificate(cert_id: int, username: str = 'system') -> bool:
+    def delete_certificate(cert_id: int, username: str = 'system', _suppress_events: bool = False) -> bool:
         """
         Delete a certificate
 
         Args:
             cert_id: Certificate ID
             username: User deleting
+            _suppress_events: Skip audit log and webhook emit. Used by the
+                renewal flow which emits a single `cert_renewed` event.
 
         Returns:
             True if deleted
@@ -463,6 +478,25 @@ class LifecycleMixin:
         except Exception as e:
             logger.warning(f"Failed to null out RevokedSerial.certificate_id for cert {cert_id}: {e}")
 
+        # Detach ACME order FKs (AcmeClientOrder.certificate_id,
+        # AcmeClientOrder.source_certificate_id, AcmeOrder.certificate_id)
+        # — these are real FKs to certificates.id with no cascade. Without
+        # detaching, PostgreSQL raises IntegrityError on delete; SQLite leaves
+        # dangling references.
+        try:
+            from models.acme_models import AcmeClientOrder, AcmeOrder
+            AcmeClientOrder.query.filter_by(certificate_id=cert_id).update(
+                {AcmeClientOrder.certificate_id: None}
+            )
+            AcmeClientOrder.query.filter_by(source_certificate_id=cert_id).update(
+                {AcmeClientOrder.source_certificate_id: None}
+            )
+            AcmeOrder.query.filter_by(certificate_id=cert_id).update(
+                {AcmeOrder.certificate_id: None}
+            )
+        except Exception as e:
+            logger.warning(f"Failed to detach ACME order FKs for cert {cert_id}: {e}")
+
         # Delete files (cleanup old UUID names first, then new names)
         cleanup_old_files(certificate=certificate)
         cert_path = cert_cert_path(certificate)
@@ -474,8 +508,9 @@ class LifecycleMixin:
                 path.unlink()
 
         # Audit log
-        from services.audit_service import AuditService
-        AuditService.log_certificate('cert_deleted', certificate, f'Deleted certificate: {certificate.descr}')
+        if not _suppress_events:
+            from services.audit_service import AuditService
+            AuditService.log_certificate('cert_deleted', certificate, f'Deleted certificate: {certificate.descr}')
 
         # Delete from database
         try:
@@ -486,7 +521,8 @@ class LifecycleMixin:
             logger.error(f"Failed to delete certificate {cert_id}: {e}")
             return False
 
-        from services.webhook_service import emit_cert_deleted
-        emit_cert_deleted(_cert_snapshot, ca_refid=_cert_caref, actor=username)
+        if not _suppress_events:
+            from services.webhook_service import emit_cert_deleted
+            emit_cert_deleted(_cert_snapshot, ca_refid=_cert_caref, actor=username)
 
         return True

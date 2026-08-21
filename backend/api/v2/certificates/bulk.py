@@ -181,20 +181,9 @@ def bulk_renew_certificates():
             old_template_overrides = cert.template_overrides
             old_owner_group_id = cert.owner_group_id
 
-            # Revoke old cert so its serial appears on CRL/OCSP
-            try:
-                CertificateService.revoke_certificate(
-                    cert_id=cert_id, reason='superseded', username=username)
-            except ValueError:
-                pass  # Already revoked — RevokedSerial already exists
-            except RuntimeError as e:
-                results['failed'].append({'id': cert_id, 'error': f'Revocation failed: {e}'})
-                continue
-
-            # Delete old cert row (RevokedSerial persists revocation data)
-            CertificateService.delete_certificate(cert_id=cert_id, username=username)
-
-            # Create new certificate row
+            # Create new certificate row — build and commit BEFORE
+            # revoking/deleting the old one so a commit failure doesn't
+            # destroy the old cert with no replacement.
             import uuid as _uuid
             new_serial_hex = format(new_cert.serial_number, 'x')
             new_refid = str(_uuid.uuid4())
@@ -280,7 +269,41 @@ def bulk_renew_certificates():
             if not ok:
                 results['failed'].append({'id': cert_id, 'error': 'Renewal failed'})
                 continue
-            results['success'].append(new_cert_row.id)
+
+            # Revoke old cert so its serial appears on CRL/OCSP
+            # _suppress_events=True avoids emitting cert_revoked/cert_deleted
+            # events — the bulk renewal emits a single cert_renewed per cert.
+            try:
+                CertificateService.revoke_certificate(
+                    cert_id=cert_id, reason='superseded', username=username,
+                    _suppress_events=True)
+            except ValueError:
+                pass  # Already revoked — RevokedSerial already exists
+            except RuntimeError as e:
+                logger.warning(f"Revocation failed for old cert {cert_id} after bulk renewal: {e}")
+
+            # Delete old cert row (RevokedSerial persists revocation data)
+            if not CertificateService.delete_certificate(cert_id=cert_id, username=username, _suppress_events=True):
+                logger.warning(f"Failed to delete old certificate {cert_id} after bulk renewal")
+
+            # Write cert/key files to disk for the new row (consistent with
+            # create_certificate which writes human-readable filenames).
+            try:
+                from utils.file_naming import cert_cert_path, cert_key_path
+                _cert_path = cert_cert_path(new_cert_row)
+                _key_path = cert_key_path(new_cert_row)
+                _cert_path.parent.mkdir(parents=True, exist_ok=True)
+                _key_path.parent.mkdir(parents=True, exist_ok=True)
+                _cert_path.write_bytes(new_cert_pem.encode())
+                _key_path.write_bytes(new_key_pem.encode())
+                try:
+                    _key_path.chmod(0o600)
+                except (OSError, PermissionError):
+                    pass
+            except Exception as e:
+                logger.warning(f"Failed to write cert/key files for renewed cert {new_cert_row.id}: {e}")
+
+            results['success'].append({'old_id': cert_id, 'new_id': new_cert_row.id})
         except Exception as e:
             db.session.rollback()
             logger.error(f"Bulk renew failed for cert {cert_id}: {e}")
@@ -289,7 +312,7 @@ def bulk_renew_certificates():
     AuditService.log_action(
         action='certificates_bulk_renewed',
         resource_type='certificate',
-        resource_id=','.join(str(i) for i in results['success']),
+        resource_id=','.join(str(r['new_id']) for r in results['success']),
         resource_name=f'{len(results["success"])} certificates',
         details=f'Bulk renewed {len(results["success"])} certificates',
         success=True
