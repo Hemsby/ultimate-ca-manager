@@ -17,6 +17,7 @@ from cryptography.x509.oid import ExtensionOID
 from services.audit_service import AuditService
 from websocket.emitters import on_certificate_renewed
 from utils.datetime_utils import utc_now
+from utils.upn_san import extract_upns_from_san_list
 from . import bp
 
 logger = logging.getLogger(__name__)
@@ -212,7 +213,10 @@ def renew_certificate(cert_id):
         new_serial_hex = format(new_cert.serial_number, 'x')
         new_refid = str(uuid.uuid4())
 
-        # Extract SANs
+        # Extract SANs.
+        # x509 GeneralName objects (DNSName, IPAddress, ...) expose no `.type`
+        # attribute — the canonical way to discriminate them is isinstance()
+        # (see utils/cert_extensions._parse_san and services/import_service).
         san_dns = []
         san_ip = []
         san_email = []
@@ -222,18 +226,19 @@ def renew_certificate(cert_id):
             san_ext = new_cert.extensions.get_extension_for_oid(
                 ExtensionOID.SUBJECT_ALTERNATIVE_NAME
             )
-            for name in san_ext.value:
-                if name.type == x509.DNSName:
+            san_entries = list(san_ext.value)
+            for name in san_entries:
+                if isinstance(name, x509.DNSName):
                     san_dns.append(name.value)
-                elif name.type == x509.IPAddress:
+                elif isinstance(name, x509.IPAddress):
                     san_ip.append(str(name.value))
-                elif name.type == x509.RFC822Name:
+                elif isinstance(name, x509.RFC822Name):
                     san_email.append(name.value)
-                elif name.type == x509.UniformResourceIdentifier:
+                elif isinstance(name, x509.UniformResourceIdentifier):
                     san_uri.append(name.value)
-                elif name.type == x509.OtherName:
-                    if name.type_id.dotted_string == '1.3.6.1.4.1.311.20.2.3':
-                        san_upn.append(name.value.decode('utf-8', errors='replace'))
+            # OtherName UPNs are DER-encoded UTF8Strings — decode via the
+            # shared helper instead of treating the DER blob as raw UTF-8.
+            san_upn = extract_upns_from_san_list(san_entries)
         except x509.ExtensionNotFound:
             pass
 

@@ -26,6 +26,7 @@ from services.audit_service import AuditService
 from utils.db_transaction import safe_commit
 from utils.response import success_response, error_response
 from utils.datetime_utils import utc_now
+from utils.upn_san import extract_upns_from_san_list
 from . import bp
 
 logger = logging.getLogger(__name__)
@@ -206,22 +207,26 @@ def bulk_renew_certificates():
             except x509.ExtensionNotFound:
                 new_aki = None
 
-            # Extract SANs from new cert
+            # Extract SANs from new cert.
+            # x509 GeneralName objects expose no `.type` attribute — the
+            # canonical discrimination is isinstance() (see
+            # utils/cert_extensions._parse_san).
             new_san_dns, new_san_ip, new_san_email, new_san_uri, new_san_upn = [], [], [], [], []
             try:
                 san_ext = new_cert.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-                for name in san_ext.value:
-                    if name.type == x509.DNSName:
+                san_entries = list(san_ext.value)
+                for name in san_entries:
+                    if isinstance(name, x509.DNSName):
                         new_san_dns.append(name.value)
-                    elif name.type == x509.IPAddress:
+                    elif isinstance(name, x509.IPAddress):
                         new_san_ip.append(str(name.value))
-                    elif name.type == x509.RFC822Name:
+                    elif isinstance(name, x509.RFC822Name):
                         new_san_email.append(name.value)
-                    elif name.type == x509.UniformResourceIdentifier:
+                    elif isinstance(name, x509.UniformResourceIdentifier):
                         new_san_uri.append(name.value)
-                    elif name.type == x509.OtherName:
-                        if name.type_id.dotted_string == '1.3.6.1.4.1.311.20.2.3':
-                            new_san_upn.append(name.value.decode('utf-8', errors='replace'))
+                # OtherName UPNs are DER-encoded UTF8Strings — decode via the
+                # shared helper instead of treating the DER blob as raw UTF-8.
+                new_san_upn = extract_upns_from_san_list(san_entries)
             except x509.ExtensionNotFound:
                 pass
 
