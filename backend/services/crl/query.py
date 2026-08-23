@@ -52,10 +52,13 @@ class CRLQueryMixin:
         for rs in revoked_serials:
             if rs.serial_number in live_serials:
                 continue
-            # Skip if the certificate row still exists and is not revoked
+            # Skip if the certificate row still exists, is not revoked, AND
+            # still carries the same serial number (i.e. the cert was not
+            # renewed in-place). When the serials differ, the cert was
+            # renewed in-place — the old serial must still appear on the CRL.
             if rs.certificate_id:
                 existing = db.session.get(Certificate, rs.certificate_id)
-                if existing and not existing.revoked:
+                if existing and not existing.revoked and existing.serial_number == rs.serial_number:
                     continue
             orphan_serials.append(rs)
 

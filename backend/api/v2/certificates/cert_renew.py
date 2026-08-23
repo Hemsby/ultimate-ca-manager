@@ -2,19 +2,19 @@
 import logging
 import base64
 import json
-import uuid
 from datetime import timedelta
 from flask import request, g
 from auth.unified import require_auth
 from utils.db_transaction import safe_commit
 from utils.response import success_response, error_response
-from models import Certificate, CA, db
+from models import Certificate, CA, RevokedSerial, db
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
 from cryptography.hazmat.backends import default_backend
 from cryptography.x509.oid import ExtensionOID
 from services.audit_service import AuditService
+from services.ocsp_service import OCSPService
 from websocket.emitters import on_certificate_renewed
 from utils.datetime_utils import utc_now
 from utils.upn_san import extract_upns_from_san_list
@@ -27,7 +27,13 @@ logger = logging.getLogger(__name__)
 @require_auth(['write:certificates'])
 def renew_certificate(cert_id):
     """
-    Renew certificate - Creates a new certificate with same subject/SANs but new validity
+    Renew certificate - In-place update with old serial revocation.
+
+    The certificate row (id, refid, created_at) is preserved. The old serial
+    is recorded in revoked_serials with reason 'superseded' and
+    certificate_id pointing back to this row, so the CRL query can
+    distinguish between the current serial (good) and previous serials
+    (revoked/superseded). renewed_at is set to utc_now().
     """
 
     # Get original certificate
@@ -188,32 +194,14 @@ def renew_certificate(cert_id):
 
         username = g.current_user.username if hasattr(g, 'current_user') else 'system'
 
-        # --- Snapshot old cert fields before revoke/delete (commits expire the ORM object) ---
-        from services.cert_service import CertificateService
+        # --- Snapshot old cert fields for RevokedSerial record ---
         old_serial = cert.serial_number
-        old_subject = cert.subject
-        old_descr = cert.descr
         old_valid_to = cert.valid_to
         old_caref = cert.caref
-        old_cert_type = cert.cert_type
-        old_subject_cn = cert.subject_cn
-        old_ocsp_uri = cert.ocsp_uri
-        old_ocsp_must_staple = cert.ocsp_must_staple
-        old_private_key_location = cert.private_key_location
-        old_source = cert.source or 'manual'
-        old_template_id = cert.template_id
-        old_template_overrides = cert.template_overrides
-        old_owner_group_id = cert.owner_group_id
 
-        # --- Create a new certificate row for the renewed cert ---
-        # Build and commit the new row BEFORE revoking/deleting the old one
-        # so that a commit failure doesn't leave the old cert destroyed with
-        # no replacement (the previous revoke→delete→create flow had a
-        # data-loss window if the final commit failed).
         new_serial_hex = format(new_cert.serial_number, 'x')
-        new_refid = str(uuid.uuid4())
 
-        # Extract SANs.
+        # Extract SANs from the new certificate.
         # x509 GeneralName objects (DNSName, IPAddress, ...) expose no `.type`
         # attribute — the canonical way to discriminate them is isinstance()
         # (see utils/cert_extensions._parse_san and services/import_service).
@@ -269,78 +257,76 @@ def renew_certificate(cert_id):
         else:
             key_algo_str = 'Unknown'
 
-        new_cert_row = Certificate(
-            refid=new_refid,
-            descr=old_descr,
-            caref=old_caref,
-            crt=base64.b64encode(new_cert_pem.encode()).decode(),
-            prv=base64.b64encode(new_key_pem.encode()).decode(),
-            cert_type=old_cert_type,
-            subject=old_subject,
-            subject_cn=old_subject_cn,
-            issuer=ca_cert.subject.rfc4514_string(),
-            serial_number=new_serial_hex,
-            aki=new_aki,
-            ski=new_ski,
-            valid_from=not_before,
-            valid_to=not_after,
-            key_algo=key_algo_str,
-            san_dns=json.dumps(san_dns) if san_dns else None,
-            san_ip=json.dumps([str(ip) for ip in san_ip]) if san_ip else None,
-            san_email=json.dumps(san_email) if san_email else None,
-            san_uri=json.dumps(san_uri) if san_uri else None,
-            san_upn=json.dumps(san_upn) if san_upn else None,
-            ocsp_uri=old_ocsp_uri,
-            ocsp_must_staple=old_ocsp_must_staple,
-            private_key_location=old_private_key_location,
-            revoked=False,
-            source=old_source,
-            template_id=old_template_id,
-            template_overrides=old_template_overrides,
-            owner_group_id=old_owner_group_id,
-            created_by=username,
-        )
-        db.session.add(new_cert_row)
+        # --- Insert RevokedSerial for the old serial (before updating the cert) ---
+        # The certificate_id is preserved so there is a direct FK link from
+        # every previous serial back to the certificate row. The CRL query
+        # checks serial_number match to distinguish the current serial (good)
+        # from superseded serials (revoked).
+        #
+        # Both the RevokedSerial insert and the in-place cert update are in
+        # the same session — if the commit fails, safe_commit rolls back both,
+        # leaving the certificate and revocation state unchanged.
+        if old_caref and old_serial:
+            existing_rs = RevokedSerial.query.filter_by(
+                caref=old_caref,
+                serial_number=old_serial,
+            ).first()
+            if existing_rs:
+                existing_rs.revoked_at = now
+                existing_rs.revoke_reason = 'superseded'
+                existing_rs.valid_to = old_valid_to or (now + timedelta(days=365))
+                existing_rs.certificate_id = cert_id
+            else:
+                revoked_record = RevokedSerial(
+                    caref=old_caref,
+                    serial_number=old_serial,
+                    revoked_at=now,
+                    revoke_reason='superseded',
+                    valid_to=old_valid_to or (now + timedelta(days=365)),
+                    certificate_id=cert_id,
+                )
+                db.session.add(revoked_record)
 
+        # --- In-place update of the existing certificate row ---
+        # id, refid, created_at, created_by are preserved.
+        # renewed_at is set to now; renewed_times is incremented.
+        cert.crt = base64.b64encode(new_cert_pem.encode()).decode()
+        cert.prv = base64.b64encode(new_key_pem.encode()).decode()
+        cert.serial_number = new_serial_hex
+        cert.aki = new_aki
+        cert.ski = new_ski
+        cert.valid_from = not_before
+        cert.valid_to = not_after
+        cert.key_algo = key_algo_str
+        cert.issuer = ca_cert.subject.rfc4514_string()
+        cert.san_dns = json.dumps(san_dns) if san_dns else None
+        cert.san_ip = json.dumps([str(ip) for ip in san_ip]) if san_ip else None
+        cert.san_email = json.dumps(san_email) if san_email else None
+        cert.san_uri = json.dumps(san_uri) if san_uri else None
+        cert.san_upn = json.dumps(san_upn) if san_upn else None
+        cert.revoked = False
+        cert.revoked_at = None
+        cert.revoke_reason = None
+        cert.invalidity_at = None
+        cert.renewed_at = now
+        cert.renewed_times = (cert.renewed_times or 0) + 1
+
+        # --- Atomic commit: RevokedSerial + in-place cert update together ---
+        # If this fails, both changes are rolled back — the certificate
+        # retains its old serial, crt, prv, revoked state, and the
+        # RevokedSerial is not persisted. No partial state is left behind.
         ok, err = safe_commit(logger, "Failed to renew certificate")
         if not ok:
+            # safe_commit already called db.session.rollback()
             return err
 
-        # --- Revoke the old certificate so its serial appears on the CRL/OCSP ---
-        # This also inserts a persistent RevokedSerial record that survives
-        # the deletion below, so the old serial stays revoked until expiry.
-        # Done after the new row is committed so a failure here doesn't lose
-        # the certificate — the new cert is safe, the old one just won't be
-        # on the CRL.
-        # _suppress_events=True avoids emitting cert_revoked/cert_deleted
-        # events and audit entries — the renewal emits a single cert_renewed.
-        try:
-            CertificateService.revoke_certificate(
-                cert_id=cert_id,
-                reason='superseded',
-                username=username,
-                _suppress_events=True,
-            )
-        except ValueError:
-            # Already revoked — that's fine, the RevokedSerial already exists
-            pass
-        except RuntimeError as e:
-            logger.warning(f"Revocation failed for old cert {cert_id} after renewal: {e}")
-
-        # Delete the old certificate row (safe — RevokedSerial persists the
-        # revocation data for CRL/OCSP until the old cert's valid_to expires)
-        if not CertificateService.delete_certificate(cert_id=cert_id, username=username, _suppress_events=True):
-            logger.warning(f"Failed to delete old certificate {cert_id} after renewal")
-
-        # --- Write cert/key files to disk for the new row ---
-        # Consistent with create_certificate which writes human-readable
-        # filenames ({cn-slug}-{refid[:8]}.crt / .key) to Config.CERT_DIR /
-        # Config.PRIVATE_DIR. Without this, the renewed cert has DB data but
-        # no on-disk files (the old set was unlinked by delete_certificate).
+        # --- Overwrite cert/key files on disk ---
+        # The filenames are based on CN-slug + refid[:8], both unchanged
+        # since we're doing an in-place update.
         try:
             from utils.file_naming import cert_cert_path, cert_key_path
-            _cert_path = cert_cert_path(new_cert_row)
-            _key_path = cert_key_path(new_cert_row)
+            _cert_path = cert_cert_path(cert)
+            _key_path = cert_key_path(cert)
             _cert_path.parent.mkdir(parents=True, exist_ok=True)
             _key_path.parent.mkdir(parents=True, exist_ok=True)
             _cert_path.write_bytes(new_cert_pem.encode())
@@ -350,10 +336,23 @@ def renew_certificate(cert_id):
             except (OSError, PermissionError):
                 pass
         except Exception as e:
-            logger.warning(f"Failed to write cert/key files for renewed cert {new_cert_row.id}: {e}")
+            logger.warning(f"Failed to write cert/key files for renewed cert {cert_id}: {e}")
 
-        cert = new_cert_row
-        cert_id = cert.id
+        # --- Invalidate OCSP cache for the old serial ---
+        # The old serial is now revoked (superseded); new OCSP responses must
+        # reflect this immediately.
+        try:
+            OCSPService.invalidate_cached_responses(old_serial, ca_id=ca.id)
+        except Exception as e:
+            logger.warning(f"Failed to invalidate OCSP cache for old serial {old_serial}: {e}")
+
+        # --- Auto-generate CRL if CA has CDP enabled ---
+        if ca.cdp_enabled:
+            try:
+                from services.crl_service import CRLService
+                CRLService.generate_crl(ca.id, username=username)
+            except Exception as e:
+                logger.warning(f"Failed to auto-generate CRL after renewal: {e}")
 
         # Audit log
         try:
@@ -362,7 +361,7 @@ def renew_certificate(cert_id):
                 resource_type='certificate',
                 resource_id=str(cert_id),
                 resource_name=cert.subject,
-                details=f"Renewed until {not_after.isoformat()}",
+                details=f"Renewed until {not_after.isoformat()} (old serial: {old_serial}, new serial: {new_serial_hex})",
                 user_id=g.current_user.id if hasattr(g, 'current_user') else None
             )
         except Exception:
@@ -380,7 +379,7 @@ def renew_certificate(cert_id):
 
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Failed to renew certificate: {e}")
+        logger.error(f"Failed to renew certificate {cert_id}: {e}")
         return error_response('Failed to renew certificate', 500)
 
 

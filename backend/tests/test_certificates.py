@@ -701,22 +701,55 @@ class TestRenewCertificate:
         r = post_json(auth_client, f'{BASE}/999999/renew', {})
         assert r.status_code in (404, 500)
 
-    def test_renew_creates_new_row(self, auth_client, create_cert):
-        """Renewal should create a new certificate row, not overwrite in-place."""
-        cert = create_cert(cn='renew-new-row.example.com')
+    def test_renew_preserves_row_id(self, auth_client, create_cert):
+        """Renewal should update the certificate row in-place, preserving id and refid."""
+        cert = create_cert(cn='renew-inplace.example.com')
         old_id = cert.get('id')
+        old_refid = cert.get('refid')
         r = post_json(auth_client, f'{BASE}/{old_id}/renew', {})
         assert r.status_code == 200
         data = get_json(r).get('data', get_json(r))
         new_id = data.get('id')
-        # New row has a different ID
-        assert new_id != old_id
-        # Old cert row should be gone (revoked + deleted)
+        new_refid = data.get('refid')
+        # Same row — id and refid must be preserved
+        assert new_id == old_id
+        assert new_refid == old_refid
+        # Cert should still be accessible at the same URL
         r_old = auth_client.get(f'{BASE}/{old_id}')
-        assert r_old.status_code == 404
+        assert r_old.status_code == 200
+
+    def test_renew_sets_renewed_at(self, auth_client, create_cert):
+        """Renewal should set renewed_at and increment renewed_times."""
+        cert = create_cert(cn='renew-timestamp.example.com')
+        cert_id = cert.get('id')
+        # Before renewal, renewed_at should be None and renewed_times should be 0
+        assert cert.get('renewed_at') is None
+        assert cert.get('renewed_times', 0) == 0
+        r = post_json(auth_client, f'{BASE}/{cert_id}/renew', {})
+        assert r.status_code == 200
+        data = get_json(r).get('data', get_json(r))
+        # After renewal, renewed_at should be set and renewed_times should be 1
+        assert data.get('renewed_at') is not None
+        assert data.get('renewed_times') == 1
+        # Renew again — renewed_times should be 2
+        r2 = post_json(auth_client, f'{BASE}/{cert_id}/renew', {})
+        assert r2.status_code == 200
+        data2 = get_json(r2).get('data', get_json(r2))
+        assert data2.get('renewed_times') == 2
+
+    def test_renew_preserves_created_at(self, auth_client, create_cert):
+        """Renewal should preserve created_at (original issuance date)."""
+        cert = create_cert(cn='renew-created-at.example.com')
+        cert_id = cert.get('id')
+        old_created_at = cert.get('created_at')
+        r = post_json(auth_client, f'{BASE}/{cert_id}/renew', {})
+        assert r.status_code == 200
+        data = get_json(r).get('data', get_json(r))
+        # created_at must be unchanged
+        assert data.get('created_at') == old_created_at
 
     def test_renew_revokes_old_cert(self, auth_client, create_cert, app):
-        """Renewal should revoke the old certificate and persist it in revoked_serials."""
+        """Renewal should record the old serial in revoked_serials with certificate_id link."""
         from models import RevokedSerial, db as _db
         cert = create_cert(cn='renew-revoke-old.example.com')
         old_id = cert.get('id')
@@ -730,9 +763,11 @@ class TestRenewCertificate:
             ).first()
             assert rs is not None
             assert rs.revoke_reason == 'superseded'
+            # certificate_id should point back to the cert row (preserved for auditability)
+            assert rs.certificate_id == old_id
 
     def test_renew_clears_revocation(self, auth_client, create_cert):
-        """Renewing a revoked cert: old cert is revoked+deleted, new cert is not revoked."""
+        """Renewing a revoked cert: in-place update clears the revoked flag."""
         cert = create_cert(cn='revoke-then-renew.example.com')
         cert_id = cert.get('id')
         post_json(auth_client, f'{BASE}/{cert_id}/revoke', {'reason': 'unspecified'})
@@ -740,6 +775,8 @@ class TestRenewCertificate:
         assert r.status_code == 200
         data = get_json(r).get('data', get_json(r))
         assert data.get('revoked') is False
+        # Same cert row (id preserved)
+        assert data.get('id') == cert_id
 
 
 # ============================================================================

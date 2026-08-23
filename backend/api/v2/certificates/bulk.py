@@ -9,7 +9,6 @@ import logging
 import os
 import subprocess
 import tempfile
-import uuid
 from datetime import timedelta
 from flask import request, g, Response
 from auth.unified import require_auth, has_permission
@@ -20,9 +19,10 @@ from cryptography.hazmat.primitives.asymmetric import rsa, ec
 from cryptography.hazmat.backends import default_backend
 from cryptography.x509.oid import ExtensionOID
 
-from models import Certificate, CA, db
+from models import Certificate, CA, RevokedSerial, db
 from services.cert_service import CertificateService
 from services.audit_service import AuditService
+from services.ocsp_service import OCSPService
 from utils.db_transaction import safe_commit
 from utils.response import success_response, error_response
 from utils.datetime_utils import utc_now
@@ -168,26 +168,14 @@ def bulk_renew_certificates():
 
             new_cert = builder.sign(ca_key, hashes.SHA256(), default_backend())
 
-            # Snapshot old cert fields before revoke/delete (commits expire the ORM object)
             username = g.current_user.username if hasattr(g, 'current_user') else 'system'
-            old_descr = cert.descr
-            old_caref = cert.caref
-            old_cert_type = cert.cert_type
-            old_subject = cert.subject
-            old_subject_cn = cert.subject_cn
-            old_ocsp_uri = cert.ocsp_uri
-            old_ocsp_must_staple = cert.ocsp_must_staple
-            old_private_key_location = cert.private_key_location
-            old_source = cert.source or 'manual'
-            old_template_id = cert.template_id
-            old_template_overrides = cert.template_overrides
-            old_owner_group_id = cert.owner_group_id
 
-            # Create new certificate row — build and commit BEFORE
-            # revoking/deleting the old one so a commit failure doesn't
-            # destroy the old cert with no replacement.
+            # Snapshot old cert fields for RevokedSerial record
+            old_serial = cert.serial_number
+            old_valid_to = cert.valid_to
+            old_caref = cert.caref
+
             new_serial_hex = format(new_cert.serial_number, 'x')
-            new_refid = str(uuid.uuid4())
             new_cert_pem = new_cert.public_bytes(serialization.Encoding.PEM).decode('utf-8')
             new_key_pem = new_key.private_bytes(
                 serialization.Encoding.PEM,
@@ -238,65 +226,73 @@ def bulk_renew_certificates():
             else:
                 key_algo_str = 'Unknown'
 
-            new_cert_row = Certificate(
-                refid=new_refid,
-                descr=old_descr,
-                caref=old_caref,
-                crt=base64.b64encode(new_cert_pem.encode()).decode(),
-                prv=base64.b64encode(new_key_pem.encode()).decode(),
-                cert_type=old_cert_type,
-                subject=old_subject,
-                subject_cn=old_subject_cn,
-                issuer=ca_cert.subject.rfc4514_string(),
-                serial_number=new_serial_hex,
-                aki=new_aki,
-                ski=new_ski,
-                valid_from=now,
-                valid_to=not_after,
-                key_algo=key_algo_str,
-                san_dns=json.dumps(new_san_dns) if new_san_dns else None,
-                san_ip=json.dumps([str(ip) for ip in new_san_ip]) if new_san_ip else None,
-                san_email=json.dumps(new_san_email) if new_san_email else None,
-                san_uri=json.dumps(new_san_uri) if new_san_uri else None,
-                san_upn=json.dumps(new_san_upn) if new_san_upn else None,
-                ocsp_uri=old_ocsp_uri,
-                ocsp_must_staple=old_ocsp_must_staple,
-                private_key_location=old_private_key_location,
-                revoked=False,
-                source=old_source,
-                template_id=old_template_id,
-                template_overrides=old_template_overrides,
-                owner_group_id=old_owner_group_id,
-                created_by=username,
-            )
-            db.session.add(new_cert_row)
+            # --- Insert RevokedSerial for the old serial ---
+            # certificate_id is preserved so there is a direct FK link from
+            # every previous serial back to the certificate row.
+            #
+            # Both the RevokedSerial insert and the in-place cert update are
+            # in the same session — if the commit fails, safe_commit rolls
+            # back both, leaving the certificate and revocation state unchanged.
+            if old_caref and old_serial:
+                existing_rs = RevokedSerial.query.filter_by(
+                    caref=old_caref,
+                    serial_number=old_serial,
+                ).first()
+                if existing_rs:
+                    existing_rs.revoked_at = now
+                    existing_rs.revoke_reason = 'superseded'
+                    existing_rs.valid_to = old_valid_to or (now + timedelta(days=365))
+                    existing_rs.certificate_id = cert_id
+                else:
+                    revoked_record = RevokedSerial(
+                        caref=old_caref,
+                        serial_number=old_serial,
+                        revoked_at=now,
+                        revoke_reason='superseded',
+                        valid_to=old_valid_to or (now + timedelta(days=365)),
+                        certificate_id=cert_id,
+                    )
+                    db.session.add(revoked_record)
+
+            # --- In-place update of the existing certificate row ---
+            # id, refid, created_at, created_by are preserved.
+            # renewed_at is set to now; renewed_times is incremented.
+            cert.crt = base64.b64encode(new_cert_pem.encode()).decode()
+            cert.prv = base64.b64encode(new_key_pem.encode()).decode()
+            cert.serial_number = new_serial_hex
+            cert.aki = new_aki
+            cert.ski = new_ski
+            cert.valid_from = now
+            cert.valid_to = not_after
+            cert.key_algo = key_algo_str
+            cert.issuer = ca_cert.subject.rfc4514_string()
+            cert.san_dns = json.dumps(new_san_dns) if new_san_dns else None
+            cert.san_ip = json.dumps([str(ip) for ip in new_san_ip]) if new_san_ip else None
+            cert.san_email = json.dumps(new_san_email) if new_san_email else None
+            cert.san_uri = json.dumps(new_san_uri) if new_san_uri else None
+            cert.san_upn = json.dumps(new_san_upn) if new_san_upn else None
+            cert.revoked = False
+            cert.revoked_at = None
+            cert.revoke_reason = None
+            cert.invalidity_at = None
+            cert.renewed_at = now
+            cert.renewed_times = (cert.renewed_times or 0) + 1
+
+            # --- Atomic commit: RevokedSerial + in-place cert update together ---
+            # If this fails, both changes are rolled back — the certificate
+            # retains its old serial, crt, prv, revoked state, and the
+            # RevokedSerial is not persisted. No partial state is left behind.
             ok, err = safe_commit(logger, f"Bulk renew failed for cert {cert_id}")
             if not ok:
+                # safe_commit already called db.session.rollback()
                 results['failed'].append({'id': cert_id, 'error': 'Renewal failed'})
                 continue
 
-            # Revoke old cert so its serial appears on CRL/OCSP
-            # _suppress_events=True avoids emitting cert_revoked/cert_deleted
-            # events — the bulk renewal emits a single cert_renewed per cert.
-            try:
-                CertificateService.revoke_certificate(
-                    cert_id=cert_id, reason='superseded', username=username,
-                    _suppress_events=True)
-            except ValueError:
-                pass  # Already revoked — RevokedSerial already exists
-            except RuntimeError as e:
-                logger.warning(f"Revocation failed for old cert {cert_id} after bulk renewal: {e}")
-
-            # Delete old cert row (RevokedSerial persists revocation data)
-            if not CertificateService.delete_certificate(cert_id=cert_id, username=username, _suppress_events=True):
-                logger.warning(f"Failed to delete old certificate {cert_id} after bulk renewal")
-
-            # Write cert/key files to disk for the new row (consistent with
-            # create_certificate which writes human-readable filenames).
+            # Overwrite cert/key files on disk (filenames based on CN-slug + refid[:8], unchanged)
             try:
                 from utils.file_naming import cert_cert_path, cert_key_path
-                _cert_path = cert_cert_path(new_cert_row)
-                _key_path = cert_key_path(new_cert_row)
+                _cert_path = cert_cert_path(cert)
+                _key_path = cert_key_path(cert)
                 _cert_path.parent.mkdir(parents=True, exist_ok=True)
                 _key_path.parent.mkdir(parents=True, exist_ok=True)
                 _cert_path.write_bytes(new_cert_pem.encode())
@@ -306,9 +302,15 @@ def bulk_renew_certificates():
                 except (OSError, PermissionError):
                     pass
             except Exception as e:
-                logger.warning(f"Failed to write cert/key files for renewed cert {new_cert_row.id}: {e}")
+                logger.warning(f"Failed to write cert/key files for renewed cert {cert_id}: {e}")
 
-            results['success'].append({'old_id': cert_id, 'new_id': new_cert_row.id})
+            # Invalidate OCSP cache for the old serial
+            try:
+                OCSPService.invalidate_cached_responses(old_serial, ca_id=ca.id)
+            except Exception as e:
+                logger.warning(f"Failed to invalidate OCSP cache for old serial {old_serial}: {e}")
+
+            results['success'].append(cert_id)
         except Exception as e:
             db.session.rollback()
             logger.error(f"Bulk renew failed for cert {cert_id}: {e}")
@@ -317,7 +319,7 @@ def bulk_renew_certificates():
     AuditService.log_action(
         action='certificates_bulk_renewed',
         resource_type='certificate',
-        resource_id=','.join(str(r['new_id']) for r in results['success']),
+        resource_id=','.join(str(i) for i in results['success']),
         resource_name=f'{len(results["success"])} certificates',
         details=f'Bulk renewed {len(results["success"])} certificates',
         success=True

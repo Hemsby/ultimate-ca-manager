@@ -1,9 +1,15 @@
-"""Migration 078: create revoked_serials table for persistent revocation records.
+"""Migration 078: create revoked_serials table + add renewed_at column.
 
 When a certificate is revoked and later deleted (e.g. after renewal), the
 revocation must still appear in CRLs and OCSP responses until the original
 certificate's notAfter has passed. This table holds the minimal data needed
 to generate those revocation entries independently of the certificates table.
+
+Additionally, `renewed_at` (DateTime) and `renewed_times` (Integer) columns
+are added to the `certificates` table to track the last renewal timestamp and
+the number of renewals. NULL/0 means the certificate has never been renewed
+(original issuance). `created_at` is preserved across renewals so the original
+issuance date is never lost.
 """
 
 import logging
@@ -51,14 +57,24 @@ def _upgrade_sqlite(conn):
         "SELECT name FROM sqlite_master WHERE type='table' AND name='revoked_serials'"
     )
     if cur.fetchone():
-        logger.info("078: revoked_serials table already exists, skipping")
-        return
+        logger.info("078: revoked_serials table already exists, skipping table creation")
+    else:
+        conn.executescript(_DDL_SQLITE)
+        conn.execute(_INDEX_CAREF)
+        conn.execute(_INDEX_SERIAL)
+        logger.info("078: created revoked_serials table (SQLite)")
 
-    conn.executescript(_DDL_SQLITE)
-    conn.execute(_INDEX_CAREF)
-    conn.execute(_INDEX_SERIAL)
+    # Add renewed_at and renewed_times columns to certificates table
+    cur = conn.execute("PRAGMA table_info(certificates)")
+    col_names = [row[1] for row in cur.fetchall()]
+    if 'renewed_at' not in col_names:
+        conn.execute("ALTER TABLE certificates ADD COLUMN renewed_at DATETIME")
+        logger.info("078: added renewed_at column to certificates (SQLite)")
+    if 'renewed_times' not in col_names:
+        conn.execute("ALTER TABLE certificates ADD COLUMN renewed_times INTEGER DEFAULT 0 NOT NULL")
+        logger.info("078: added renewed_times column to certificates (SQLite)")
+
     conn.commit()
-    logger.info("078: created revoked_serials table (SQLite)")
 
 
 def _upgrade_pg(conn):
@@ -66,13 +82,21 @@ def _upgrade_pg(conn):
 
     insp = inspect(conn)
     if 'revoked_serials' in set(insp.get_table_names()):
-        logger.info("078: revoked_serials table already exists, skipping")
-        return
+        logger.info("078: revoked_serials table already exists, skipping table creation")
+    else:
+        conn.execute(text(_DDL_PG))
+        conn.execute(text(_INDEX_CAREF))
+        conn.execute(text(_INDEX_SERIAL))
+        logger.info("078: created revoked_serials table (PostgreSQL)")
 
-    conn.execute(text(_DDL_PG))
-    conn.execute(text(_INDEX_CAREF))
-    conn.execute(text(_INDEX_SERIAL))
-    logger.info("078: created revoked_serials table (PostgreSQL)")
+    # Add renewed_at and renewed_times columns to certificates table
+    cert_cols = {col['name'] for col in insp.get_columns('certificates')}
+    if 'renewed_at' not in cert_cols:
+        conn.execute(text("ALTER TABLE certificates ADD COLUMN renewed_at TIMESTAMP"))
+        logger.info("078: added renewed_at column to certificates (PostgreSQL)")
+    if 'renewed_times' not in cert_cols:
+        conn.execute(text("ALTER TABLE certificates ADD COLUMN renewed_times INTEGER DEFAULT 0 NOT NULL"))
+        logger.info("078: added renewed_times column to certificates (PostgreSQL)")
 
 
 def upgrade(conn):
@@ -84,8 +108,12 @@ def upgrade(conn):
 
 def downgrade(conn):
     if isinstance(conn, sqlite3.Connection):
+        # SQLite doesn't support DROP COLUMN before 3.35; recreate is complex.
+        # The renewed_at column is harmless if left behind.
         conn.execute("DROP TABLE IF EXISTS revoked_serials")
         conn.commit()
     else:
         from sqlalchemy import text
+        conn.execute(text("ALTER TABLE certificates DROP COLUMN IF EXISTS renewed_at"))
+        conn.execute(text("ALTER TABLE certificates DROP COLUMN IF EXISTS renewed_times"))
         conn.execute(text("DROP TABLE IF EXISTS revoked_serials"))
