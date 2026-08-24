@@ -20,8 +20,8 @@
 ## Features
 
 ### PKI Core
-- **CA Management** -- Root and intermediate CAs, hierarchy view, import/export, **HSM-backed signing keys** (private key never leaves the HSM), **configurable RFC 5280 profile** (signature digest, Key Usage, EKU) with Let's Encrypt-style defaults
-- **Certificate Lifecycle** -- Issue, sign, revoke, renew, rename (mutable display name, covers CN-less certificates), export (PEM, DER, PKCS#12, JKS), bulk operations, filter by status / issuer / source (ACME, SCEP, EST, AD CS, import…)
+- **CA Management** -- Root and intermediate CAs, hierarchy view, import/export, **HSM-backed signing keys** (private key never leaves the HSM), **configurable RFC 5280 profile** (signature digest, Key Usage, EKU) with Let's Encrypt-style defaults, **externally-signed CAs** (UCM generates the key pair and a CA-type CSR, an offline/external root signs it — the private key never leaves UCM, with same-key CSR renewal)
+- **Certificate Lifecycle** -- Issue, sign, revoke, renew (**in-place**: stable IDs across renewals, superseded serials stay on CRL/OCSP until their original expiry), rename (mutable display name, covers CN-less certificates), export (PEM, DER, PKCS#12, JKS), bulk operations, filter by status / issuer / source (ACME, SCEP, EST, AD CS, import…)
 - **Conformance Linting** -- per-certificate checks against RFC 5280 and CA/Browser Forum Baseline Requirements via pkilint (and zlint when available), informative-only
 - **CSR Management** -- Create, import, sign Certificate Signing Requests with **custom Extra EKU OIDs** (RFC 5280 §4.2.1.12), **typed SAN validation** (DNS / IP / Email / URI / UPN), NIST P-256 / P-384 / P-521 curves
 - **Certificate Templates** -- Predefined profiles for server, client, code signing, email
