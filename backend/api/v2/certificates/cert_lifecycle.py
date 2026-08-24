@@ -222,33 +222,59 @@ def unhold_certificate(cert_id):
                 logger.warning(f"Failed to emit removeFromCRL delta before unhold: {e}")
                 cert = db.session.get(Certificate, cert_id)
 
+        # Snapshot pre-unhold state so a failed commit can be undone exactly.
+        previous_state = {
+            'revoked': cert.revoked,
+            'revoked_at': cert.revoked_at,
+            'revoke_reason': cert.revoke_reason,
+            'invalidity_at': cert.invalidity_at,
+        }
+
         cert.revoked = False
         cert.revoked_at = None
         cert.revoke_reason = None
         cert.invalidity_at = None
-        db.session.commit()
 
-        # Remove the persistent RevokedSerial entry so the CRL no longer
-        # carries this serial as revoked. Without this, the CRL would still
-        # show the cert as revoked after unhold.
+        # Remove the persistent RevokedSerial entry in the same transaction
+        # so the cert unhold and CRL cleanup are atomic — a worker can never
+        # observe an unheld cert whose serial is still on the CRL.
+        rs_deleted = False
         if cert.caref and cert.serial_number:
+            from models import RevokedSerial
+            rs = RevokedSerial.query.filter_by(
+                caref=cert.caref,
+                serial_number=cert.serial_number,
+            ).first()
+            if rs:
+                db.session.delete(rs)
+                rs_deleted = True
+
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            # Restore the pre-unhold state so the cert is not left in a
+            # half-unheld state (revoked=False but still on the CRL).
+            cert.revoked = previous_state['revoked']
+            cert.revoked_at = previous_state['revoked_at']
+            cert.revoke_reason = previous_state['revoke_reason']
+            cert.invalidity_at = previous_state['invalidity_at']
             try:
-                from models import RevokedSerial
-                rs = RevokedSerial.query.filter_by(
-                    caref=cert.caref,
-                    serial_number=cert.serial_number,
-                ).first()
-                if rs:
-                    db.session.delete(rs)
-                    db.session.commit()
-                    logger.info(
-                        f"Removed RevokedSerial for cert {cert.id} after unhold"
-                    )
-            except Exception as e:
+                db.session.commit()
+            except Exception:
                 db.session.rollback()
-                logger.warning(
-                    f"Failed to remove RevokedSerial for cert {cert.id} after unhold: {e}"
-                )
+            logger.error(
+                f"Failed to unhold certificate {cert_id}: unable to persist "
+                f"unhold + RevokedSerial deletion atomically: {e}",
+                exc_info=True,
+            )
+            return error_response('Failed to remove certificate hold', 500)
+
+        if rs_deleted:
+            logger.info(
+                f"Removed RevokedSerial for cert {cert.id} after unhold "
+                f"(serial={cert.serial_number})."
+            )
 
         # Audit log
         AuditService.log_action(
