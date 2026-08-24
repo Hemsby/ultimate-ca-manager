@@ -2634,7 +2634,9 @@
     "ocspResponseValidity": "Validade das respostas OCSP (horas)",
     "ocspResponseValidityDesc": "Tempo de validade das respostas OCSP assinadas (nextUpdate). 1-168 horas, padrão 24.",
     "crlAutoDeleteExpiredRevoked": "Excluir automaticamente certificados revogados expirados",
-    "crlAutoDeleteExpiredRevokedDesc": "Remove automaticamente os registros de certificados revogados (apenas os expirados) durante a geração da CRL. Quando desativado, os certificados revogados expirados são mantidos como registros históricos."
+    "crlAutoDeleteExpiredRevokedDesc": "Remove automaticamente os registros de certificados revogados (apenas os expirados) durante a geração da CRL. Quando desativado, os certificados revogados expirados são mantidos como registros históricos.",
+    "crlAutoPurgeStaleSerials": "Remover automaticamente números de série revogados obsoletos",
+    "crlAutoPurgeStaleSerialsDesc": "Exclui automaticamente os registros de números de série revogados (apenas os expirados) durante a geração da CRL. Quando desativado, os registros obsoletos são mantidos como histórico de renovações."
   },
   "account": {
     "profile": "Perfil",

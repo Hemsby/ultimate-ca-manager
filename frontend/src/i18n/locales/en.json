@@ -2635,7 +2635,9 @@
     "ocspResponseValidity": "OCSP response validity (hours)",
     "ocspResponseValidityDesc": "How long signed OCSP responses stay valid (nextUpdate). 1-168 hours, default 24.",
     "crlAutoDeleteExpiredRevoked": "Auto-delete expired revoked certificates",
-    "crlAutoDeleteExpiredRevokedDesc": "Automatically purge revoked certificate records (expired ones only) during CRL generation. When disabled, expired revoked certs are retained as historical records."
+    "crlAutoDeleteExpiredRevokedDesc": "Automatically purge revoked certificate records (expired ones only) during CRL generation. When disabled, expired revoked certs are retained as historical records.",
+    "crlAutoPurgeStaleSerials": "Auto-purge stale revoked serials",
+    "crlAutoPurgeStaleSerialsDesc": "Automatically delete revoked-serial records (expired ones only) during CRL generation. When disabled, stale records are kept as renewal history."
   },
   "account": {
     "profile": "Profile",
