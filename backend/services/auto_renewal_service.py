@@ -17,6 +17,7 @@ generated on the client and UCM only ever saw the public half — issuing a new
 key pair would hand the device a certificate it cannot use. The existing public
 key is re-signed instead; a device that wants a fresh key must re-enroll.
 """
+import json
 from datetime import timedelta
 from models import db, Certificate, CA, SystemConfig, AuditLog
 from services.cert.renewal import RenewalError, renew_certificate_in_place
@@ -27,6 +28,20 @@ logger = logging.getLogger(__name__)
 
 # Actor recorded in the audit trail / webhooks for unattended renewals.
 AUTO_RENEWAL_ACTOR = 'auto-renewal'
+
+
+def _safe_json_loads(raw, default):
+    """Parse a JSON config string, returning *default* on malformed input.
+
+    SystemConfig values are admin-set free-text strings; a stray edit or
+    manual DB write can produce invalid JSON that would otherwise kill the
+    auto-renewal scheduler with an unhandled ``ValueError``.
+    """
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        logger.warning("Malformed JSON config value %r, using default %r", raw, default)
+        return default
 
 
 class AutoRenewalService:
@@ -53,16 +68,14 @@ class AutoRenewalService:
 
         sources = SystemConfig.query.filter_by(key='auto_renewal_sources').first()
         if sources:
-            import json
-            config['renewal_sources'] = json.loads(sources.value)
+            config['renewal_sources'] = _safe_json_loads(
+                sources.value, config['renewal_sources'])
 
         return config
 
     @staticmethod
     def set_renewal_config(config: dict):
         """Update auto-renewal configuration"""
-        import json
-
         for key, value in config.items():
             db_key = f'auto_renewal_{key}'
             if key == 'enabled':
@@ -248,8 +261,7 @@ class AutoRenewalService:
         if not recipients:
             return
 
-        import json
-        emails = json.loads(recipients.value)
+        emails = _safe_json_loads(recipients.value, [])
 
         for email in emails:
             try:
@@ -271,8 +283,7 @@ class AutoRenewalService:
         if not recipients:
             return
 
-        import json
-        emails = json.loads(recipients.value)
+        emails = _safe_json_loads(recipients.value, [])
 
         error_list = '\n'.join([
             f"- {e['common_name']} (ID: {e['cert_id']}): {e['error']}"
