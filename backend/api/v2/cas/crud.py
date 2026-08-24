@@ -251,6 +251,8 @@ def create_ca():
                 return error_response('Parent CA not found', 400)
             if not parent_ca.has_private_key:
                 return error_response('Parent CA has no private key', 400)
+            if not parent_ca.crt:
+                return error_response('Parent CA is awaiting its certificate', 400)
             # Check parent CA is not expired
             parent_cert = x509.load_pem_x509_certificate(
                 base64.b64decode(parent_ca.crt), default_backend()
@@ -362,6 +364,33 @@ def create_ca():
             if ku_err:
                 return error_response(ku_err, 400)
             key_usage = list(dict.fromkeys(s.strip() for s in raw_ku if isinstance(s, str)))
+
+        # External-CSR mode (#298): generate the key pair + CA CSR now, the
+        # certificate is installed later via POST /cas/<id>/certificate.
+        # validityYears/parentCAId/EKU/constraints are decided by the external
+        # signer and deliberately not consumed here.
+        if data.get('type') == 'external':
+            ca = CAService.create_external_ca(
+                descr=description,
+                dn=dn,
+                key_type=key_type,
+                digest=digest,
+                username=username,
+                path_length=path_length,
+                key_usage=key_usage if raw_ku is not None else None,
+                hsm_provider_id=int(hsm_provider_id) if hsm_provider_id else None,
+                hsm_key_id=int(hsm_key_id) if hsm_key_id else None,
+                hsm_key_label=hsm_key_label,
+                hsm_key_algorithm=hsm_key_algorithm,
+                named_urls=bool(data.get('namedUrls')),
+            )
+            ca_dict = ca.to_dict()
+            from services.webhook_service import emit_ca_created
+            emit_ca_created(ca_dict, actor=username)
+            return created_response(
+                data=ca_dict,
+                message='CA created — awaiting certificate from external CA'
+            )
 
         raw_eku = data.get('extendedKeyUsage')
         if raw_eku is None and data.get('extended_key_usage') is not None:
@@ -506,6 +535,13 @@ def update_ca(ca_id):
         return error_response('CA not found', 404)
 
     data = request.json or {}
+
+    # A pending external-CSR CA has no certificate: CDP/OCSP would advertise
+    # services it cannot serve.
+    if ca.is_pending and (data.get('cdp_enabled') or data.get('ocsp_enabled')):
+        return error_response(
+            'Cannot enable CDP/OCSP on a CA awaiting its certificate', 400
+        )
 
     # Track which fields actually changed for the audit log
     changed = []
@@ -749,6 +785,11 @@ def take_ca_offline(ca_id):
 
     if ca.offline:
         return error_response('CA is already offline', 409)
+
+    if ca.is_pending:
+        return error_response(
+            'Cannot take a pending CA offline — install its certificate first', 409
+        )
 
     if not ca.prv:
         return error_response(
