@@ -766,17 +766,13 @@ class TestRenewCertificate:
             # certificate_id should point back to the cert row (preserved for auditability)
             assert rs.certificate_id == old_id
 
-    def test_renew_clears_revocation(self, auth_client, create_cert):
-        """Renewing a revoked cert: in-place update clears the revoked flag."""
+    def test_renew_revoked_cert_blocked(self, auth_client, create_cert):
+        """Renewing a revoked cert is refused with 409 — issue a new cert instead."""
         cert = create_cert(cn='revoke-then-renew.example.com')
         cert_id = cert.get('id')
         post_json(auth_client, f'{BASE}/{cert_id}/revoke', {'reason': 'unspecified'})
         r = post_json(auth_client, f'{BASE}/{cert_id}/renew', {})
-        assert r.status_code == 200
-        data = get_json(r).get('data', get_json(r))
-        assert data.get('revoked') is False
-        # Same cert row (id preserved)
-        assert data.get('id') == cert_id
+        assert r.status_code == 409
 
 
 # ============================================================================
