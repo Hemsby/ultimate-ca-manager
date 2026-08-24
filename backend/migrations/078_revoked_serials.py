@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS revoked_serials (
 
 _INDEX_CAREF = "CREATE INDEX IF NOT EXISTS ix_revoked_serials_caref ON revoked_serials (caref)"
 _INDEX_SERIAL = "CREATE INDEX IF NOT EXISTS ix_revoked_serials_serial_number ON revoked_serials (serial_number)"
+_INDEX_CERT_ID = "CREATE INDEX IF NOT EXISTS ix_revoked_serials_certificate_id ON revoked_serials (certificate_id)"
 
 
 def _upgrade_sqlite(conn):
@@ -59,10 +60,14 @@ def _upgrade_sqlite(conn):
     if cur.fetchone():
         logger.info("078: revoked_serials table already exists, skipping table creation")
     else:
-        conn.executescript(_DDL_SQLITE)
-        conn.execute(_INDEX_CAREF)
-        conn.execute(_INDEX_SERIAL)
+        conn.execute(_DDL_SQLITE)
         logger.info("078: created revoked_serials table (SQLite)")
+
+    # Indexes are created unconditionally (IF NOT EXISTS) so they are
+    # added even when the table pre-exists without them.
+    conn.execute(_INDEX_CAREF)
+    conn.execute(_INDEX_SERIAL)
+    conn.execute(_INDEX_CERT_ID)
 
     # Add renewed_at and renewed_times columns to certificates table
     cur = conn.execute("PRAGMA table_info(certificates)")
@@ -85,9 +90,13 @@ def _upgrade_pg(conn):
         logger.info("078: revoked_serials table already exists, skipping table creation")
     else:
         conn.execute(text(_DDL_PG))
-        conn.execute(text(_INDEX_CAREF))
-        conn.execute(text(_INDEX_SERIAL))
         logger.info("078: created revoked_serials table (PostgreSQL)")
+
+    # Indexes are created unconditionally (IF NOT EXISTS) so they are
+    # added even when the table pre-exists without them.
+    conn.execute(text(_INDEX_CAREF))
+    conn.execute(text(_INDEX_SERIAL))
+    conn.execute(text(_INDEX_CERT_ID))
 
     # Add renewed_at and renewed_times columns to certificates table
     cert_cols = {col['name'] for col in insp.get_columns('certificates')}

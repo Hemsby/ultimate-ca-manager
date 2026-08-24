@@ -302,6 +302,27 @@ class LifecycleMixin:
         return certificate
 
     @staticmethod
+    def _restore_revocation_state(certificate, previous: dict, cert_id: int) -> None:
+        """Undo an in-memory revocation after the RevokedSerial write failed.
+
+        Restores the exact prior values (including a pre-existing
+        invalidityDate) instead of blanking the columns — a certificate that
+        was never successfully revoked must look untouched.
+        """
+        certificate.revoked = previous['revoked']
+        certificate.revoked_at = previous['revoked_at']
+        certificate.revoke_reason = previous['revoke_reason']
+        certificate.invalidity_at = previous['invalidity_at']
+        try:
+            db.session.commit()
+        except Exception as _rollback_err:
+            db.session.rollback()
+            logger.error(
+                f"Failed to roll back revocation for cert {cert_id}: {_rollback_err}",
+                exc_info=True,
+            )
+
+    @staticmethod
     def revoke_certificate(
         cert_id: int,
         reason: str = 'unspecified',
@@ -331,6 +352,15 @@ class LifecycleMixin:
 
         if certificate.revoked:
             raise ValueError("Certificate already revoked")
+
+        # Snapshot the pre-revocation state so a failed RevokedSerial write
+        # can be undone exactly (see _restore_revocation_state).
+        previous_state = {
+            'revoked': certificate.revoked,
+            'revoked_at': certificate.revoked_at,
+            'revoke_reason': certificate.revoke_reason,
+            'invalidity_at': certificate.invalidity_at,
+        }
 
         certificate.revoked = True
         certificate.revoked_at = utc_now()
@@ -374,19 +404,8 @@ class LifecycleMixin:
                     db.session.commit()
                 except Exception as _rs_err:
                     db.session.rollback()
-                    certificate.revoked = False
-                    certificate.revoked_at = None
-                    certificate.revoke_reason = None
-                    if invalidity_at is not None:
-                        certificate.invalidity_at = None
-                    try:
-                        db.session.commit()
-                    except Exception as _rollback_err:
-                        db.session.rollback()
-                        logger.error(
-                            f"Failed to roll back revocation for cert {cert_id}: {_rollback_err}",
-                            exc_info=True,
-                        )
+                    LifecycleMixin._restore_revocation_state(
+                        certificate, previous_state, cert_id)
                     raise RuntimeError(
                         f"Revocation failed for cert {cert_id}: unable to update "
                         f"revocation record: {_rs_err}"
@@ -412,19 +431,8 @@ class LifecycleMixin:
                     db.session.rollback()
                     # Roll back the revocation itself — the certificate must not
                     # appear revoked if we cannot persist the revocation record.
-                    certificate.revoked = False
-                    certificate.revoked_at = None
-                    certificate.revoke_reason = None
-                    if invalidity_at is not None:
-                        certificate.invalidity_at = None
-                    try:
-                        db.session.commit()
-                    except Exception as _rollback_err:
-                        db.session.rollback()
-                        logger.error(
-                            f"Failed to roll back revocation for cert {cert_id}: {_rollback_err}",
-                            exc_info=True,
-                        )
+                    LifecycleMixin._restore_revocation_state(
+                        certificate, previous_state, cert_id)
                     logger.error(
                         f"Revocation failed for cert {cert_id}: unable to add entry "
                         f"to revocation list: {_rs_err}",
@@ -440,7 +448,7 @@ class LifecycleMixin:
             AuditService.log_certificate('cert_revoked', certificate, f'Revoked certificate: {certificate.descr} - Reason: {reason}')
 
             # Auto-generate CRL if CA has CDP enabled
-            ca = CA.query.filter_by(refid=certificate.caref).first()
+            ca = CA.query.filter_by(refid=certificate.caref).first() if certificate.caref else None
             if ca and ca.cdp_enabled:
                 from services.crl_service import CRLService
                 try:
@@ -460,7 +468,7 @@ class LifecycleMixin:
         else:
             # Even in suppressed mode, invalidate OCSP cache so the old
             # serial is immediately reported as revoked.
-            ca = CA.query.filter_by(refid=certificate.caref).first()
+            ca = CA.query.filter_by(refid=certificate.caref).first() if certificate.caref else None
             if ca:
                 OCSPService.invalidate_cached_responses(
                     certificate.serial_number, ca_id=ca.id)

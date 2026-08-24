@@ -48,21 +48,51 @@ class CRLQueryMixin:
             RevokedSerial.valid_to > now
         ).all()
 
-        orphan_serials = []
-        for rs in revoked_serials:
-            if rs.serial_number in live_serials:
-                continue
-            # Skip if the certificate row still exists, is not revoked, AND
-            # still carries the same serial number (i.e. the cert was not
-            # renewed in-place). When the serials differ, the cert was
-            # renewed in-place — the old serial must still appear on the CRL.
-            if rs.certificate_id:
-                existing = db.session.get(Certificate, rs.certificate_id)
-                if existing and not existing.revoked and existing.serial_number == rs.serial_number:
-                    continue
-            orphan_serials.append(rs)
+        orphan_serials = CRLQueryMixin._filter_orphan_serials(
+            revoked_serials, live_serials
+        )
 
         return live_certs + orphan_serials
+
+    @staticmethod
+    def _filter_orphan_serials(revoked_serials: List, live_serials: set) -> List:
+        """Reduce RevokedSerial rows to the entries a CRL must still carry.
+
+        Shared by the full CRL (``get_revoked_certificates``) and the delta
+        CRL (``CRLGenerationMixin.generate_delta_crl``) so both apply the
+        same rules:
+
+        - drop entries whose serial already comes from a live Certificate row
+        - drop entries whose certificate row still exists, is not revoked AND
+          still carries the same serial number. When the serials differ the
+          certificate was renewed in-place, so the superseded serial MUST
+          stay on the CRL.
+        - drop duplicates: two rows for the same serial (possible when a
+          revoke and a renewal race) would otherwise emit the same serial
+          twice in one CRL.
+        """
+        cert_ids = {rs.certificate_id for rs in revoked_serials if rs.certificate_id}
+        certs_by_id = {}
+        if cert_ids:
+            certs_by_id = {
+                c.id: c
+                for c in Certificate.query.filter(Certificate.id.in_(cert_ids)).all()
+            }
+
+        orphan_serials = []
+        seen_serials = set()
+        for rs in revoked_serials:
+            if rs.serial_number in live_serials or rs.serial_number in seen_serials:
+                continue
+            if rs.certificate_id:
+                existing = certs_by_id.get(rs.certificate_id)
+                if (existing and not existing.revoked
+                        and existing.serial_number == rs.serial_number):
+                    continue
+            seen_serials.add(rs.serial_number)
+            orphan_serials.append(rs)
+
+        return orphan_serials
 
     @staticmethod
     def purge_stale_revoked_serials(ca_id: int) -> int:

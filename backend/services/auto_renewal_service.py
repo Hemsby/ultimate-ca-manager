@@ -1,19 +1,37 @@
 """
 Certificate Auto-Renewal Service
 Automatically renews certificates before they expire.
+
+Renewal itself is delegated to ``services.cert.renewal.renew_certificate_in_place``
+— the exact routine behind ``POST /api/v2/certificates/<id>/renew`` and
+``POST /api/v2/certificates/bulk/renew``. Auto-renewed certificates therefore
+get the same treatment as manually renewed ones: the superseded serial is
+recorded in ``revoked_serials`` (reason ``superseded``) so it stays on the CRL
+and answers ``revoked`` over OCSP, the row is updated in place (``id``,
+``refid`` and ``created_at`` preserved, ``renewed_at`` / ``renewed_times``
+maintained), and the same audit entry and ``cert_renewed`` webhook fire.
+
+The one deliberate difference: auto-renewal does **not** re-key. These
+certificates come from SCEP / EST / ACME enrollments where the private key was
+generated on the client and UCM only ever saw the public half — issuing a new
+key pair would hand the device a certificate it cannot use. The existing public
+key is re-signed instead; a device that wants a fresh key must re-enroll.
 """
-from datetime import datetime, timedelta
+from datetime import timedelta
 from models import db, Certificate, CA, SystemConfig, AuditLog
-from services.ca_service import CAService
+from services.cert.renewal import RenewalError, renew_certificate_in_place
 import logging
 from utils.datetime_utils import utc_now
 
 logger = logging.getLogger(__name__)
 
+# Actor recorded in the audit trail / webhooks for unattended renewals.
+AUTO_RENEWAL_ACTOR = 'auto-renewal'
+
 
 class AutoRenewalService:
     """Service for automatic certificate renewal"""
-    
+
     @staticmethod
     def get_renewal_config():
         """Get auto-renewal configuration"""
@@ -24,27 +42,27 @@ class AutoRenewalService:
             'notify_on_renewal': True,
             'notify_on_failure': True,
         }
-        
+
         enabled = SystemConfig.query.filter_by(key='auto_renewal_enabled').first()
         if enabled:
             config['enabled'] = enabled.value == 'true'
-        
+
         days = SystemConfig.query.filter_by(key='auto_renewal_days').first()
         if days:
             config['days_before_expiry'] = int(days.value)
-        
+
         sources = SystemConfig.query.filter_by(key='auto_renewal_sources').first()
         if sources:
             import json
             config['renewal_sources'] = json.loads(sources.value)
-        
+
         return config
-    
+
     @staticmethod
     def set_renewal_config(config: dict):
         """Update auto-renewal configuration"""
         import json
-        
+
         for key, value in config.items():
             db_key = f'auto_renewal_{key}'
             if key == 'enabled':
@@ -53,20 +71,20 @@ class AutoRenewalService:
                 db_value = json.dumps(value)
             else:
                 db_value = str(value)
-            
+
             existing = SystemConfig.query.filter_by(key=db_key).first()
             if existing:
                 existing.value = db_value
             else:
                 db.session.add(SystemConfig(key=db_key, value=db_value))
-        
+
         try:
             db.session.commit()
         except Exception as _commit_err:
             db.session.rollback()
             logger.error(f"Commit failed in services/auto_renewal_service.py:63: {_commit_err}", exc_info=True)
             raise
-    
+
     @staticmethod
     def get_certificates_for_renewal():
         """Get certificates eligible for auto-renewal"""
@@ -91,104 +109,65 @@ class AutoRenewalService:
         return certs
 
     @staticmethod
-    def renew_certificate(cert: Certificate) -> tuple:
+    def renew_certificate(cert: Certificate, regenerate_crl: bool = True) -> tuple:
         """
-        Renew a single certificate.
+        Renew a single certificate in place.
+
+        Uses the same routine as manual and bulk renewal, so the superseded
+        serial lands in `revoked_serials` and the certificate keeps its id,
+        refid and created_at.
+
+        Args:
+            cert: the certificate to renew.
+            regenerate_crl: publish a fresh CRL immediately. `run_auto_renewal`
+                passes False and regenerates once per CA after the batch.
 
         Returns:
-            (success: bool, new_cert_id or error_message: int|str)
+            (success: bool, cert_id or error_message: int|str)
         """
         try:
-            # Get the CA that issued this certificate (join on refid, not id)
-            ca = CA.query.filter_by(refid=cert.caref).first() if cert.caref else None
-            if not ca:
-                return False, "Issuing CA not found"
-
-            # Check CA is still valid
-            if ca.valid_to and ca.valid_to < utc_now():
-                return False, "Issuing CA has expired"
-
-            # Calculate new validity (same as original or default)
-            if cert.valid_from and cert.valid_to:
-                original_days = (cert.valid_to - cert.valid_from).days
-            else:
-                original_days = 365
-
-            # Re-issue with same subject and SANs
-            from cryptography import x509
-            from cryptography.hazmat.backends import default_backend
-
-            if cert.csr:
-                # Re-sign original CSR
-                import base64
-                csr_pem = base64.b64decode(cert.csr).decode()
-                csr = x509.load_pem_x509_csr(csr_pem.encode(), default_backend())
-            else:
-                # Can't renew without CSR
-                return False, "Original CSR not available for renewal"
-
-            # Renewal at par: the existing cert's names are graced by
-            # NameConstraints validation (fleets must not strand at expiry)
-            orig_cert_obj = None
-            try:
-                if cert.crt:
-                    import base64 as _b64
-                    orig_cert_obj = x509.load_pem_x509_certificate(
-                        _b64.b64decode(cert.crt), default_backend()
-                    )
-            except Exception:
-                orig_cert_obj = None
-
-            # Sign with new validity
-            new_cert_pem, serial = CAService.sign_csr_from_crypto(
-                ca=ca,
-                csr=csr,
-                validity_days=original_days,
-                source=f'{cert.source}-renewal',
-                renewal_of=orig_cert_obj,
+            renew_certificate_in_place(
+                cert,
+                username=AUTO_RENEWAL_ACTOR,
+                # Protocol-enrolled certificates keep their key — see the
+                # module docstring.
+                rekey=False,
+                regenerate_crl=regenerate_crl,
+                trigger='auto',
             )
+            return True, cert.id
 
-            # Get new certificate ID — scope by caref to disambiguate across CAs (#85)
-            new_cert = Certificate.query.filter_by(
-                serial_number=serial, caref=ca.refid
-            ).order_by(Certificate.id.desc()).first()
-
-            # Archive old certificate (no `superseded` status column exists)
-            cert.archived = True
-
-            # Audit log
-            log = AuditLog(
-                action='certificate.auto_renewed',
-                resource_type='certificate',
-                resource_id=new_cert.id if new_cert else None,
-                resource_name=cert.common_name,
-                details=f'Auto-renewed cert {cert.id}, new cert {new_cert.id if new_cert else "unknown"}'
-            )
-            db.session.add(log)
-            db.session.commit()
-
-            logger.info(f"Auto-renewed certificate {cert.id} -> {new_cert.id if new_cert else 'unknown'}")
-            return True, new_cert.id if new_cert else 0
+        except RenewalError as e:
+            db.session.rollback()
+            logger.warning(f"Auto-renewal refused for cert {cert.id}: {e.message}")
+            AutoRenewalService._log_failure(cert, e.message)
+            return False, e.message
 
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Auto-renewal failed for cert {cert.id}: {e}")
-            # Surface the failure in the audit trail — a silently-swallowed
-            # renewal failure means the certificate expires without warning
-            try:
-                fail_log = AuditLog(
-                    action='certificate.auto_renewal_failed',
-                    resource_type='certificate',
-                    resource_id=cert.id,
-                    resource_name=cert.common_name,
-                    details=f'Auto-renewal failed: {e}',
-                )
-                db.session.add(fail_log)
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
+            logger.error(f"Auto-renewal failed for cert {cert.id}: {e}", exc_info=True)
+            AutoRenewalService._log_failure(cert, str(e))
             return False, "Renewal failed"
-    
+
+    @staticmethod
+    def _log_failure(cert: Certificate, reason: str):
+        """Surface a renewal failure in the audit trail.
+
+        A silently-swallowed failure means the certificate expires without
+        warning, so this is best-effort but never allowed to raise.
+        """
+        try:
+            db.session.add(AuditLog(
+                action='certificate.auto_renewal_failed',
+                resource_type='certificate',
+                resource_id=cert.id,
+                resource_name=cert.common_name,
+                details=f'Auto-renewal failed: {reason}',
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
     @staticmethod
     def run_auto_renewal():
         """
@@ -199,21 +178,29 @@ class AutoRenewalService:
         if not config['enabled']:
             logger.debug("Auto-renewal is disabled")
             return {'renewed': 0, 'failed': 0, 'skipped': 0}
-        
+
         certs = AutoRenewalService.get_certificates_for_renewal()
-        
+
         stats = {'renewed': 0, 'failed': 0, 'skipped': 0, 'errors': []}
+        # CRLs are published once per CA after the batch — every renewal adds a
+        # superseded serial that only reaches relying parties through a CRL.
+        renewed_carefs = set()
 
         for cert in certs:
-            # Skip already-archived (already processed / superseded)
+            # Skip already-archived (superseded by a pre-in-place-renewal run)
             if cert.archived:
                 stats['skipped'] += 1
                 continue
 
-            success, result = AutoRenewalService.renew_certificate(cert)
+            caref = cert.caref
+            success, result = AutoRenewalService.renew_certificate(
+                cert, regenerate_crl=False
+            )
 
             if success:
                 stats['renewed'] += 1
+                if caref:
+                    renewed_carefs.add(caref)
             else:
                 stats['failed'] += 1
                 stats['errors'].append({
@@ -221,30 +208,49 @@ class AutoRenewalService:
                     'common_name': cert.common_name,
                     'error': result
                 })
-        
+
+        AutoRenewalService._publish_crls(renewed_carefs)
+
         logger.info(f"Auto-renewal complete: {stats['renewed']} renewed, {stats['failed']} failed")
-        
+
         # Send notifications if configured
         if config.get('notify_on_renewal') and stats['renewed'] > 0:
             AutoRenewalService._send_renewal_notification(stats)
-        
+
         if config.get('notify_on_failure') and stats['failed'] > 0:
             AutoRenewalService._send_failure_notification(stats)
-        
+
         return stats
-    
+
+    @staticmethod
+    def _publish_crls(carefs):
+        """Regenerate the CRL once per CDP-enabled CA touched by the batch."""
+        if not carefs:
+            return
+        from services.crl_service import CRLService
+        for caref in carefs:
+            ca = CA.query.filter_by(refid=caref).first()
+            if not ca or not ca.cdp_enabled:
+                continue
+            try:
+                CRLService.generate_crl(ca.id, username=AUTO_RENEWAL_ACTOR)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to auto-generate CRL for CA {ca.id} after auto-renewal: {e}"
+                )
+
     @staticmethod
     def _send_renewal_notification(stats: dict):
         """Send notification about successful renewals"""
         from services.email_service import EmailService
-        
+
         recipients = SystemConfig.query.filter_by(key='auto_renewal_notify_emails').first()
         if not recipients:
             return
-        
+
         import json
         emails = json.loads(recipients.value)
-        
+
         for email in emails:
             try:
                 EmailService.send_email(
@@ -255,24 +261,24 @@ class AutoRenewalService:
                 )
             except Exception as e:
                 logger.error(f"Failed to send renewal notification: {e}")
-    
+
     @staticmethod
     def _send_failure_notification(stats: dict):
         """Send notification about failed renewals"""
         from services.email_service import EmailService
-        
+
         recipients = SystemConfig.query.filter_by(key='auto_renewal_notify_emails').first()
         if not recipients:
             return
-        
+
         import json
         emails = json.loads(recipients.value)
-        
+
         error_list = '\n'.join([
             f"- {e['common_name']} (ID: {e['cert_id']}): {e['error']}"
             for e in stats.get('errors', [])
         ])
-        
+
         for email in emails:
             try:
                 EmailService.send_email(

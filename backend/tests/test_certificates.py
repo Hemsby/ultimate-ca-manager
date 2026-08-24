@@ -1016,7 +1016,7 @@ class TestRevokedSerialPersistence:
 
     def test_stale_revoked_serial_purged(self, auth_client, create_cert, app):
         """RevokedSerial entries past valid_to should be purged during CRL generation."""
-        from models import RevokedSerial, CA, db as _db
+        from models import RevokedSerial, CA, SystemConfig, db as _db
         from utils.datetime_utils import utc_now
         from datetime import timedelta
         cert = create_cert(cn='revserial-stale.example.com')
@@ -1031,6 +1031,14 @@ class TestRevokedSerialPersistence:
             _db.session.commit()
             ca = CA.query.filter_by(refid=rs.caref).first()
             ca_id = ca.id
+            # Enable auto-purge so CRL generation actually deletes stale entries
+            # (defaults to False — entries are preserved as audit records).
+            cfg = SystemConfig.query.filter_by(key='crl_auto_purge_stale_serials').first()
+            if cfg:
+                cfg.value = 'true'
+            else:
+                _db.session.add(SystemConfig(key='crl_auto_purge_stale_serials', value='true'))
+            _db.session.commit()
         # Trigger CRL generation which should purge the stale entry
         from services.crl_service import CRLService
         with app.app_context():

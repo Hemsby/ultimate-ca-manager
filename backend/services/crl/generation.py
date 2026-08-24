@@ -297,20 +297,20 @@ class CRLGenerationMixin:
             Certificate.valid_to > now
         ).all()
 
-        # Also include orphaned RevokedSerial entries revoked after the base CRL
+        # Also include orphaned RevokedSerial entries revoked after the base CRL.
+        # Uses the same filter as the full CRL so a serial superseded by an
+        # in-place renewal (cert row alive, not revoked, but carrying a new
+        # serial) is published on the delta instead of waiting for the next
+        # full CRL.
         live_serials = {c.serial_number for c in revoked_certs}
-        orphan_serials = RevokedSerial.query.filter(
+        orphan_candidates = RevokedSerial.query.filter(
             RevokedSerial.caref == ca.refid,
             RevokedSerial.revoked_at > base_crl.this_update,
             RevokedSerial.valid_to > now
         ).all()
-        for rs in orphan_serials:
-            if rs.serial_number not in live_serials:
-                if rs.certificate_id:
-                    existing = db.session.get(Certificate, rs.certificate_id)
-                    if existing and not existing.revoked:
-                        continue
-                revoked_certs.append(rs)
+        revoked_certs.extend(
+            CRLQueryMixin._filter_orphan_serials(orphan_candidates, live_serials)
+        )
 
         last_crl = CRLMetadata.query.filter_by(ca_id=ca_id).order_by(
             CRLMetadata.crl_number.desc()
