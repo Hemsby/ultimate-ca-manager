@@ -368,11 +368,18 @@ class LifecycleMixin:
         if invalidity_at is not None:
             certificate.invalidity_at = invalidity_at
 
+        # Flush so the in-memory changes are visible to the RevokedSerial
+        # query below, but do NOT commit yet — the certificate revocation and
+        # the RevokedSerial record must be persisted atomically so a worker
+        # can never observe a revoked cert without its persistent record.
         try:
-            db.session.commit()
-        except Exception as _commit_err:
+            db.session.flush()
+        except Exception as _flush_err:
             db.session.rollback()
-            logger.error(f"Commit failed in services/cert/mixins/lifecycle.py:283: {_commit_err}", exc_info=True)
+            logger.error(
+                f"Flush failed in revoke_certificate for cert {cert_id}: {_flush_err}",
+                exc_info=True,
+            )
             raise
 
         # Persist a revocation record that survives certificate deletion.
@@ -400,20 +407,6 @@ class LifecycleMixin:
                 existing_rs.invalidity_at = certificate.invalidity_at
                 existing_rs.valid_to = certificate.valid_to or (utc_now() + timedelta(days=365))
                 existing_rs.certificate_id = certificate.id
-                try:
-                    db.session.commit()
-                except Exception as _rs_err:
-                    db.session.rollback()
-                    LifecycleMixin._restore_revocation_state(
-                        certificate, previous_state, cert_id)
-                    raise RuntimeError(
-                        f"Revocation failed for cert {cert_id}: unable to update "
-                        f"revocation record: {_rs_err}"
-                    ) from _rs_err
-                logger.info(
-                    f"RevokedSerial updated for cert {cert_id} "
-                    f"(serial={certificate.serial_number})."
-                )
             else:
                 revoked_record = RevokedSerial(
                     caref=certificate.caref,
@@ -425,22 +418,30 @@ class LifecycleMixin:
                     certificate_id=certificate.id,
                 )
                 db.session.add(revoked_record)
-                try:
-                    db.session.commit()
-                except Exception as _rs_err:
-                    db.session.rollback()
-                    # Roll back the revocation itself — the certificate must not
-                    # appear revoked if we cannot persist the revocation record.
-                    LifecycleMixin._restore_revocation_state(
-                        certificate, previous_state, cert_id)
-                    logger.error(
-                        f"Revocation failed for cert {cert_id}: unable to add entry "
-                        f"to revocation list: {_rs_err}",
-                        exc_info=True,
-                    )
-                    raise RuntimeError(
-                        f"Revocation failed: Unable to add entry to revocation list"
-                    ) from _rs_err
+
+        # Single atomic commit — certificate revocation + RevokedSerial
+        # either both persist or both roll back.
+        try:
+            db.session.commit()
+        except Exception as _commit_err:
+            db.session.rollback()
+            LifecycleMixin._restore_revocation_state(
+                certificate, previous_state, cert_id)
+            logger.error(
+                f"Revocation failed for cert {cert_id}: unable to persist "
+                f"revocation record: {_commit_err}",
+                exc_info=True,
+            )
+            raise RuntimeError(
+                f"Revocation failed for cert {cert_id}: unable to persist "
+                f"revocation record: {_commit_err}"
+            ) from _commit_err
+
+        if certificate.caref:
+            logger.info(
+                f"RevokedSerial persisted for cert {cert_id} "
+                f"(serial={certificate.serial_number})."
+            )
 
         if not _suppress_events:
             # Audit log
