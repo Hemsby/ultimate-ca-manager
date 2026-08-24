@@ -3,12 +3,10 @@ CAs CRUD Operations
 """
 
 from . import bp
-from flask import request, g, jsonify
+from flask import request, g
 import base64
 import re
 import logging
-import traceback
-import uuid
 from datetime import datetime, timezone
 
 from auth.unified import require_auth, has_permission
@@ -697,12 +695,14 @@ def delete_ca(ca_id):
         # Delete dependent records before deleting CA
         from models.crl import CRLMetadata
         from models.ocsp import OCSPResponse
+        from models.revoked_serial import RevokedSerial
 
         crl_count = CRLMetadata.query.filter_by(ca_id=ca_id).delete()
         ocsp_count = OCSPResponse.query.filter_by(ca_id=ca_id).delete()
+        rs_count = RevokedSerial.query.filter_by(caref=ca.refid).delete()
 
-        if crl_count or ocsp_count:
-            logger.info(f"Deleted {crl_count} CRL(s) and {ocsp_count} OCSP response(s) for CA {ca_name}")
+        if crl_count or ocsp_count or rs_count:
+            logger.info(f"Deleted {crl_count} CRL(s), {ocsp_count} OCSP response(s), and {rs_count} revoked serial(s) for CA {ca_name}")
 
         username = g.current_user.username if hasattr(g, 'current_user') else 'system'
         # Delegate to the service so the CA cert/key files on disk are

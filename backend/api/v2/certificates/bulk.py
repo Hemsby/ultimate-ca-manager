@@ -8,20 +8,14 @@ import logging
 import os
 import subprocess
 import tempfile
-from datetime import timedelta
 from flask import request, g, Response
 from auth.unified import require_auth, has_permission
 from sqlalchemy import or_
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa, ec
-from cryptography.hazmat.backends import default_backend
-from cryptography.x509.oid import ExtensionOID
 
 from models import Certificate, CA, db
 from services.cert_service import CertificateService
+from services.cert.renewal import RenewalError, renew_certificate_in_place
 from services.audit_service import AuditService
-from utils.db_transaction import safe_commit
 from utils.response import success_response, error_response
 from utils.datetime_utils import utc_now
 from . import bp
@@ -81,6 +75,13 @@ def bulk_renew_certificates():
 
     ids = data['ids']
     results = {'success': [], 'failed': []}
+    # CAs whose CRL must be regenerated once the loop finishes — every
+    # renewal records the superseded serial in revoked_serials, and that
+    # entry only reaches relying parties through a fresh CRL.
+    renewed_ca_ids = set()
+
+    username = g.current_user.username if hasattr(g, 'current_user') else 'system'
+    actor_user_id = g.current_user.id if hasattr(g, 'current_user') else None
 
     for cert_id in ids:
         try:
@@ -88,99 +89,41 @@ def bulk_renew_certificates():
             if not cert:
                 results['failed'].append({'id': cert_id, 'error': 'Not found'})
                 continue
-            if not cert.crt:
-                results['failed'].append({'id': cert_id, 'error': 'No certificate data'})
-                continue
 
-            ca = CA.query.filter_by(refid=cert.caref).first()
-            if not ca or not ca.has_private_key:
-                results['failed'].append({'id': cert_id, 'error': 'Issuing CA not found or no private key'})
-                continue
-            if ca.offline:
-                results['failed'].append({'id': cert_id, 'error': 'CA is offline'})
-                continue
-
-            orig_cert_pem = base64.b64decode(cert.crt)
-            orig_cert = x509.load_pem_x509_certificate(orig_cert_pem, default_backend())
-            ca_cert_pem = base64.b64decode(ca.crt)
-            ca_cert = x509.load_pem_x509_certificate(ca_cert_pem, default_backend())
-            from services.hsm.ca_key_loader import get_ca_signing_key
-            ca_key = get_ca_signing_key(ca)
-
-            orig_pub_key = orig_cert.public_key()
-            if isinstance(orig_pub_key, rsa.RSAPublicKey):
-                new_key = rsa.generate_private_key(65537, orig_pub_key.key_size, default_backend())
-            elif isinstance(orig_pub_key, ec.EllipticCurvePublicKey):
-                new_key = ec.generate_private_key(orig_pub_key.curve, default_backend())
-            else:
-                new_key = rsa.generate_private_key(65537, 2048, default_backend())
-
-            orig_duration = orig_cert.not_valid_after_utc - orig_cert.not_valid_before_utc
-            validity_days = orig_duration.days if orig_duration.days > 0 else 365
-            if validity_days > 3650:
-                validity_days = 3650
-            now = utc_now()
-            not_after = now + timedelta(days=validity_days)
-            ca_not_after = ca_cert.not_valid_after_utc.replace(tzinfo=None)
-            if not_after > ca_not_after:
-                not_after = ca_not_after
-
-            try:
-                _bulk_sans = list(
-                    orig_cert.extensions.get_extension_for_oid(
-                        ExtensionOID.SUBJECT_ALTERNATIVE_NAME
-                    ).value
-                )
-            except x509.ExtensionNotFound:
-                _bulk_sans = None
-            try:
-                from services.trust_store.constraints_mixin import validate_name_constraints
-                validate_name_constraints(ca_cert, orig_cert.subject, _bulk_sans,
-                                          renewal_of=orig_cert)
-            except ValueError as exc:
-                results['failed'].append({'id': cert_id, 'error': f'Name constraints: {exc}'})
-                continue
-
-            builder = (x509.CertificateBuilder()
-                .subject_name(orig_cert.subject)
-                .issuer_name(ca_cert.subject)
-                .public_key(new_key.public_key())
-                .serial_number(x509.random_serial_number())
-                .not_valid_before(now)
-                .not_valid_after(not_after))
-
-            for ext in orig_cert.extensions:
-                if ext.oid in (ExtensionOID.AUTHORITY_KEY_IDENTIFIER, ExtensionOID.SUBJECT_KEY_IDENTIFIER):
-                    continue
-                try:
-                    builder = builder.add_extension(ext.value, ext.critical)
-                except Exception:
-                    pass
-
-            builder = builder.add_extension(x509.SubjectKeyIdentifier.from_public_key(new_key.public_key()), critical=False)
-            try:
-                builder = builder.add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_key.public_key()), critical=False)
-            except Exception:
-                pass
-
-            new_cert = builder.sign(ca_key, hashes.SHA256(), default_backend())
-            cert.crt = base64.b64encode(new_cert.public_bytes(serialization.Encoding.PEM)).decode()
-            cert.prv = base64.b64encode(new_key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption())).decode()
-            cert.serial_number = format(new_cert.serial_number, 'x')
-            cert.valid_from = now
-            cert.valid_to = not_after
-            cert.revoked = False
-            cert.revoked_at = None
-            cert.revoke_reason = None
-            ok, err = safe_commit(logger, f"Bulk renew failed for cert {cert_id}")
-            if not ok:
-                results['failed'].append({'id': cert_id, 'error': 'Renewal failed'})
-                continue
+            # Identical semantics to POST /<id>/renew — same shared routine,
+            # so the superseded serial, renewed_at/renewed_times, on-disk
+            # files, OCSP cache, audit entry and webhook all behave the same.
+            outcome = renew_certificate_in_place(
+                cert,
+                username=username,
+                actor_user_id=actor_user_id,
+                rekey=True,
+                # CRLs are published once per CA after the loop instead of
+                # once per certificate.
+                regenerate_crl=False,
+                trigger='bulk',
+            )
+            renewed_ca_ids.add(outcome['ca_id'])
             results['success'].append(cert_id)
+        except RenewalError as e:
+            db.session.rollback()
+            results['failed'].append({'id': cert_id, 'error': e.message})
         except Exception as e:
             db.session.rollback()
-            logger.error(f"Bulk renew failed for cert {cert_id}: {e}")
+            logger.error(f"Bulk renew failed for cert {cert_id}: {e}", exc_info=True)
             results['failed'].append({'id': cert_id, 'error': 'Renewal failed'})
+
+    # Publish the superseded serials once per CA instead of once per cert.
+    if renewed_ca_ids:
+        from services.crl_service import CRLService
+        for ca_id in renewed_ca_ids:
+            ca = db.session.get(CA, ca_id)
+            if not ca or not ca.cdp_enabled:
+                continue
+            try:
+                CRLService.generate_crl(ca_id, username=username)
+            except Exception as e:
+                logger.warning(f"Failed to auto-generate CRL for CA {ca_id} after bulk renewal: {e}")
 
     AuditService.log_action(
         action='certificates_bulk_renewed',

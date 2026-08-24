@@ -10,7 +10,19 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 ## [Unreleased]
 
 ### Security
-- Certificates: a valid, non-revoked X.509 certificate can no longer be deleted — deletion removed the record while the certificate stayed trusted until expiry, with no CRL/OCSP trace; revoke it first so relying parties see the change (single delete returns 409, bulk delete reports the item as failed). Expired or revoked certificates, and CSR-only records, are unaffected. Note: after a renewal, the superseded certificate must now be revoked before it can be deleted manually (#296, contributed by @gb-123-git)
+- Certificates: a valid, non-revoked X.509 certificate can no longer be deleted — deletion removed the record while the certificate stayed trusted until expiry, with no CRL/OCSP trace; revoke it first so relying parties see the change (single delete returns 409, bulk delete reports the item as failed). Expired or revoked certificates, and CSR-only records, are unaffected (#296, contributed by @gb-123-git & PMGA Tech LLP)
+- **Revocations now survive certificate deletion** — a new persistent `revoked_serials` store keeps every revoked or superseded serial on the CRL and answering `revoked` over OCSP until the original certificate's notAfter, even after the certificate record itself is deleted. A revocation and its persistent record are written in one transaction, and removing a certificate hold deletes both atomically, so relying parties can never observe a half-applied state (migration 078) (#297, contributed by @gb-123-git & PMGA Tech LLP)
+- Renewing a revoked certificate is refused (409) instead of silently clearing its revocation state — issue a new certificate instead (#297, contributed by @gb-123-git & PMGA Tech LLP)
+- Renewed private keys are encrypted at rest exactly as at issuance — bulk renewal previously stored them unencrypted, silently downgrading deployments with a master key configured (#297, contributed by @gb-123-git & PMGA Tech LLP)
+
+### Changed
+- **Certificate renewal is now in-place** — manual, bulk and automatic renewal share a single implementation that updates the existing certificate record: `id` and `refid` never change (API consumers and integrations keep their stored references), `created_at` preserves the original issuance date, and new `renewed_at` / `renewed_times` fields track the renewal history. The superseded serial is published on the CRL (reason `superseded`) and over OCSP until the old expiry. Certificates whose key UCM holds are re-keyed on renewal; protocol-enrolled certificates (SCEP/EST/ACME) are re-signed with their existing public key, since the private key lives on the client (#297, contributed by @gb-123-git & PMGA Tech LLP)
+
+### Added
+- Optional auto-purge of stale revoked-serial records (expired ones only) during CRL generation — default off, so records are kept as renewal-chain history unless an admin enables it (#297, contributed by @gb-123-git & PMGA Tech LLP)
+
+### Fixed
+- Auto-renewal notification settings are now honored — the notify toggles were never read back (notifications always sent) and boolean values did not survive a settings round-trip; malformed JSON in the auto-renewal configuration no longer crashes the scheduler (#297, contributed by @gb-123-git & PMGA Tech LLP)
 
 ## [2.213] - 2026-08-19
 
