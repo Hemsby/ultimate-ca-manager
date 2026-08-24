@@ -434,6 +434,45 @@ class CSROperationsMixin:
         return csr_pem, key_pem
 
     @staticmethod
+    def generate_ca_csr(
+        subject: x509.Name,
+        private_key,
+        digest: str = 'sha256',
+        path_length: Optional[int] = None,
+        key_usage: Optional[List[str]] = None,
+    ) -> bytes:
+        """Generate a CA-flavored CSR for external signing (#298).
+
+        The CSR asserts BasicConstraints CA:TRUE (with the requested
+        pathLenConstraint, which the external signer may clamp) and a CA
+        KeyUsage, both critical. No SKI is included — signers regenerate it
+        from the public key, exactly as UCM's own sign_csr does. The key is
+        passed in rather than generated here: HSM-backed keys
+        (HsmRSAPrivateKey/HsmECPrivateKey are virtual rsa/ec subclasses) sign
+        the CSR like any local key.
+        """
+        from utils.ca_profile import (
+            DEFAULT_INTERMEDIATE_KEY_USAGE, build_key_usage_extension,
+        )
+
+        builder = (
+            x509.CertificateSigningRequestBuilder()
+            .subject_name(subject)
+            .add_extension(
+                x509.BasicConstraints(ca=True, path_length=path_length),
+                critical=True,
+            )
+            .add_extension(
+                build_key_usage_extension(key_usage or DEFAULT_INTERMEDIATE_KEY_USAGE),
+                critical=True,
+            )
+        )
+
+        hash_algo = HASH_ALGORITHMS.get(digest, hashes.SHA256())
+        csr = builder.sign(private_key, hash_algo, default_backend())
+        return csr.public_bytes(serialization.Encoding.PEM)
+
+    @staticmethod
     def sign_csr(
         csr_pem: bytes,
         ca_cert: x509.Certificate,

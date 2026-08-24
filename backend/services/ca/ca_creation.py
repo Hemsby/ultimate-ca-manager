@@ -4,7 +4,7 @@ CA creation and import operations
 import base64
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
 from cryptography import x509
@@ -16,14 +16,95 @@ from models import CA, db
 from models.hsm import HsmKey
 from services.audit_service import AuditService
 from services.trust_store import TrustStoreService
-from utils.datetime_utils import to_naive_utc
-from .helpers import save_ca_files
+from utils.datetime_utils import to_naive_utc, utc_now
+from .helpers import save_ca_files, save_ca_key_file
 
 logger = logging.getLogger(__name__)
 
 
 class CACreationMixin:
     """CA creation and import operations"""
+
+    @staticmethod
+    def _resolve_signing_key(
+        key_type: str,
+        hsm_provider_id: Optional[int],
+        hsm_key_id: Optional[int],
+        hsm_key_label: Optional[str],
+        hsm_key_algorithm: Optional[str],
+    ):
+        """Resolve the CA signing key: local generation, existing HSM key, or
+        new HSM key.
+
+        Returns (private_key, key_pem_bytes_or_None, hsm_key_or_None).
+        key_pem is None for HSM-backed keys (no on-disk PEM).
+        """
+        from services.hsm import HsmService
+        from services.hsm.hsm_private_key import load_hsm_private_key
+
+        if hsm_key_id and (hsm_provider_id or hsm_key_label or hsm_key_algorithm):
+            raise ValueError(
+                "Provide either hsm_key_id (existing key) OR "
+                "hsm_provider_id+hsm_key_label+hsm_key_algorithm (generate new)"
+            )
+
+        use_hsm = bool(hsm_key_id) or bool(hsm_provider_id)
+        if not use_hsm:
+            private_key = TrustStoreService.generate_private_key(key_type)
+            key_pem = private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption()
+            )
+            return private_key, key_pem, None
+
+        if hsm_key_id:
+            # Lock the HSM key row to serialise concurrent CA creations
+            # binding the same key. The DB also enforces uq_ca_hsm_key_id
+            # (migration 032) as a defense-in-depth safety net.
+            try:
+                hsm_key = (
+                    HsmKey.query.filter_by(id=hsm_key_id)
+                    .with_for_update()
+                    .one_or_none()
+                )
+            except Exception:
+                # SQLite has no row-level locks; fall back to plain lookup.
+                hsm_key = db.session.get(HsmKey, hsm_key_id)
+            if not hsm_key:
+                raise ValueError(f"HSM key {hsm_key_id} not found")
+            if CA.query.filter_by(hsm_key_id=hsm_key.id).first():
+                raise ValueError(
+                    f"HSM key {hsm_key.label} is already bound to another CA"
+                )
+        else:
+            if not (hsm_provider_id and hsm_key_label and hsm_key_algorithm):
+                raise ValueError(
+                    "hsm_provider_id, hsm_key_label and hsm_key_algorithm "
+                    "are all required to generate a new HSM key"
+                )
+            hsm_key = HsmService.generate_key(
+                provider_id=hsm_provider_id,
+                label=hsm_key_label,
+                algorithm=hsm_key_algorithm,
+                purpose='signing',
+            )
+
+        return load_hsm_private_key(hsm_key.id), None, hsm_key
+
+    @staticmethod
+    def _encode_private_key(key_pem: Optional[bytes]) -> Optional[str]:
+        """Base64-encode a PEM key and encrypt it at rest when enabled."""
+        if key_pem is None:
+            return None
+        prv_encoded = base64.b64encode(key_pem).decode('utf-8')
+        try:
+            from security.encryption import key_encryption
+            if key_encryption.is_enabled:
+                prv_encoded = key_encryption.encrypt(prv_encoded)
+        except ImportError:
+            pass
+        return prv_encoded
 
     @staticmethod
     def _unique_url_slug(descr):
@@ -90,63 +171,13 @@ class CACreationMixin:
         Returns:
             CA model instance
         """
-        from services.hsm import HsmService
-        from services.hsm.hsm_private_key import load_hsm_private_key
         from services.hsm.ca_key_loader import get_ca_signing_key
 
         # Resolve signing key - local generation, existing HSM key, or new HSM key
-        use_hsm = bool(hsm_key_id) or bool(hsm_provider_id)
-        hsm_key = None
-
-        if hsm_key_id and (hsm_provider_id or hsm_key_label or hsm_key_algorithm):
-            raise ValueError(
-                "Provide either hsm_key_id (existing key) OR "
-                "hsm_provider_id+hsm_key_label+hsm_key_algorithm (generate new)"
-            )
-
-        if use_hsm:
-            if hsm_key_id:
-                # Lock the HSM key row to serialise concurrent CA creations
-                # binding the same key. The DB also enforces uq_ca_hsm_key_id
-                # (migration 032) as a defense-in-depth safety net.
-                try:
-                    hsm_key = (
-                        HsmKey.query.filter_by(id=hsm_key_id)
-                        .with_for_update()
-                        .one_or_none()
-                    )
-                except Exception:
-                    # SQLite has no row-level locks; fall back to plain lookup.
-                    hsm_key = db.session.get(HsmKey, hsm_key_id)
-                if not hsm_key:
-                    raise ValueError(f"HSM key {hsm_key_id} not found")
-                if CA.query.filter_by(hsm_key_id=hsm_key.id).first():
-                    raise ValueError(
-                        f"HSM key {hsm_key.label} is already bound to another CA"
-                    )
-            else:
-                if not (hsm_provider_id and hsm_key_label and hsm_key_algorithm):
-                    raise ValueError(
-                        "hsm_provider_id, hsm_key_label and hsm_key_algorithm "
-                        "are all required to generate a new HSM key"
-                    )
-                hsm_key = HsmService.generate_key(
-                    provider_id=hsm_provider_id,
-                    label=hsm_key_label,
-                    algorithm=hsm_key_algorithm,
-                    purpose='signing',
-                )
-
-            private_key = load_hsm_private_key(hsm_key.id)
-            key_pem = None  # HSM keys don't have on-disk PEM
-        else:
-            # Local key generation
-            private_key = TrustStoreService.generate_private_key(key_type)
-            key_pem = private_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption()
-            )
+        private_key, key_pem, hsm_key = CACreationMixin._resolve_signing_key(
+            key_type, hsm_provider_id, hsm_key_id, hsm_key_label, hsm_key_algorithm
+        )
+        use_hsm = hsm_key is not None
 
         # Build subject
         subject = TrustStoreService.build_subject(dn)
@@ -166,6 +197,8 @@ class CACreationMixin:
             parent_ca = CA.query.filter_by(refid=caref).first()
             if not parent_ca:
                 raise ValueError(f"Parent CA not found: {caref}")
+            if not parent_ca.crt:
+                raise ValueError("Parent CA is awaiting its certificate")
 
             # Load parent CA certificate
             parent_cert_pem = base64.b64decode(parent_ca.crt)
@@ -241,15 +274,7 @@ class CACreationMixin:
         cert = x509.load_pem_x509_certificate(cert_pem, default_backend())
 
         # Encrypt private key if encryption is enabled (local keys only)
-        prv_encoded = None
-        if key_pem is not None:
-            prv_encoded = base64.b64encode(key_pem).decode('utf-8')
-            try:
-                from security.encryption import key_encryption
-                if key_encryption.is_enabled:
-                    prv_encoded = key_encryption.encrypt(prv_encoded)
-            except ImportError:
-                pass
+        prv_encoded = CACreationMixin._encode_private_key(key_pem)
 
         # Extract SKI from generated cert
         ca_ski = None
@@ -344,31 +369,12 @@ class CACreationMixin:
             default_backend()
         )
 
-        # Validate it's a CA certificate (RFC 5280 §4.2.1.9 + §4.2.1.3)
-        try:
-            bc = cert.extensions.get_extension_for_oid(
-                x509.oid.ExtensionOID.BASIC_CONSTRAINTS
-            )
-            if not bc.value.ca:
-                raise ValueError("Certificate is not a CA certificate")
-        except x509.ExtensionNotFound:
-            raise ValueError("Certificate has no BasicConstraints extension")
-
-        # RFC 5280 §4.2.1.3 — CA certs MUST assert keyCertSign in KeyUsage when
-        # KeyUsage extension is present. Reject obviously misissued CAs.
-        try:
-            ku = cert.extensions.get_extension_for_oid(
-                x509.oid.ExtensionOID.KEY_USAGE
-            )
-            if not ku.value.key_cert_sign:
-                raise ValueError(
-                    "Certificate KeyUsage does not assert keyCertSign — not a valid CA cert"
-                )
-        except x509.ExtensionNotFound:
-            # KeyUsage absent: tolerated for legacy roots, but log
-            logger.warning(
-                f"Imported CA {descr} has no KeyUsage extension (RFC 5280 §4.2.1.3 recommends keyCertSign)"
-            )
+        # Validate it's a CA certificate (RFC 5280 §4.2.1.9 + §4.2.1.3) —
+        # shared with the external-CSR completion so both enforce the same rules.
+        from utils.ca_profile import validate_ca_certificate
+        ca_warning = validate_ca_certificate(cert)
+        if ca_warning:
+            logger.warning(f"Imported CA {descr}: {ca_warning}")
 
         # Extract SKI for AKI fallback in CRL/cert signing
         ca_ski = None
@@ -382,17 +388,9 @@ class CACreationMixin:
 
         # Encrypt imported private key at rest, mirroring create_internal_ca
         # (otherwise imported CA keys sit base64-only in the DB).
-        prv_encoded = None
-        if key_pem:
-            prv_encoded = base64.b64encode(
-                key_pem.encode() if isinstance(key_pem, str) else key_pem
-            ).decode('utf-8')
-            try:
-                from security.encryption import key_encryption
-                if key_encryption.is_enabled:
-                    prv_encoded = key_encryption.encrypt(prv_encoded)
-            except ImportError:
-                pass
+        prv_encoded = CACreationMixin._encode_private_key(
+            key_pem.encode() if isinstance(key_pem, str) else key_pem
+        ) if key_pem else None
 
         # Create CA record
         ca = CA(
@@ -427,3 +425,290 @@ class CACreationMixin:
         save_ca_files(ca, cert_path_bytes, key_path_bytes)
 
         return ca
+
+    # ------------------------------------------------------------------
+    # External-CSR mode (#298): key pair lives in UCM, certificate is
+    # signed by an external (typically offline root) CA.
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def create_external_ca(
+        descr: str,
+        dn: Dict[str, str],
+        key_type: str = '2048',
+        digest: str = 'sha256',
+        username: str = 'system',
+        path_length: Optional[int] = None,
+        key_usage: Optional[List[str]] = None,
+        hsm_provider_id: Optional[int] = None,
+        hsm_key_id: Optional[int] = None,
+        hsm_key_label: Optional[str] = None,
+        hsm_key_algorithm: Optional[str] = None,
+        named_urls: bool = False,
+    ) -> CA:
+        """Create a pending CA: key pair + CA CSR, no certificate yet.
+
+        The row uses the crt='' sentinel until complete_external_ca installs
+        the externally signed certificate. The private key (or HSM binding)
+        is created immediately so the CSR's public key is final.
+        """
+        private_key, key_pem, hsm_key = CACreationMixin._resolve_signing_key(
+            key_type, hsm_provider_id, hsm_key_id, hsm_key_label, hsm_key_algorithm
+        )
+
+        subject = TrustStoreService.build_subject(dn)
+        csr_pem = TrustStoreService.generate_ca_csr(
+            subject, private_key, digest=digest,
+            path_length=path_length, key_usage=key_usage,
+        )
+
+        ca = CA(
+            refid=str(uuid.uuid4()),
+            url_slug=CACreationMixin._unique_url_slug(descr) if named_urls else None,
+            descr=descr,
+            crt='',  # pending sentinel — awaiting the external certificate
+            csr=base64.b64encode(csr_pem).decode('utf-8'),
+            prv=CACreationMixin._encode_private_key(key_pem),
+            serial=0,
+            caref=None,
+            subject=subject.rfc4514_string(),
+            imported_from='external_csr',
+            created_by=username,
+            path_length=path_length,
+            hsm_key_id=hsm_key.id if hsm_key else None,
+        )
+
+        db.session.add(ca)
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to persist pending external CA: {e}")
+            raise
+
+        hsm_note = f' (HSM key: {hsm_key.label})' if hsm_key else ''
+        AuditService.log_ca(
+            'ca_created', ca,
+            f'Created external-CSR CA: {descr}{hsm_note} (awaiting certificate)'
+        )
+
+        # Only the key goes on disk at this stage; the certificate file is
+        # written by complete_external_ca. No CDP/OCSP until activation.
+        if key_pem is not None:
+            save_ca_key_file(ca, key_pem)
+
+        return ca
+
+    @staticmethod
+    def complete_external_ca(
+        ca: CA,
+        cert_pem: bytes,
+        username: str = 'system',
+    ) -> Tuple[CA, List[str]]:
+        """Install the externally signed certificate on an external-CSR CA.
+
+        Serves both the first activation of a pending CA and a renewal on an
+        already-active one — the invariant is identical: the certificate's
+        public key MUST match the stored private key. Raises ValueError with
+        a user-safe message on every rejection.
+
+        Returns (ca, warnings).
+        """
+        from services.hsm.ca_key_loader import get_ca_signing_key
+        from utils.ca_profile import validate_ca_certificate
+        from utils.key_match import certificate_matches_private_key
+
+        warnings: List[str] = []
+        was_pending = ca.is_pending
+
+        cert = x509.load_pem_x509_certificate(cert_pem, default_backend())
+
+        # 1. The uploaded certificate must belong to this CA's key — checked
+        #    before anything else so a certificate for the wrong CA can never
+        #    be attached, whatever else it looks like.
+        try:
+            private_key = get_ca_signing_key(ca)
+        except Exception as e:
+            logger.error(f"Cannot load signing key for CA {ca.id}: {e}", exc_info=True)
+            raise ValueError("CA private key is not available")
+        if not certificate_matches_private_key(cert, private_key):
+            raise ValueError("Certificate public key does not match this CA's private key")
+
+        # 2. CA constraints (same rules as CA import)
+        ca_warning = validate_ca_certificate(cert)
+        if ca_warning:
+            warnings.append(ca_warning)
+
+        # 3. Validity window
+        now = utc_now()
+        if to_naive_utc(cert.not_valid_after_utc) <= now:
+            raise ValueError("Certificate has already expired")
+        if to_naive_utc(cert.not_valid_before_utc) > now + timedelta(hours=24):
+            warnings.append("Certificate is not valid yet (notBefore is in the future)")
+
+        # 4. The signer is authoritative on the subject
+        cert_subject = cert.subject.rfc4514_string()
+        if ca.subject and cert_subject != ca.subject:
+            warnings.append("Certificate subject differs from the CSR subject")
+
+        # 5. SKI (uppercase — CA convention) and effective pathLen from the cert
+        new_ski = None
+        try:
+            ski_ext = cert.extensions.get_extension_for_oid(
+                ExtensionOID.SUBJECT_KEY_IDENTIFIER
+            )
+            new_ski = ski_ext.value.key_identifier.hex(':').upper()
+        except x509.ExtensionNotFound:
+            pass
+        new_path_length = None
+        try:
+            bc = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
+            new_path_length = bc.value.path_length
+        except x509.ExtensionNotFound:
+            pass
+
+        # 6. Chain to the issuing CA when it is known to UCM (AKI→SKI, then
+        #    issuer DN). Absence is non-blocking — the offline root may be
+        #    imported later, and chain-repair re-links orphans.
+        caref = None
+        parent = None
+        try:
+            aki_ext = cert.extensions.get_extension_for_oid(
+                ExtensionOID.AUTHORITY_KEY_IDENTIFIER
+            )
+            if aki_ext.value.key_identifier:
+                aki_hex = aki_ext.value.key_identifier.hex(':').upper()
+                parent = CA.query.filter(CA.ski == aki_hex, CA.id != ca.id).first()
+        except x509.ExtensionNotFound:
+            pass
+        if parent is None:
+            parent = CA.query.filter(
+                CA.subject == cert.issuer.rfc4514_string(), CA.id != ca.id
+            ).first()
+        if parent is not None and parent.crt:
+            try:
+                parent_cert = x509.load_pem_x509_certificate(
+                    base64.b64decode(parent.crt), default_backend()
+                )
+                cert.verify_directly_issued_by(parent_cert)
+                caref = parent.refid
+            except Exception:
+                warnings.append(
+                    "A CA matching the issuer was found but signature verification failed"
+                )
+        elif parent is None:
+            warnings.append(
+                "Issuing CA not found in UCM — import the external root "
+                "(certificate only) to complete the chain"
+            )
+
+        # 7. Install
+        ca.crt = base64.b64encode(cert_pem).decode('utf-8')
+        ca.subject = cert_subject
+        ca.issuer = cert.issuer.rfc4514_string()
+        ca.serial_number = str(cert.serial_number)
+        ca.ski = new_ski
+        ca.valid_from = cert.not_valid_before_utc
+        ca.valid_to = cert.not_valid_after_utc
+        ca.path_length = new_path_length
+        if caref:
+            ca.caref = caref
+        ca.csr = None  # the outstanding CSR is fulfilled
+
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to install certificate on CA {ca.id}: {e}", exc_info=True)
+            raise ValueError("Failed to install CA certificate")
+
+        # First activation: auto-enable CDP like create_internal_ca does
+        if was_pending:
+            try:
+                from utils.protocol_url import get_protocol_base_url
+                base_url = get_protocol_base_url()
+                if base_url:
+                    ca.cdp_enabled = True
+                    ca.set_cdp_urls([f"{base_url}/cdp/{ca.url_ref}.crl"])
+                    db.session.commit()
+            except Exception:
+                pass
+
+        AuditService.log_ca(
+            'ca_certificate_installed', ca,
+            f'External certificate installed (issuer: {cert.issuer.rfc4514_string()}, '
+            f'chained: {bool(ca.caref)}, renewal: {not was_pending})'
+        )
+
+        save_ca_files(ca, cert_pem, None)
+
+        return ca, warnings
+
+    @staticmethod
+    def regenerate_ca_csr(
+        ca: CA,
+        digest: Optional[str] = None,
+        username: str = 'system',
+    ) -> bytes:
+        """Re-issue a CA CSR from the CA's existing key (renewal, #298).
+
+        Same-key by construction: the CSR is signed with the stored (or
+        HSM-backed) private key, so the SKI stays stable across renewals.
+        Subject/KeyUsage/pathLen mirror the current certificate when one is
+        installed, else the outstanding CSR.
+        """
+        from services.hsm.ca_key_loader import get_ca_signing_key
+        from utils.ca_profile import KU_NAME_TO_ATTR
+
+        private_key = get_ca_signing_key(ca)
+
+        subject = None
+        key_usage = None
+        path_length = ca.path_length
+        if ca.crt:
+            cert = x509.load_pem_x509_certificate(
+                base64.b64decode(ca.crt), default_backend()
+            )
+            subject = cert.subject
+            try:
+                ku = cert.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE).value
+                key_usage = []
+                for name, attr in KU_NAME_TO_ATTR.items():
+                    if name == 'nonRepudiation':
+                        continue  # alias of contentCommitment
+                    try:
+                        # encipher_only/decipher_only raise unless
+                        # key_agreement is set — treat as absent.
+                        if getattr(ku, attr):
+                            key_usage.append(name)
+                    except ValueError:
+                        pass
+            except x509.ExtensionNotFound:
+                pass
+            try:
+                bc = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
+                path_length = bc.value.path_length
+            except x509.ExtensionNotFound:
+                pass
+        elif ca.csr:
+            subject = x509.load_pem_x509_csr(
+                base64.b64decode(ca.csr), default_backend()
+            ).subject
+        if subject is None:
+            raise ValueError("CA has neither a certificate nor a CSR to derive the subject from")
+
+        csr_pem = TrustStoreService.generate_ca_csr(
+            subject, private_key, digest=digest or 'sha256',
+            path_length=path_length, key_usage=key_usage,
+        )
+        ca.csr = base64.b64encode(csr_pem).decode('utf-8')
+
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Failed to store renewed CSR for CA {ca.id}: {e}", exc_info=True)
+            raise ValueError("Failed to store renewed CSR")
+
+        AuditService.log_ca('ca_csr_renewed', ca, f'CA CSR re-issued from existing key: {ca.descr}')
+        return csr_pem

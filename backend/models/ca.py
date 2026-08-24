@@ -16,8 +16,15 @@ class CA(db.Model):
     # in CDP/OCSP/AIA paths. NULL = refid-based URLs (default).
     url_slug = db.Column(db.String(64), unique=True)
     descr = db.Column(db.String(255), nullable=False)
-    crt = db.Column(db.Text, nullable=False)  # Base64 encoded
+    # Base64 encoded. '' (empty) = pending external-CSR CA awaiting its
+    # certificate (#298) — sentinel keeps the NOT NULL constraint so SQLite
+    # never needs a table rebuild.
+    crt = db.Column(db.Text, nullable=False)
     prv = db.Column(db.Text)  # Base64 encoded private key
+    # Base64 encoded PEM CSR (same encoding as Certificate.csr). Non-NULL =
+    # a CSR is outstanding: awaiting first certificate (pending CA) or a
+    # renewal via the external signer (#298).
+    csr = db.Column(db.Text)
     serial = db.Column(db.Integer, default=0)
     caref = db.Column(db.String(36))  # Parent CA refid for intermediate
     
@@ -103,6 +110,11 @@ class CA(db.Model):
         return bool(self.hsm_key_id)
 
     @property
+    def is_pending(self) -> bool:
+        """External-CSR CA still awaiting its signed certificate (#298)"""
+        return not self.crt
+
+    @property
     def url_ref(self) -> str:
         """Path segment for protocol URLs: opt-in slug, else refid (#207)"""
         return self.url_slug or self.refid or ''
@@ -173,19 +185,25 @@ class CA(db.Model):
     
     @property
     def key_type(self) -> str:
-        """Parse key type from certificate"""
-        if not self.crt:
+        """Parse key type from certificate (or from the CSR while pending)"""
+        if not self.crt and not self.csr:
             return "N/A"
         try:
             from cryptography import x509
             from cryptography.hazmat.backends import default_backend
             from cryptography.hazmat.primitives.asymmetric import rsa, ec, dsa
             import base64
-            
-            cert_pem = base64.b64decode(self.crt).decode('utf-8')
-            cert = x509.load_pem_x509_certificate(cert_pem.encode(), default_backend())
-            public_key = cert.public_key()
-            
+
+            if self.crt:
+                cert_pem = base64.b64decode(self.crt).decode('utf-8')
+                cert = x509.load_pem_x509_certificate(cert_pem.encode(), default_backend())
+                public_key = cert.public_key()
+            else:
+                csr_pem = base64.b64decode(self.csr).decode('utf-8')
+                public_key = x509.load_pem_x509_csr(
+                    csr_pem.encode(), default_backend()
+                ).public_key()
+
             if isinstance(public_key, rsa.RSAPublicKey):
                 return f"RSA {public_key.key_size}"
             elif isinstance(public_key, ec.EllipticCurvePublicKey):
@@ -306,9 +324,12 @@ class CA(db.Model):
         # Determine CA type (lowercase for frontend)
         ca_type = "root" if self.is_root else "intermediate"
         
-        # Determine status based on expiry
+        # Determine status: pending (awaiting external certificate) wins,
+        # otherwise derived from expiry
         status = "Active"
-        if self.valid_to:
+        if self.is_pending:
+            status = "Pending"
+        elif self.valid_to:
             if self.valid_to < utc_now():
                 status = "Expired"
         
@@ -356,7 +377,10 @@ class CA(db.Model):
             "locality": self.locality,
             "is_root": self.is_root,
             "type": ca_type,  # "Root CA" or "Intermediate"
-            "status": status,  # "Active" or "Expired"
+            "status": status,  # "Pending", "Active" or "Expired"
+            # External-CSR lifecycle (#298)
+            "pending": self.is_pending,
+            "has_csr": bool(self.csr),
             "certs": self.certificates.count() if self.certificates else 0,  # Count of issued certificates
             "key_type": self.key_type,
             "hash_algorithm": self.hash_algorithm,
@@ -406,6 +430,8 @@ class CA(db.Model):
             "offline_label": offline_label,
             # PEM for display/copy
             "pem": self._decode_pem(self.crt),
+            # Outstanding CSR (external-CSR mode, #298)
+            "csr_pem": self._decode_pem(self.csr),
         }
         if include_private:
             data["crt"] = self.crt

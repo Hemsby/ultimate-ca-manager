@@ -32,14 +32,21 @@ def save_ca_files(ca, cert_pem: bytes, key_pem: bytes = None) -> None:
 
     # Save private key (skip for HSM-backed CAs)
     if key_pem is not None:
-        key_path = ca_key_path(ca)
-        try:
-            with open(key_path, 'wb') as f:
-                f.write(key_pem)
-            key_path.chmod(0o600)
-        except Exception as e:
-            logger.error(f"Failed to save CA private key file: {e}")
-            raise
+        save_ca_key_file(ca, key_pem)
+
+
+def save_ca_key_file(ca, key_pem: bytes) -> None:
+    """Save only the CA private key file (pending external-CSR CAs have a key
+    on disk before any certificate exists)."""
+    key_path = ca_key_path(ca)
+    try:
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(key_path, 'wb') as f:
+            f.write(key_pem)
+        key_path.chmod(0o600)
+    except Exception as e:
+        logger.error(f"Failed to save CA private key file: {e}")
+        raise
 
 
 def delete_ca_files(ca) -> None:

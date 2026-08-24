@@ -152,3 +152,36 @@ def build_extended_key_usage_extension(eku_names: List[str]) -> Optional[x509.Ex
     if err:
         raise ValueError(err)
     return x509.ExtendedKeyUsage(to_object_identifiers(oids))
+
+
+def validate_ca_certificate(cert: x509.Certificate) -> Optional[str]:
+    """
+    Validate that a certificate is usable as a CA certificate
+    (RFC 5280 §4.2.1.9 BasicConstraints + §4.2.1.3 KeyUsage).
+
+    Raises ValueError on hard failures; returns a warning string when the
+    certificate is accepted but deserves a caveat (KeyUsage absent — tolerated
+    for legacy roots), or None when fully clean. Shared by CA import and the
+    external-CSR completion so both enforce identical rules.
+    """
+    try:
+        bc = cert.extensions.get_extension_for_oid(
+            x509.oid.ExtensionOID.BASIC_CONSTRAINTS
+        )
+        if not bc.value.ca:
+            raise ValueError("Certificate is not a CA certificate")
+    except x509.ExtensionNotFound:
+        raise ValueError("Certificate has no BasicConstraints extension")
+
+    try:
+        ku = cert.extensions.get_extension_for_oid(
+            x509.oid.ExtensionOID.KEY_USAGE
+        )
+        if not ku.value.key_cert_sign:
+            raise ValueError(
+                "Certificate KeyUsage does not assert keyCertSign — not a valid CA cert"
+            )
+    except x509.ExtensionNotFound:
+        return "Certificate has no KeyUsage extension (RFC 5280 §4.2.1.3 recommends keyCertSign)"
+
+    return None
