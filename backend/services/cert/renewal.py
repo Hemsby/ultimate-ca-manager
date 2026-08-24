@@ -309,7 +309,8 @@ def renew_certificate_in_place(
     try:
         ca_key = get_ca_signing_key(ca)
     except Exception as e:
-        raise RenewalError(f'Failed to load CA signing key: {e}', 500) from e
+        logger.error(f"Failed to load signing key for CA {ca.id}: {e}", exc_info=True)
+        raise RenewalError('Failed to load CA signing key', 500) from e
 
     now = utc_now()
     ca_not_after = ca_cert.not_valid_after_utc.replace(tzinfo=None)
