@@ -270,6 +270,12 @@ def renew_certificate_in_place(
     if not cert.crt:
         raise RenewalError('Certificate data not available', 400)
 
+    if cert.revoked:
+        raise RenewalError(
+            'Cannot renew a revoked certificate. Issue a new certificate instead.',
+            409,
+        )
+
     # Certificates issued by a Microsoft AD CS connection can't be re-signed
     # locally (the issuing CA's key lives on the Windows CA) — the caller must
     # resubmit the original CSR through the connector instead.
