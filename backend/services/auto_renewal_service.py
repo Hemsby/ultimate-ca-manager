@@ -68,8 +68,14 @@ class AutoRenewalService:
 
         sources = SystemConfig.query.filter_by(key='auto_renewal_sources').first()
         if sources:
-            config['renewal_sources'] = _safe_json_loads(
-                sources.value, config['renewal_sources'])
+            parsed = _safe_json_loads(sources.value, config['renewal_sources'])
+            if not isinstance(parsed, list):
+                logger.warning(
+                    "auto_renewal_sources is not a JSON list (%r), using default",
+                    sources.value,
+                )
+            else:
+                config['renewal_sources'] = parsed
 
         return config
 
@@ -262,6 +268,12 @@ class AutoRenewalService:
             return
 
         emails = _safe_json_loads(recipients.value, [])
+        if not isinstance(emails, list):
+            logger.warning(
+                "auto_renewal_notify_emails is not a JSON list (%r), skipping notifications",
+                recipients.value,
+            )
+            return
 
         for email in emails:
             try:
@@ -284,6 +296,12 @@ class AutoRenewalService:
             return
 
         emails = _safe_json_loads(recipients.value, [])
+        if not isinstance(emails, list):
+            logger.warning(
+                "auto_renewal_notify_emails is not a JSON list (%r), skipping failure notifications",
+                recipients.value,
+            )
+            return
 
         error_list = '\n'.join([
             f"- {e['common_name']} (ID: {e['cert_id']}): {e['error']}"
