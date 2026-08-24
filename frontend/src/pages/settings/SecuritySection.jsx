@@ -159,6 +159,13 @@ export default function SecuritySection({ settings, updateSetting, handleSave, s
             description={t('settings.crlAutoDeleteExpiredRevokedDesc')}
             disabled={!canAdminSettings}
           />
+          <ToggleSwitch
+            checked={settings.crl_auto_purge_stale_serials || false}
+            onChange={(val) => updateSetting('crl_auto_purge_stale_serials', val)}
+            label={t('settings.crlAutoPurgeStaleSerials')}
+            description={t('settings.crlAutoPurgeStaleSerialsDesc')}
+            disabled={!canAdminSettings}
+          />
           {canWriteSettings && (
             <Button type="button" onClick={() => handleSave('securityHsts')} disabled={saving}>
               <FloppyDisk size={16} />

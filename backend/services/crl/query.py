@@ -114,6 +114,24 @@ class CRLQueryMixin:
         return row.value.lower() in ('true', '1', 'yes', 'on')
 
     @staticmethod
+    def is_purge_stale_serials_enabled() -> bool:
+        """Check if auto-purge of stale RevokedSerial entries is enabled.
+
+        Reads the 'crl_auto_purge_stale_serials' system config key.
+        Defaults to False (off) — stale RevokedSerial entries are preserved
+        as audit records (renewal chain history) unless an admin enables this.
+        When enabled, entries with valid_to < now are deleted during full
+        CRL generation.
+        """
+        from models.system_config import SystemConfig
+        row = SystemConfig.query.filter_by(
+            key='crl_auto_purge_stale_serials'
+        ).first()
+        if not row or not row.value:
+            return False
+        return row.value.lower() in ('true', '1', 'yes', 'on')
+
+    @staticmethod
     def purge_expired_revoked_certificates(ca_id: int) -> int:
         """Delete expired+revoked Certificate rows for this CA.
 

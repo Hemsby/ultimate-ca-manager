@@ -162,9 +162,13 @@ class CRLGenerationMixin:
         from services.hsm.ca_key_loader import get_ca_signing_key
         ca_private_key = get_ca_signing_key(ca)
 
-        # Purge stale revocation records first (expired certs no longer need CRL entries)
+        # Purge stale revocation records (expired certs no longer need CRL entries).
+        # Gated by 'crl_auto_purge_stale_serials' setting — defaults to off so
+        # RevokedSerial entries are preserved as audit records (renewal chain
+        # history) unless an admin explicitly enables purging.
         try:
-            CRLQueryMixin.purge_stale_revoked_serials(ca_id)
+            if CRLQueryMixin.is_purge_stale_serials_enabled():
+                CRLQueryMixin.purge_stale_revoked_serials(ca_id)
         except Exception as e:
             logger.warning(f"Failed to purge stale revoked_serials for CA {ca_id}: {e}")
 

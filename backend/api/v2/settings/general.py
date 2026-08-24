@@ -51,6 +51,7 @@ _ADMIN_ONLY_SETTINGS = frozenset({
     'acme_public_tls_cert_id',
     'backup_password',
     'crl_auto_delete_expired_revoked',
+    'crl_auto_purge_stale_serials',
 })
 
 
@@ -117,6 +118,11 @@ def get_general_settings():
         # — expired revoked certs are kept as historical records unless an
         # admin explicitly enables this.
         'crl_auto_delete_expired_revoked': get_config('crl_auto_delete_expired_revoked', 'false') == 'true',
+        # CRL auto-purge: delete stale RevokedSerial entries (valid_to < now)
+        # during full CRL generation. Defaults to off — RevokedSerial entries
+        # are preserved as audit records (renewal chain history) unless an
+        # admin explicitly enables this.
+        'crl_auto_purge_stale_serials': get_config('crl_auto_purge_stale_serials', 'false') == 'true',
     })
 
 
@@ -177,6 +183,8 @@ def update_general_settings():
         'ocsp_response_validity_hours',
         # CRL auto-delete expired revoked certificates
         'crl_auto_delete_expired_revoked',
+        # CRL auto-purge stale RevokedSerial entries
+        'crl_auto_purge_stale_serials',
     ]
 
     if 'ocsp_response_validity_hours' in data:
