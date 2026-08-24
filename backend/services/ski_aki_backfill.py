@@ -39,7 +39,7 @@ def backfill_ski_aki():
 
     # --- CAs: populate SKI ---
     cas = CA.query.filter(
-        CA.crt.isnot(None),
+        CA.crt.isnot(None), CA.crt != '',
         CA.ski.is_(None)
     ).all()
 
@@ -103,7 +103,7 @@ def backfill_ski_aki():
     # --- Phase 2: Re-chain orphan CAs (caref empty but AKI available) ---
     orphan_cas_list = CA.query.filter(
         CA.caref.is_(None) | (CA.caref == ''),
-        CA.crt.isnot(None)
+        CA.crt.isnot(None), CA.crt != ''
     ).all()
 
     for ca in orphan_cas_list:

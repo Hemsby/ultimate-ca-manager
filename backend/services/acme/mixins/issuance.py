@@ -501,7 +501,8 @@ class IssuanceMixin:
         else:
             # Find first CA with a usable signing key (local or HSM)
             ca = CA.query.filter(
-                CA.prv.isnot(None) | CA.hsm_key_id.isnot(None)
+                (CA.prv.isnot(None) | CA.hsm_key_id.isnot(None)),
+                CA.crt != '',
             ).first()
         
         if not ca:
@@ -509,6 +510,9 @@ class IssuanceMixin:
         
         if not ca.has_private_key:
             return False, None, f"CA {ca.refid} has no private key"
+        
+        if not ca.crt:
+            return False, None, f"CA {ca.refid} is awaiting its certificate"
         
         # Extract CN from CSR for better description
         descr = f"ACME Certificate - Order {order.order_id}"

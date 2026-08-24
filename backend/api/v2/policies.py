@@ -124,6 +124,8 @@ def _issue_approved_certificate(approval):
         raise ValueError(f"CA {data['ca_id']} not found")
     if not ca.has_private_key:
         raise ValueError("CA private key not available")
+    if not ca.crt:
+        raise ValueError("CA is awaiting its certificate")
     if ca.offline:
         raise ValueError("CA is offline; restore it before issuing")
 

@@ -116,6 +116,9 @@ def get_scep_service(profile_slug=None):
     if not ca.has_private_key:
         return _reject(f"CA {ca.descr!r} has no private key")
 
+    if not ca.crt:
+        return _reject(f"CA {ca.descr!r} is awaiting its certificate")
+
     if ca.offline:
         return _reject(f"CA {ca.descr!r} is offline; restore it before using it for SCEP")
 

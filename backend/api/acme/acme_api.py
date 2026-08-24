@@ -1647,7 +1647,7 @@ def download_certificate(order_id: str):
         seen_cas.add(current_caref)
         ca = CA.query.filter_by(refid=current_caref).first()
         
-        if not ca:
+        if not ca or not ca.crt:
             break
         
         ca_cert_pem = base64.b64decode(ca.crt).decode('utf-8')

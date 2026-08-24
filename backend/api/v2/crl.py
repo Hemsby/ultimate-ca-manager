@@ -112,6 +112,9 @@ def regenerate_crl(ca_id):
     # Check if CA has private key
     if not ca.has_private_key:
         return error_response(f'CA "{ca.descr}" does not have a private key - cannot sign CRL', 400)
+
+    if not ca.crt:
+        return error_response(f'CA "{ca.descr}" is awaiting its certificate - cannot generate CRL', 409)
         
     # Check offline status
     if ca.offline:

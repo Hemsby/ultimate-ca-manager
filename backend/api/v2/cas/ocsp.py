@@ -52,6 +52,8 @@ def set_ocsp_responder(ca_id):
     ca = db.session.get(CA, ca_id)
     if not ca:
         return error_response('CA not found', 404)
+    if ca.is_pending:
+        return error_response('CA is awaiting its certificate', 409)
 
     data = request.get_json()
     cert_id = data.get('certificate_id') if data else None

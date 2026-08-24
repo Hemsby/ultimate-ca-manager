@@ -91,7 +91,7 @@ def get_crl(ca_ref):
 
     if not crl_meta or not crl_meta.crl_der or needs_regen:
         # No CRL in DB or it's expired — try to generate one if CA can sign.
-        if ca.has_private_key and ca.cdp_enabled:
+        if ca.has_private_key and ca.cdp_enabled and ca.crt:
             lock = _crl_lock_for(ca.id)
             acquired = lock.acquire(timeout=_CRL_GEN_TIMEOUT_SECONDS)
             if not acquired:

@@ -180,6 +180,9 @@ class CSRMixin:
         if not ca.has_private_key:
             raise ValueError("CA has no private key")
 
+        if not ca.crt:
+            raise ValueError("CA is awaiting its certificate")
+
         if ca.offline:
             raise ValueError("CA is offline")
 

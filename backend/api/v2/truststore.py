@@ -635,6 +635,9 @@ def add_ca_to_truststore(ca_refid):
     ca = CA.query.filter_by(refid=ca_refid).first()
     if not ca:
         return error_response('CA not found', 404)
+
+    if not ca.crt:
+        return error_response('CA is awaiting its certificate', 400)
     
     try:
         pem_data = base64.b64decode(ca.crt).decode('utf-8')

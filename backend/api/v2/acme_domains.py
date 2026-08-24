@@ -75,6 +75,8 @@ def create_domain():
             return error_response('Issuing CA not found', 404)
         if not ca.has_private_key:
             return error_response('Selected CA has no private key', 400)
+        if not ca.crt:
+            return error_response('Selected CA is awaiting its certificate', 400)
     
     # Create domain
     domain = AcmeDomain(
@@ -138,6 +140,8 @@ def update_domain(domain_id):
                 return error_response('Issuing CA not found', 404)
             if not ca.has_private_key:
                 return error_response('Selected CA has no private key', 400)
+            if not ca.crt:
+                return error_response('Selected CA is awaiting its certificate', 400)
             domain.issuing_ca_id = data['issuing_ca_id']
         else:
             domain.issuing_ca_id = None

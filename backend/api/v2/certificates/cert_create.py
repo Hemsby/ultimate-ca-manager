@@ -81,6 +81,9 @@ def create_certificate():
     if not ca.has_private_key:
         return error_response('CA private key not available', 400)
 
+    if not ca.crt:
+        return error_response('CA is awaiting its certificate', 400)
+
     if ca.offline:
         return error_response('CA is offline; restore it before issuing', 400)
 

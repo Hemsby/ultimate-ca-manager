@@ -109,6 +109,9 @@ class LifecycleMixin:
         if not ca.has_private_key:
             raise ValueError("CA has no private key - cannot sign certificates")
 
+        if not ca.crt:
+            raise ValueError("CA is awaiting its certificate - cannot sign certificates")
+
         # Load CA certificate
         ca_cert_pem = base64.b64decode(ca.crt)
         ca_cert = x509.load_pem_x509_certificate(ca_cert_pem, default_backend())

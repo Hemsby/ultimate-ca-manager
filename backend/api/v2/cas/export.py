@@ -54,7 +54,7 @@ def export_all_cas():
     else:
         export_format = request.args.get('format', 'pem').lower()
 
-    cas = CA.query.filter(CA.crt.isnot(None)).all()
+    cas = CA.query.filter(CA.crt.isnot(None), CA.crt != '').all()
     if not cas:
         return error_response('No CAs to export', 404)
 

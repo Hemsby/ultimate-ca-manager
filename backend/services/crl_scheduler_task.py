@@ -47,6 +47,10 @@ class CRLSchedulerTask:
             # Skip if no private key (can't sign CRL)
             if not ca.has_private_key:
                 return False, f"CA '{ca.descr}' has no private key"
+
+            # Skip pending external-CSR CAs (no certificate yet)
+            if not ca.crt:
+                return False, f"CA '{ca.descr}' is awaiting its certificate"
             
             # Get latest CRL
             latest_crl = CRLMetadata.query.filter_by(
@@ -143,7 +147,8 @@ class CRLSchedulerTask:
             # traceback on every cycle instead of a skip.
             cas_with_cdp = CA.query.filter_by(cdp_enabled=True).all()
             cas_with_keys = [
-                ca for ca in cas_with_cdp if ca.has_private_key and not ca.offline
+                ca for ca in cas_with_cdp
+                if ca.has_private_key and ca.crt and not ca.offline
             ]
             offline_skipped = sum(
                 1 for ca in cas_with_cdp if ca.has_private_key and ca.offline
@@ -187,7 +192,7 @@ class CRLSchedulerTask:
             # NOTE: has_private_key is a @property — filter in Python
             delta_cas = [
                 ca for ca in CA.query.filter_by(cdp_enabled=True, delta_crl_enabled=True).all()
-                if ca.has_private_key and not ca.offline
+                if ca.has_private_key and ca.crt and not ca.offline
             ]
             
             delta_count = 0

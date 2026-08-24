@@ -156,6 +156,9 @@ class CRLGenerationMixin:
         if not ca.has_private_key:
             raise ValueError(f"CA {ca.descr} does not have a private key - cannot sign CRL")
 
+        if not ca.crt:
+            raise ValueError(f"CA {ca.descr} is awaiting its certificate - cannot generate CRL")
+
         ca_cert_pem = base64.b64decode(ca.crt).decode('utf-8')
         ca_cert = x509.load_pem_x509_certificate(ca_cert_pem.encode(), default_backend())
 
@@ -280,6 +283,9 @@ class CRLGenerationMixin:
 
         if not base_crl:
             raise ValueError(f"No base CRL exists for CA {ca.descr} — generate a full CRL first")
+
+        if not ca.crt:
+            raise ValueError(f"CA {ca.descr} is awaiting its certificate - cannot generate CRL")
 
         ca_cert_pem = base64.b64decode(ca.crt).decode('utf-8')
         ca_cert = x509.load_pem_x509_certificate(ca_cert_pem.encode(), default_backend())

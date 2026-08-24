@@ -86,6 +86,13 @@ def timestamp_request():
             response.headers['Content-Type'] = 'text/plain'
             return response
 
+        # Pending external-CSR CAs have no certificate to sign with
+        if not ca.crt:
+            logger.warning(f"TSA request refused: CA '{ca.descr}' is awaiting its certificate")
+            response = make_response('TSA temporarily unavailable', 503)
+            response.headers['Content-Type'] = 'text/plain'
+            return response
+
         # Offline CAs must not sign (consistent with CSR/CRL signing paths)
         if ca.offline:
             logger.warning(f"TSA request refused: CA '{ca.descr}' is offline")

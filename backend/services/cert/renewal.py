@@ -295,6 +295,8 @@ def renew_certificate_in_place(
         raise RenewalError(
             'CA private key not available. Cannot renew without CA private key.', 400
         )
+    if not ca.crt:
+        raise RenewalError('Issuing CA is awaiting its certificate', 400)
     if ca.offline:
         raise RenewalError('CA is offline; restore it before renewing', 400)
 

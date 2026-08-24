@@ -113,6 +113,8 @@ def bulk_export_cas():
         if export_format == 'pem':
             pem_data = b''
             for ca in cas:
+                if not ca.crt:
+                    continue  # pending external-CSR CA — nothing to export
                 pem_data += base64.b64decode(ca.crt)
                 if not pem_data.endswith(b'\n'):
                     pem_data += b'\n'
@@ -121,6 +123,8 @@ def bulk_export_cas():
         elif export_format in ('pkcs7', 'p7b'):
             with tempfile.NamedTemporaryFile(mode='wb', suffix='.pem', delete=False) as f:
                 for ca in cas:
+                    if not ca.crt:
+                        continue  # pending external-CSR CA — nothing to export
                     f.write(base64.b64decode(ca.crt))
                     f.write(b'\n')
                 pem_file = f.name

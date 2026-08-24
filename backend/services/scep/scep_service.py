@@ -145,6 +145,9 @@ class SCEPService:
         if not self.ca:
             raise ValueError(f"CA not found: {ca_refid}")
 
+        if not self.ca.crt:
+            raise ValueError(f"CA {ca_refid} is awaiting its certificate")
+
         self._config_cache = {}
 
         self.ca_cert = x509.load_pem_x509_certificate(
