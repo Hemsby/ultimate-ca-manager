@@ -81,6 +81,29 @@ export const casService = {
     return apiClient.get(`/cas/${id}/certificates${buildQueryString(filters)}`)
   },
 
+  // External-CSR lifecycle (#298)
+  async downloadCsr(id) {
+    return apiClient.get(`/cas/${id}/csr`, { responseType: 'blob' })
+  },
+
+  /**
+   * Install the externally signed certificate.
+   * - pass { pemContent } for pasted PEM
+   * - pass { file } for an uploaded file (PEM or DER)
+   */
+  async uploadCertificate(id, { pemContent, file } = {}) {
+    if (file) {
+      const fd = new FormData()
+      fd.append('file', file)
+      return apiClient.upload(`/cas/${id}/certificate`, fd)
+    }
+    return apiClient.post(`/cas/${id}/certificate`, { pem_content: pemContent })
+  },
+
+  async renewCsr(id, { digest } = {}) {
+    return apiClient.post(`/cas/${id}/renew-csr`, digest ? { digest } : {})
+  },
+
   // Bulk operations
   async bulkDelete(ids) {
     return apiClient.post('/cas/bulk/delete', { ids })

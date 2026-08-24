@@ -2,7 +2,7 @@
  * CAs Page — detail panel for selected CA (mobile slide-over)
  */
 import { useState } from 'react'
-import { Download, Trash, Certificate, Clock, ShieldWarning, ShieldCheck, PushPin } from '@phosphor-icons/react'
+import { Download, Trash, Certificate, Clock, ShieldWarning, ShieldCheck, PushPin, FileArrowDown, UploadSimple, ArrowsClockwise } from '@phosphor-icons/react'
 import {
   Badge, Button,
   CompactSection, CompactGrid, CompactField, CompactStats,
@@ -12,7 +12,9 @@ import { ExportModal } from '../../components/ExportModal'
 import { TakeOfflineModal } from '../../components/cas/TakeOfflineModal'
 import { RestoreModal } from '../../components/cas/RestoreModal'
 import { ManageTemplatePinsModal } from '../../components/cas/ManageTemplatePinsModal'
-import { formatDate } from '../../lib/utils'
+import { UploadCACertModal } from './UploadCACertModal'
+import { casService } from '../../services'
+import { formatDate, downloadBlob } from '../../lib/utils'
 import { useNotification } from '../../contexts/NotificationContext'
 
 // =============================================================================
@@ -24,6 +26,32 @@ export function CADetailsPanel({ ca, canWrite, canDelete, onExport, onDelete, t 
   const [showOfflineModal, setShowOfflineModal] = useState(false)
   const [showRestoreModal, setShowRestoreModal] = useState(false)
   const [showPinsModal, setShowPinsModal] = useState(false)
+  const [showUploadCertModal, setShowUploadCertModal] = useState(false)
+  const { showSuccess, showError } = useNotification()
+
+  const isExternal = ca.imported_from === 'external_csr'
+
+  const handleDownloadCsr = async () => {
+    try {
+      const blob = await casService.downloadCsr(ca.id)
+      const name = (ca.name || ca.common_name || 'ca').replace(/[^a-zA-Z0-9._-]+/g, '_')
+      downloadBlob(blob, `${name}.csr`)
+    } catch (err) {
+      showError(err?.message || t('cas.csrDownloadFailed'))
+    }
+  }
+
+  const handleRenewCsr = async () => {
+    try {
+      const response = await casService.renewCsr(ca.id)
+      showSuccess(t('cas.csrDownloadStarted'))
+      window.dispatchEvent(new CustomEvent('ucm:data-changed', { detail: { type: 'ca' } }))
+      await handleDownloadCsr()
+    } catch (err) {
+      showError(err?.message || t('cas.csrDownloadFailed'))
+    }
+  }
+
   return (
     <>
     <ManageTemplatePinsModal
@@ -56,6 +84,27 @@ export function CADetailsPanel({ ca, canWrite, canDelete, onExport, onDelete, t 
         </div>
       </div>
 
+      {/* Awaiting-certificate banner (external-CSR mode, #298) */}
+      {ca.pending && (
+        <div className="rounded-lg px-3 py-2 bg-status-warning/20 border border-status-warning/40">
+          <div className="flex items-center gap-2 text-status-warning">
+            <Clock size={16} />
+            <span className="text-xs font-medium">{t('cas.awaitingCertificate')}</span>
+          </div>
+          <p className="text-2xs text-text-secondary mt-1">{t('cas.awaitingBannerText')}</p>
+          <div className="flex gap-1.5 mt-1.5">
+            <Button type="button" size="xs" variant="secondary" onClick={handleDownloadCsr}>
+              <FileArrowDown size={12} /> {t('cas.downloadCsr')}
+            </Button>
+            {canWrite('cas') && (
+              <Button type="button" size="xs" variant="primary" onClick={() => setShowUploadCertModal(true)}>
+                <UploadSimple size={12} /> {t('cas.uploadCertificate')}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Offline banner */}
       {ca.offline && (
         <div className="rounded-lg px-3 py-2 bg-status-warning/20 border border-status-warning/40">
@@ -81,22 +130,36 @@ export function CADetailsPanel({ ca, canWrite, canDelete, onExport, onDelete, t 
       <CompactStats stats={[
         { icon: Certificate, value: t('cas.certificateCount', { count: ca.certs || 0 }) },
         { icon: Clock, value: ca.valid_to ? formatDate(ca.valid_to, 'short') : '—' },
-        ca.offline
-          ? { badge: t('cas.offline'), badgeVariant: 'warning' }
-          : { badge: ca.status, badgeVariant: ca.status === 'Active' ? 'success' : 'danger' }
+        ca.pending
+          ? { badge: t('cas.awaitingCertificate'), badgeVariant: 'warning' }
+          : ca.offline
+            ? { badge: t('cas.offline'), badgeVariant: 'warning' }
+            : { badge: ca.status, badgeVariant: ca.status === 'Active' ? 'success' : 'danger' }
       ]} />
 
       {/* Export + Delete Actions */}
       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-        <Button type="button" size="xs" variant="secondary" onClick={() => setShowExportModal(true)}>
-          <Download size={14} /> {t('export.title')}
-        </Button>
-        {canWrite('cas') && (
+        {!ca.pending && (
+          <Button type="button" size="xs" variant="secondary" onClick={() => setShowExportModal(true)}>
+            <Download size={14} /> {t('export.title')}
+          </Button>
+        )}
+        {canWrite('cas') && !ca.pending && (
           <Button type="button" size="xs" variant="secondary" onClick={() => setShowPinsModal(true)}>
             <PushPin size={14} /> {t('templates.managePins')}
           </Button>
         )}
-        {canWrite('cas') && !ca.offline && (
+        {isExternal && !ca.pending && canWrite('cas') && !ca.offline && (
+          <Button type="button" size="xs" variant="secondary" onClick={handleRenewCsr}>
+            <ArrowsClockwise size={14} /> {t('cas.renewViaCsr')}
+          </Button>
+        )}
+        {isExternal && !ca.pending && ca.has_csr && canWrite('cas') && (
+          <Button type="button" size="xs" variant="secondary" onClick={() => setShowUploadCertModal(true)}>
+            <UploadSimple size={14} /> {t('cas.uploadCertificate')}
+          </Button>
+        )}
+        {canWrite('cas') && !ca.offline && !ca.pending && (
           <Button
             type="button"
             size="xs"
@@ -183,6 +246,12 @@ export function CADetailsPanel({ ca, canWrite, canDelete, onExport, onDelete, t 
     <RestoreModal
       open={showRestoreModal}
       onClose={() => setShowRestoreModal(false)}
+      ca={ca}
+    />
+
+    <UploadCACertModal
+      open={showUploadCertModal}
+      onClose={() => setShowUploadCertModal(false)}
       ca={ca}
     />
     </>

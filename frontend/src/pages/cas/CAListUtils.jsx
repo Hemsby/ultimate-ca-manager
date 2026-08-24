@@ -2,6 +2,7 @@
  * CAs Page — shared helpers and small reusable components
  */
 import { Certificate, Clock } from '@phosphor-icons/react'
+import { useTranslation } from 'react-i18next'
 import { cn } from '../../lib/utils'
 import { getAppTimezone } from '../../stores/timezoneStore'
 
@@ -65,14 +66,17 @@ export function CAInfoLine({ ca, isMobile, t }) {
 
 /** Status pill badge. Hidden when CA is offline (OfflineBadge takes over). */
 export function StatusBadge({ status, offline = false }) {
+  const { t } = useTranslation()
   if (offline) return null
+  // 'Pending' = external-CSR CA awaiting its certificate (#298)
+  const label = status === 'Pending' ? t('cas.awaitingCertificate') : status
   return (
     <span className={cn(
       'shrink-0 px-2 py-0.5 rounded-full text-2xs font-medium flex items-center gap-1',
       getStatusBadgeClass(status)
     )}>
       <span className={cn('w-1.5 h-1.5 rounded-full', getStatusDotClass(status))} />
-      {status || '?'}
+      {label || '?'}
     </span>
   )
 }

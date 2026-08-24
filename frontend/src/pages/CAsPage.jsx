@@ -327,12 +327,16 @@ export default function CAsPage() {
     const intermediateCount = cas.filter(c => c.type === 'intermediate').length
     const activeCount = cas.filter(c => c.status === 'Active').length
     const expiredCount = cas.filter(c => c.status === 'Expired').length
-    
+    const pendingCount = cas.filter(c => c.status === 'Pending').length
+
     return [
       { icon: Crown, label: t('common.rootCA'), value: rootCount, variant: 'warning' },
       { icon: ShieldCheck, label: t('common.intermediateCA'), value: intermediateCount, variant: 'primary' },
       { icon: Certificate, label: t('common.active'), value: activeCount, variant: 'success' },
-      { icon: Clock, label: t('common.expired'), value: expiredCount, variant: 'danger' }
+      { icon: Clock, label: t('common.expired'), value: expiredCount, variant: 'danger' },
+      ...(pendingCount > 0
+        ? [{ icon: Clock, label: t('cas.awaitingCertificate'), value: pendingCount, variant: 'warning' }]
+        : [])
     ]
   }, [cas, t])
 
@@ -360,6 +364,7 @@ export default function CAsPage() {
       options: [
         { value: 'Active', label: t('common.active') },
         { value: 'Expired', label: t('common.expired') },
+        { value: 'Pending', label: t('cas.awaitingCertificate') },
       ]
     }
   ], [filterType, filterStatus, t])
@@ -475,6 +480,7 @@ export default function CAsPage() {
                     options={[
                       { value: 'Active', label: t('common.active') },
                       { value: 'Expired', label: t('common.expired') },
+                      { value: 'Pending', label: t('cas.awaitingCertificate') },
                     ]}
                   />
                 </>

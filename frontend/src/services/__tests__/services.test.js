@@ -111,6 +111,29 @@ describe('casService', () => {
     })
   })
 
+  it('downloadCsr → GET /cas/:id/csr as blob', async () => {
+    await casService.downloadCsr(4)
+    expect(mockApiClient.get).toHaveBeenCalledWith('/cas/4/csr', { responseType: 'blob' })
+  })
+
+  it('uploadCertificate → POST /cas/:id/certificate with pem_content', async () => {
+    await casService.uploadCertificate(4, { pemContent: 'PEM' })
+    expect(mockApiClient.post).toHaveBeenCalledWith('/cas/4/certificate', { pem_content: 'PEM' })
+  })
+
+  it('uploadCertificate → upload /cas/:id/certificate with file', async () => {
+    const file = new File(['x'], 'signed.pem')
+    await casService.uploadCertificate(4, { file })
+    const call = mockApiClient.upload.mock.calls[0]
+    expect(call[0]).toBe('/cas/4/certificate')
+    expect(call[1]).toBeInstanceOf(FormData)
+  })
+
+  it('renewCsr → POST /cas/:id/renew-csr', async () => {
+    await casService.renewCsr(4, { digest: 'sha384' })
+    expect(mockApiClient.post).toHaveBeenCalledWith('/cas/4/renew-csr', { digest: 'sha384' })
+  })
+
   it('getCertificates → GET /cas/:id/certificates', async () => {
     await casService.getCertificates(2, { page: 1, per_page: 10 })
     const call = mockApiClient.get.mock.calls[0]

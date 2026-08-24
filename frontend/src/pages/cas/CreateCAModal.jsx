@@ -14,7 +14,7 @@ import { Modal, Input, Select, Button } from '../../components'
 import { casService, hsmService } from '../../services'
 import { useNotification } from '../../contexts'
 import { useWebSocket } from '../../hooks'
-import { extractData, cn } from '../../lib/utils'
+import { extractData, cn, downloadBlob } from '../../lib/utils'
 
 const ROOT_KEY_USAGE = ['keyCertSign', 'cRLSign']
 const INTERMEDIATE_KEY_USAGE = ['digitalSignature', 'keyCertSign', 'cRLSign']
@@ -101,7 +101,8 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
       setCreateFormEkuServerAuth(false)
     } else {
       setCreateFormKeyUsage(INTERMEDIATE_KEY_USAGE)
-      setCreateFormEkuServerAuth(true)
+      // External-CSR CAs carry no EKU: the external signer decides.
+      setCreateFormEkuServerAuth(createFormType === 'intermediate')
     }
   }, [createFormType])
 
@@ -146,9 +147,12 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
         description: formData.get('description'),
         keyAlgo: createFormKeyAlgo,
         keySize: createFormKeyAlgo === 'ECDSA' ? createFormKeySize : parseInt(createFormKeySize),
-        validityYears: parseInt(createFormValidity),
         type: createFormType,
-        parentCAId: createFormType === 'intermediate' ? createFormParentCAId : null,
+        // Validity and parent are decided by the external signer in external mode
+        ...(createFormType !== 'external' && {
+          validityYears: parseInt(createFormValidity),
+          parentCAId: createFormType === 'intermediate' ? createFormParentCAId : null,
+        }),
         ...(createFormPathLength !== '' && { pathLength: parseInt(createFormPathLength) }),
         namedUrls: createFormNamedUrls,
         hashAlgorithm: createFormDigest,
@@ -189,8 +193,16 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
       }
 
       muteToasts()
-      await casService.create(data)
-      showSuccess(t('messages.success.create.ca'))
+      const response = await casService.create(data)
+      const created = extractData(response)
+      if (created?.pending && created?.csr_pem) {
+        // Hand the CSR to the user right away — it goes to the external CA.
+        const name = (created.descr || created.common_name || 'ca').replace(/[^a-zA-Z0-9._-]+/g, '_')
+        downloadBlob(new Blob([created.csr_pem], { type: 'application/x-pem-file' }), `${name}.csr`)
+        showSuccess(t('cas.csrDownloadStarted'))
+      } else {
+        showSuccess(t('messages.success.create.ca'))
+      }
       onClose()
       onSuccess()
     } catch (error) {
@@ -424,19 +436,21 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
         </div>
         )}
 
-        <div className="space-y-4">
-          <Select
-            label={t('common.validityPeriod')}
-            options={[
-              { value: '5', label: t('cas.yearsValidity', { count: 5 }) },
-              { value: '10', label: t('cas.yearsValidity', { count: 10 }) },
-              { value: '15', label: t('cas.yearsValidity', { count: 15 }) },
-              { value: '20', label: t('cas.yearsValidity', { count: 20 }) }
-            ]}
-            value={createFormValidity}
-            onChange={(value) => setCreateFormValidity(value)}
-          />
-        </div>
+        {createFormType !== 'external' && (
+          <div className="space-y-4">
+            <Select
+              label={t('common.validityPeriod')}
+              options={[
+                { value: '5', label: t('cas.yearsValidity', { count: 5 }) },
+                { value: '10', label: t('cas.yearsValidity', { count: 10 }) },
+                { value: '15', label: t('cas.yearsValidity', { count: 15 }) },
+                { value: '20', label: t('cas.yearsValidity', { count: 20 }) }
+              ]}
+              value={createFormValidity}
+              onChange={(value) => setCreateFormValidity(value)}
+            />
+          </div>
+        )}
 
         <div className="space-y-4">
           <h3 className="text-sm font-semibold text-text-primary">{t('cas.caType')}</h3>
@@ -444,11 +458,15 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
             label={t('common.type')}
             options={[
               { value: 'root', label: t('cas.rootCASelfSigned') },
-              { value: 'intermediate', label: t('cas.intermediateCASigned') }
+              { value: 'intermediate', label: t('cas.intermediateCASigned') },
+              { value: 'external', label: t('cas.externalCASigned') }
             ]}
             value={createFormType}
             onChange={(value) => setCreateFormType(value)}
           />
+          {createFormType === 'external' && (
+            <p className="text-xs text-text-secondary">{t('cas.create.externalHint')}</p>
+          )}
           {createFormType === 'intermediate' && (
             <Select
               label={t('cas.parentCA')}

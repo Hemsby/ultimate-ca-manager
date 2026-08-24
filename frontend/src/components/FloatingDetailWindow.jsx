@@ -23,7 +23,8 @@ import { LoadingSpinner } from './LoadingSpinner'
 import { ExportModal } from './ExportModal'
 import { TakeOfflineModal } from './cas/TakeOfflineModal'
 import { RestoreModal } from './cas/RestoreModal'
-import { cn } from '../lib/utils'
+import { UploadCACertModal } from '../pages/cas/UploadCACertModal'
+import { cn, downloadBlob } from '../lib/utils'
 
 const ENTITY_CONFIG = {
   certificate: {
@@ -70,6 +71,7 @@ export function FloatingDetailWindow({ windowInfo }) {
   const [minimized, setMinimized] = useState(false)
   const [offlineModalOpen, setOfflineModalOpen] = useState(false)
   const [restoreModalOpen, setRestoreModalOpen] = useState(false)
+  const [uploadCertOpen, setUploadCertOpen] = useState(false)
   const [lintOpen, setLintOpen] = useState(false)
   const [keyRecoveryOpen, setKeyRecoveryOpen] = useState(false)
 
@@ -212,6 +214,33 @@ export function FloatingDetailWindow({ windowInfo }) {
     window.dispatchEvent(new CustomEvent('ucm:open-pins-modal', { detail: { caId: windowInfo.entityId } }))
   }
 
+  // External-CSR CA lifecycle (#298)
+  const handleDownloadCsr = async () => {
+    try {
+      const blob = await casService.downloadCsr(windowInfo.entityId)
+      const name = (data?.common_name || data?.descr || 'ca').replace(/[^a-zA-Z0-9._-]+/g, '_')
+      downloadBlob(blob, `${name}.csr`)
+    } catch (err) {
+      showError(err?.message || t('cas.csrDownloadFailed', 'Failed to download CSR'))
+    }
+  }
+
+  const handleRenewCsr = async () => {
+    try {
+      await casService.renewCsr(windowInfo.entityId)
+      showSuccess(t('cas.csrDownloadStarted', 'CSR generated — download started'))
+      window.dispatchEvent(new CustomEvent('ucm:data-changed', { detail: { type: 'ca' } }))
+      await handleDownloadCsr()
+      closeWindow(windowInfo.id)
+    } catch (err) {
+      showError(err?.message || t('cas.csrDownloadFailed', 'Failed to download CSR'))
+    }
+  }
+
+  const handleUploadCertSuccess = () => {
+    closeWindow(windowInfo.id)
+  }
+
   const title = data ? config.getTitle(data) : t('common.loading')
   const subtitle = data ? (windowInfo.type === 'ca' ? t(config.getSubtitle(data)) : config.getSubtitle(data)) : ''
 
@@ -232,9 +261,16 @@ export function FloatingDetailWindow({ windowInfo }) {
     onRenew: isCert && canWrite('certificates') && !data.revoked && (data.has_private_key || data.source === 'msca') ? handleRenew : null,
     onRevoke: (isCert || isUserCert) && canWrite(resource) && !data.revoked ? handleRevoke : null,
     onUnhold: isCert && canWrite('certificates') && data.revoked && (data.revoke_reason === 'certificateHold' || data.revoke_reason === 'certificate_hold') ? handleUnhold : null,
-    onOffline: isCA && canWrite('cas') && !data.offline ? handleOffline : null,
+    onOffline: isCA && canWrite('cas') && !data.offline && !data.pending ? handleOffline : null,
     onRestore: isCA && canWrite('cas') && data.offline ? handleRestore : null,
-    onManagePins: isCA && canWrite('cas') ? handleManagePins : null,
+    onManagePins: isCA && canWrite('cas') && !data.pending ? handleManagePins : null,
+    // External-CSR CA lifecycle (#298)
+    canExport: !(isCA && data.pending),
+    onDownloadCsr: isCA && data.has_csr ? handleDownloadCsr : null,
+    onUploadCertificate: isCA && canWrite('cas') && data.imported_from === 'external_csr'
+      && (data.pending || data.has_csr) && !data.offline ? () => setUploadCertOpen(true) : null,
+    onRenewCsr: isCA && canWrite('cas') && data.imported_from === 'external_csr'
+      && !data.pending && !data.offline ? handleRenewCsr : null,
     onDelete: canDelete(resource) ? handleDelete : null,
     t,
   } : null
@@ -313,6 +349,12 @@ export function FloatingDetailWindow({ windowInfo }) {
           ca={data}
           onSuccess={handleRestoreSuccess}
         />
+        <UploadCACertModal
+          open={uploadCertOpen}
+          onClose={() => setUploadCertOpen(false)}
+          ca={data}
+          onSuccess={handleUploadCertSuccess}
+        />
       </>
     )}
     </>
@@ -367,18 +409,44 @@ function DetailContent({ type, data, canWrite, canDelete, onExport, onDelete }) 
 /**
  * ActionBar — Toolbar under the window header with labeled action buttons
  */
-function ActionBar({ onExport, hasPrivateKey, canExportKey, entityType, entityName, onLint, onRequestKeyRecovery, onRenew, onRevoke, onUnhold, onOffline, onRestore, onManagePins, onDelete, t }) {
+function ActionBar({ onExport, hasPrivateKey, canExportKey, entityType, entityName, onLint, onRequestKeyRecovery, onRenew, onRevoke, onUnhold, onOffline, onRestore, onManagePins, onDelete, canExport = true, onDownloadCsr, onUploadCertificate, onRenewCsr, t }) {
   const [showExportModal, setShowExportModal] = useState(false)
   const btnBase = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-150'
 
   return (
     <>
     <div className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 border-b border-border-op40 bg-tertiary-op30">
-      {/* Export button → modal */}
-      <button onClick={() => setShowExportModal(true)} className={cn(btnBase, 'text-text-secondary hover:text-accent-primary hover:bg-accent-primary-op10')}>
-        <Certificate size={14} weight="duotone" />
-        {t('export.title', 'Export')}
-      </button>
+      {/* Export button → modal (hidden for pending external-CSR CAs) */}
+      {canExport && (
+        <button onClick={() => setShowExportModal(true)} className={cn(btnBase, 'text-text-secondary hover:text-accent-primary hover:bg-accent-primary-op10')}>
+          <Certificate size={14} weight="duotone" />
+          {t('export.title', 'Export')}
+        </button>
+      )}
+
+      {/* Download CSR — external-CSR CA with an outstanding CSR */}
+      {onDownloadCsr && (
+        <button onClick={onDownloadCsr} className={cn(btnBase, 'text-text-secondary hover:text-accent-primary hover:bg-accent-primary-op10')}>
+          <Certificate size={14} weight="duotone" />
+          {t('cas.downloadCsr', 'Download CSR')}
+        </button>
+      )}
+
+      {/* Upload signed certificate — external-CSR CA */}
+      {onUploadCertificate && (
+        <button onClick={onUploadCertificate} className={cn(btnBase, 'text-text-secondary hover:text-accent-success hover:bg-accent-success-op10')}>
+          <ShieldCheck size={14} weight="duotone" />
+          {t('cas.uploadCertificate', 'Upload certificate')}
+        </button>
+      )}
+
+      {/* Renew via CSR — active external-CSR CA */}
+      {onRenewCsr && (
+        <button onClick={onRenewCsr} className={cn(btnBase, 'text-text-secondary hover:text-accent-success hover:bg-accent-success-op10')}>
+          <ArrowsClockwise size={14} weight="duotone" />
+          {t('cas.renewViaCsr', 'Renew via CSR')}
+        </button>
+      )}
 
       {/* Conformance lint — certificates only */}
       {onLint && (
