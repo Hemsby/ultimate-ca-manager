@@ -77,6 +77,14 @@ class AutoRenewalService:
             else:
                 config['renewal_sources'] = parsed
 
+        notify_renewal = SystemConfig.query.filter_by(key='auto_renewal_notify_on_renewal').first()
+        if notify_renewal:
+            config['notify_on_renewal'] = notify_renewal.value == 'true'
+
+        notify_failure = SystemConfig.query.filter_by(key='auto_renewal_notify_on_failure').first()
+        if notify_failure:
+            config['notify_on_failure'] = notify_failure.value == 'true'
+
         return config
 
     @staticmethod
@@ -101,7 +109,7 @@ class AutoRenewalService:
             db.session.commit()
         except Exception as _commit_err:
             db.session.rollback()
-            logger.error(f"Commit failed in services/auto_renewal_service.py:63: {_commit_err}", exc_info=True)
+            logger.error(f"Commit failed in services/auto_renewal_service.py:101: {_commit_err}", exc_info=True)
             raise
 
     @staticmethod
