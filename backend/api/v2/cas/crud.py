@@ -3,12 +3,10 @@ CAs CRUD Operations
 """
 
 from . import bp
-from flask import request, g, jsonify
+from flask import request, g
 import base64
 import re
 import logging
-import traceback
-import uuid
 from datetime import datetime, timezone
 
 from auth.unified import require_auth, has_permission

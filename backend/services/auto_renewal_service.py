@@ -92,7 +92,7 @@ class AutoRenewalService:
         """Update auto-renewal configuration"""
         for key, value in config.items():
             db_key = f'auto_renewal_{key}'
-            if key == 'enabled':
+            if key in ('enabled', 'notify_on_renewal', 'notify_on_failure'):
                 db_value = 'true' if value else 'false'
             elif key == 'renewal_sources':
                 db_value = json.dumps(value)
@@ -109,7 +109,7 @@ class AutoRenewalService:
             db.session.commit()
         except Exception as _commit_err:
             db.session.rollback()
-            logger.error(f"Commit failed in services/auto_renewal_service.py:101: {_commit_err}", exc_info=True)
+            logger.error(f"Commit failed in services/auto_renewal_service.py:109: {_commit_err}", exc_info=True)
             raise
 
     @staticmethod

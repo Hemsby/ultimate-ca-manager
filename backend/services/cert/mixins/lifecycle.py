@@ -235,7 +235,7 @@ class LifecycleMixin:
             db.session.commit()
         except Exception as _commit_err:
             db.session.rollback()
-            logger.error(f"Commit failed in services/cert/mixins/lifecycle.py:211: {_commit_err}", exc_info=True)
+            logger.error(f"Commit failed in services/cert/mixins/lifecycle.py: {_commit_err}", exc_info=True)
             raise
 
         # Audit log
@@ -294,7 +294,10 @@ class LifecycleMixin:
         key_path = cert_key_path(certificate)
         with open(key_path, 'wb') as f:
             f.write(key_pem)
-        key_path.chmod(0o600)
+        try:
+            key_path.chmod(0o600)
+        except (OSError, PermissionError):
+            pass
 
         from services.webhook_service import emit_cert_issued
         emit_cert_issued(certificate.to_dict(), ca_refid=certificate.caref, actor=username)

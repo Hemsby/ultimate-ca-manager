@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # 2. Advertised endpoints: These URLs are baked into notification emails and
 #    into the ACME directory that clients enrol against; repointing them at an
 #    attacker-controlled host redirects that traffic away from this server.
-# 1. Backup encryption password
+# 3. Backup encryption password
 _ADMIN_ONLY_SETTINGS = frozenset({
     'enforce_2fa',
     'session_timeout',
