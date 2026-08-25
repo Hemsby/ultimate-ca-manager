@@ -74,6 +74,18 @@ export const helpContent = {
         ]
       },
       {
+        title: 'Externally-signed CAs (CSR mode, v2.214)',
+        icon: Certificate,
+        content: 'The "Signed by external CA (CSR)" creation type covers the offline-root pattern: the key pair lives in UCM, the certificate is signed elsewhere. The private key never leaves UCM.',
+        items: [
+          { label: 'Create', text: 'UCM generates the key pair (local or HSM) and a CA-type CSR — the CSR downloads automatically' },
+          { label: 'Awaiting certificate', text: 'The pending CA cannot sign, be exported, be a parent or go offline until its certificate is installed' },
+          { label: 'Upload certificate', text: 'Paste or upload the externally signed certificate (PEM/DER). Its public key must match the stored private key; CA constraints are enforced' },
+          { label: 'Chain', text: 'Linked automatically when the issuer is known to UCM — import the external root (certificate only) for a complete chain' },
+          { label: 'Renew via CSR', text: 'Re-issues a CSR from the same key (stable SKI); sign it externally and upload the new certificate' },
+        ]
+      },
+      {
         title: 'HSM-backed CAs',
         icon: Key,
         items: [
@@ -144,7 +156,8 @@ export const helpContent = {
         items: [
           { label: 'Issue', text: 'Create a new certificate signed by one of your CAs' },
           { label: 'Import', text: 'Import an existing certificate (PEM, DER, or PKCS#12)' },
-          { label: 'Renew', text: 'Re-issue with the same subject and a new validity period' },
+          { label: 'Renew', text: 'In-place since v2.214: same id/refid, new serial and validity — the superseded serial stays on the CRL until the old expiry. A revoked certificate cannot be renewed' },
+          { label: 'Rename', text: 'Set a display name independent from the CN (defaults to CN or first SAN DNS name for CN-less certificates)' },
           { label: 'Revoke', text: 'Mark as revoked with a reason — will appear in CRL' },
           { label: 'Remove Hold', text: 'Unhold a certificate revoked with "Certificate Hold" reason — restores it to valid status' },
           { label: 'Revoke & Replace', text: 'Revoke and immediately issue a replacement' },
@@ -178,12 +191,12 @@ export const helpContent = {
     tips: [
       'Star ⭐ important certificates to add them to your favorites list',
       'Use filters to quickly find certificates by status, CA, or search text — your selection is persisted across reloads',
-      'Renewing preserves the same subject but generates a new key pair',
+      'Renewing keeps the same record (id, refid, creation date) — UCM-held keys are re-keyed, protocol-enrolled certificates (SCEP/EST/ACME) keep their client-side key',
       'Need a non-standard EKU (Microsoft RDP, smartcard logon, document signing)? Add it via "Extra EKUs" instead of editing templates',
     ],
     warnings: [
       'Revocation is generally permanent — except for "Certificate Hold" which can be removed (unhold)',
-      'Deleting a certificate removes it from UCM but does not revoke it',
+      'A valid, non-revoked certificate cannot be deleted (409) — revoke it first so the revocation reaches CRL/OCSP; revocations survive deletion',
     ],
     related: ['CAs', 'CSRs', 'Templates', 'CRL/OCSP']
   },

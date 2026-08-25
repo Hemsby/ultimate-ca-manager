@@ -29,7 +29,8 @@ export default {
         items: [
           { label: 'Émettre', text: 'Créer un nouveau certificat signé par une de vos CA' },
           { label: 'Importer', text: 'Importer un certificat existant (PEM, DER ou PKCS#12)' },
-          { label: 'Renouveler', text: 'Réémettre avec le même sujet et une nouvelle période de validité' },
+          { label: 'Renouveler', text: 'En place depuis la v2.214 : mêmes id/refid, nouveaux numéro de série et période de validité — le numéro de série remplacé reste dans la CRL jusqu\'à l\'ancienne expiration. Un certificat révoqué ne peut pas être renouvelé' },
+          { label: 'Renommer', text: 'Définir un nom d\'affichage indépendant du CN (par défaut le CN, ou le premier nom DNS des SAN pour les certificats sans CN)' },
           { label: 'Révoquer', text: 'Marquer comme révoqué avec un motif — apparaîtra dans la CRL' },
           { label: 'Lever la suspension', text: 'Annuler la suspension d\'un certificat révoqué avec le motif « Suspension de certificat » — restaure le statut valide' },
           { label: 'Révoquer et remplacer', text: 'Révoquer et émettre immédiatement un remplacement' },
@@ -62,12 +63,12 @@ export default {
     tips: [
       'Ajoutez une étoile ⭐ aux certificats importants pour les ajouter à vos favoris',
       'Utilisez les filtres pour trouver rapidement les certificats par statut, CA ou texte de recherche — votre sélection est conservée au rechargement',
-      'Le renouvellement conserve le même sujet mais génère une nouvelle paire de clés',
+      'Le renouvellement conserve le même enregistrement (id, refid, date de création) — les certificats dont la clé est détenue par UCM reçoivent une nouvelle clé, ceux enrôlés par protocole (SCEP/EST/ACME) conservent leur clé côté client',
       'Besoin d\'un EKU non-standard (Microsoft RDP, smartcard logon, document signing) ? Ajoutez-le via « EKU supplémentaires » plutôt que d\'éditer les modèles',
     ],
     warnings: [
       'La révocation est généralement permanente — sauf pour « Suspension de certificat » qui peut être levée',
-      'Supprimer un certificat le retire de UCM mais ne le révoque pas',
+      'Un certificat valide non révoqué ne peut pas être supprimé (409) — révoquez-le d\'abord pour que la révocation atteigne la CRL/OCSP ; les révocations survivent à la suppression',
     ],
   },
   helpGuides: {
@@ -109,13 +110,15 @@ Formats pris en charge :
 
 ## Renouveler un certificat
 
-Le renouvellement crée un nouveau certificat avec :
-- Même sujet et SAN
-- Nouvelle paire de clés (générée automatiquement)
-- Nouvelle période de validité
-- Nouveau numéro de série
+Depuis la v2.214, le renouvellement met à jour le certificat **en place** :
+- Même enregistrement : **id, refid et date de création ne changent jamais** — les intégrations conservent leurs références
+- Mêmes sujet et SAN ; nouveaux numéro de série et période de validité
+- Les certificats dont UCM détient la clé reçoivent **une nouvelle clé** ; les certificats enrôlés par protocole (SCEP/EST/ACME) sont re-signés avec leur clé publique existante
+- Le **numéro de série remplacé reste publié dans la CRL** (motif \`superseded\`) et répond \`revoked\` via OCSP jusqu'à l'expiration originale de l'ancien certificat
+- \`renewed_at\` / \`renewed_times\` tracent l'historique des renouvellements
+- Un certificat révoqué ne peut pas être renouvelé (409) — émettez-en un nouveau à la place
 
-Le certificat original reste valide jusqu'à son expiration ou sa révocation.
+**Suppression** : un certificat valide non révoqué ne peut pas être supprimé (409) — révoquez-le d'abord pour que les parties utilisatrices voient le changement. Les révocations sont persistées indépendamment de l'enregistrement du certificat et survivent à la suppression.
 
 ## Révoquer un certificat
 

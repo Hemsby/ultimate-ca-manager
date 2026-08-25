@@ -24,6 +24,17 @@ export default {
         ]
       },
       {
+        title: 'CA firmate esternamente (modalità CSR, v2.214)',
+        content: 'Il tipo di creazione «Firmata da CA esterna (CSR)» copre il pattern della root offline: la coppia di chiavi risiede in UCM, il certificato viene firmato altrove. La chiave privata non lascia mai UCM.',
+        items: [
+          { label: 'Crea', text: 'UCM genera la coppia di chiavi (locale o HSM) e una CSR di tipo CA — la CSR viene scaricata automaticamente' },
+          { label: 'In attesa del certificato', text: 'La CA in attesa non può firmare, essere esportata, fare da padre o andare offline finché il suo certificato non è installato' },
+          { label: 'Carica certificato', text: 'Incolla o carica il certificato firmato esternamente (PEM/DER). La sua chiave pubblica deve corrispondere alla chiave privata memorizzata; i vincoli CA vengono applicati' },
+          { label: 'Catena', text: 'Collegata automaticamente quando l\'emittente è noto a UCM — importa la root esterna (solo certificato) per una catena completa' },
+          { label: 'Rinnova via CSR', text: 'Riemette una CSR dalla stessa chiave (SKI stabile); firmala esternamente e carica il nuovo certificato' },
+        ]
+      },
+      {
         title: 'CA supportate da HSM',
         items: [
           { label: 'Archiviazione chiave', text: 'Alla creazione della CA scegli Locale (cifrato in DB) o HSM' },
@@ -104,6 +115,18 @@ Raggruppa le CA per il campo Organizzazione (O). Utile per configurazioni multi-
 5. Clicca **Crea**
 
 > ⚠ La validità della CA Intermedia non può superare quella della sua CA padre.
+
+### Crea una CA firmata esternamente (modalità CSR, v2.214)
+Per il pattern della root offline — la chiave della CA emittente risiede in UCM, il suo certificato viene firmato altrove:
+1. Clicca **Crea** → tipo **Firmata da CA esterna (CSR)**
+2. Compila il Soggetto e le impostazioni della chiave (locale o HSM) — la validità è decisa dal firmatario esterno
+3. Invia: UCM genera la coppia di chiavi e una CSR di tipo CA (scaricata automaticamente)
+4. Fai firmare la CSR dalla tua CA root esterna/offline
+5. Torna sulla CA (badge **In attesa del certificato**), clicca **Carica certificato** e fornisci il certificato firmato (PEM o DER)
+
+UCM attiva la CA solo se la chiave pubblica del certificato corrisponde alla chiave privata memorizzata e i vincoli CA sono rispettati. La catena si collega automaticamente quando l'emittente è noto a UCM — importa la root esterna (solo certificato) per una catena completa. Fino all'attivazione, la CA in attesa non può firmare, essere esportata, fare da CA padre o andare offline.
+
+Per rinnovare, usa **Rinnova via CSR**: una nuova CSR viene emessa **dalla stessa chiave** (lo SKI resta stabile), firmata esternamente e caricata tramite lo stesso flusso.
 
 ## Importazione di una CA
 

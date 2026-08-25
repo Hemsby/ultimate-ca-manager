@@ -24,6 +24,17 @@ export default {
         ]
       },
       {
+        title: 'Extern signierte CAs (CSR-Modus, v2.214)',
+        content: 'Der Erstellungstyp „Von externer CA signiert (CSR)" deckt das Offline-Root-Muster ab: Das Schlüsselpaar liegt in UCM, das Zertifikat wird extern signiert. Der private Schlüssel verlässt UCM nie.',
+        items: [
+          { label: 'Erstellen', text: 'UCM generiert das Schlüsselpaar (lokal oder HSM) und einen CSR vom Typ CA — der CSR wird automatisch heruntergeladen' },
+          { label: 'Warten auf Zertifikat', text: 'Die wartende CA kann nicht signieren, exportiert werden, übergeordnete CA sein oder offline gehen, bis ihr Zertifikat installiert ist' },
+          { label: 'Zertifikat hochladen', text: 'Das extern signierte Zertifikat einfügen oder hochladen (PEM/DER). Sein öffentlicher Schlüssel muss zum gespeicherten privaten Schlüssel passen; CA-Constraints werden erzwungen' },
+          { label: 'Kette', text: 'Automatische Verknüpfung, wenn der Aussteller UCM bekannt ist — importieren Sie die externe Root (nur Zertifikat) für eine vollständige Kette' },
+          { label: 'Erneuern via CSR', text: 'Stellt einen CSR aus demselben Schlüssel erneut aus (stabile SKI); extern signieren und das neue Zertifikat hochladen' },
+        ]
+      },
+      {
         title: 'HSM-gesicherte CAs',
         items: [
           { label: 'Schlüsselspeicher', text: 'Bei der CA-Erstellung Lokal (in DB verschlüsselt) oder HSM wählen' },
@@ -104,6 +115,18 @@ Gruppiert CAs nach ihrem Organisation-Feld (O). Nützlich für Multi-Mandanten-S
 5. Klicken Sie auf **Erstellen**
 
 > ⚠ Die Gültigkeit der Intermediate-CA kann die Gültigkeit der übergeordneten CA nicht überschreiten.
+
+### Eine extern signierte CA erstellen (CSR-Modus, v2.214)
+Für das Offline-Root-Muster — der Schlüssel der ausstellenden CA liegt in UCM, ihr Zertifikat wird extern signiert:
+1. Klicken Sie auf **Erstellen** → Typ **Von externer CA signiert (CSR)**
+2. Füllen Sie Subject und Schlüsseleinstellungen aus (lokal oder HSM) — die Gültigkeit bestimmt der externe Signierer
+3. Absenden: UCM generiert das Schlüsselpaar und einen CSR vom Typ CA (wird automatisch heruntergeladen)
+4. Lassen Sie den CSR von Ihrer externen/Offline-Root-CA signieren
+5. Zurück auf der CA (Badge **Warten auf Zertifikat**) klicken Sie auf **Zertifikat hochladen** und stellen das signierte Zertifikat bereit (PEM oder DER)
+
+UCM aktiviert die CA nur, wenn der öffentliche Schlüssel des Zertifikats zum gespeicherten privaten Schlüssel passt und die CA-Constraints erfüllt sind. Die Kette wird automatisch verknüpft, wenn der Aussteller UCM bekannt ist — importieren Sie die externe Root (nur Zertifikat) für eine vollständige Kette. Bis zur Aktivierung kann die wartende CA nicht signieren, exportiert werden, übergeordnete CA sein oder offline gehen.
+
+Zum Erneuern verwenden Sie **Erneuern via CSR**: Ein neuer CSR wird **aus demselben Schlüssel** ausgestellt (die SKI bleibt stabil), extern signiert und über denselben Ablauf hochgeladen.
 
 ## Eine CA importieren
 

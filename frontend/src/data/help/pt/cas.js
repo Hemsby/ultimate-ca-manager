@@ -24,6 +24,17 @@ export default {
         ]
       },
       {
+        title: 'CAs assinadas externamente (modo CSR, v2.214)',
+        content: 'O tipo de criação "Assinada por CA externa (CSR)" cobre o padrão de raiz offline: o par de chaves vive no UCM, o certificado é assinado em outro lugar. A chave privada nunca sai do UCM.',
+        items: [
+          { label: 'Criar', text: 'O UCM gera o par de chaves (local ou HSM) e um CSR do tipo CA — o CSR é baixado automaticamente' },
+          { label: 'Aguardando certificado', text: 'A CA pendente não pode assinar, ser exportada, ser pai nem ficar offline até que seu certificado seja instalado' },
+          { label: 'Enviar certificado', text: 'Cole ou envie o certificado assinado externamente (PEM/DER). Sua chave pública deve corresponder à chave privada armazenada; as restrições de CA são aplicadas' },
+          { label: 'Cadeia', text: 'Vinculada automaticamente quando o emissor é conhecido pelo UCM — importe a raiz externa (apenas o certificado) para uma cadeia completa' },
+          { label: 'Renovar via CSR', text: 'Reemite um CSR a partir da mesma chave (SKI estável); faça-o ser assinado externamente e envie o novo certificado' },
+        ]
+      },
+      {
         title: 'CAs apoiadas por HSM',
         items: [
           { label: 'Armazenamento de chave', text: 'Na criação da CA, escolha Local (criptografado no BD) ou HSM' },
@@ -104,6 +115,18 @@ Agrupa CAs pelo campo Organização (O). Útil para configurações multi-tenant
 5. Clique em **Criar**
 
 > ⚠ A validade da CA Intermediária não pode exceder a validade da sua CA pai.
+
+### Criar uma CA assinada externamente (modo CSR, v2.214)
+Para o padrão de raiz offline — a chave da CA emissora vive no UCM, seu certificado é assinado em outro lugar:
+1. Clique em **Criar** → tipo **Assinada por CA externa (CSR)**
+2. Preencha o Sujeito e as configurações de chave (local ou HSM) — a validade é decidida pelo assinante externo
+3. Envie: o UCM gera o par de chaves e um CSR do tipo CA (baixado automaticamente)
+4. Faça o CSR ser assinado pela sua CA raiz externa/offline
+5. De volta à CA (selo **Aguardando certificado**), clique em **Enviar certificado** e forneça o certificado assinado (PEM ou DER)
+
+O UCM só ativa a CA se a chave pública do certificado corresponder à chave privada armazenada e se as restrições de CA forem respeitadas. A cadeia é vinculada automaticamente quando o emissor é conhecido pelo UCM — importe a raiz externa (apenas o certificado) para uma cadeia completa. Até a ativação, a CA pendente não pode assinar, ser exportada, ser CA pai nem ficar offline.
+
+Para renovar, use **Renovar via CSR**: um novo CSR é emitido **a partir da mesma chave** (o SKI permanece estável), assinado externamente e enviado pelo mesmo fluxo.
 
 ## Importando uma CA
 

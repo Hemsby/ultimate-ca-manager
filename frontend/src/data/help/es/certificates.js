@@ -29,7 +29,8 @@ export default {
         items: [
           { label: 'Emitir', text: 'Crear un nuevo certificado firmado por una de sus CA' },
           { label: 'Importar', text: 'Importar un certificado existente (PEM, DER o PKCS#12)' },
-          { label: 'Renovar', text: 'Reemitir con el mismo sujeto y un nuevo período de validez' },
+          { label: 'Renovar', text: 'In situ desde v2.214: mismos id/refid, nuevo número de serie y validez — el número de serie sustituido permanece en la CRL hasta la expiración antigua. Un certificado revocado no puede renovarse' },
+          { label: 'Renombrar', text: 'Definir un nombre para mostrar independiente del CN (por defecto el CN o el primer nombre DNS de los SAN para certificados sin CN)' },
           { label: 'Revocar', text: 'Marcar como revocado con un motivo — aparecerá en la CRL' },
           { label: 'Levantar suspensión', text: 'Quitar la suspensión de un certificado revocado con el motivo «Suspensión de certificado» — lo restaura al estado válido' },
           { label: 'Revocar y reemplazar', text: 'Revocar y emitir inmediatamente un reemplazo' },
@@ -62,12 +63,12 @@ export default {
     tips: [
       'Marque con estrella ⭐ los certificados importantes para añadirlos a su lista de favoritos',
       'Utilice los filtros para encontrar rápidamente certificados por estado, CA o texto de búsqueda — su selección se conserva tras recargar la página',
-      'La renovación conserva el mismo sujeto pero genera un nuevo par de claves',
+      'La renovación conserva el mismo registro (id, refid, fecha de creación) — las claves en poder de UCM se regeneran, los certificados inscritos por protocolo (SCEP/EST/ACME) conservan su clave del lado cliente',
       '¿Necesita un EKU no estándar (Microsoft RDP, smartcard logon, document signing)? Añádalo vía "EKU adicionales" en lugar de editar plantillas',
     ],
     warnings: [
       'La revocación es generalmente permanente — excepto para «Suspensión de certificado» que puede levantarse',
-      'Eliminar un certificado lo quita de UCM pero no lo revoca',
+      'Un certificado válido no revocado no puede eliminarse (409) — revóquelo primero para que la revocación llegue a la CRL/OCSP; las revocaciones sobreviven a la eliminación',
     ],
   },
   helpGuides: {
@@ -109,13 +110,15 @@ Formatos admitidos:
 
 ## Renovar un certificado
 
-La renovación crea un nuevo certificado con:
-- Mismo sujeto y SAN
-- Nuevo par de claves (generado automáticamente)
-- Nuevo período de validez
-- Nuevo número de serie
+Desde v2.214, la renovación actualiza el certificado **in situ**:
+- Mismo registro: **id, refid y fecha de creación nunca cambian** — las integraciones conservan sus referencias
+- Mismos Sujeto y SAN; nuevo número de serie y nuevo período de validez
+- Los certificados cuya clave posee UCM se **regeneran con una clave nueva**; los certificados inscritos por protocolo (SCEP/EST/ACME) se vuelven a firmar con su clave pública existente
+- El **número de serie sustituido permanece publicado en la CRL** (motivo \`superseded\`) y responde \`revoked\` vía OCSP hasta la expiración original del certificado antiguo
+- \`renewed_at\` / \`renewed_times\` registran el historial de renovaciones
+- Un certificado revocado no puede renovarse (409) — emita uno nuevo en su lugar
 
-El certificado original permanece válido hasta que expire o sea revocado.
+**Eliminación**: un certificado válido no revocado no puede eliminarse (409) — revóquelo primero para que las partes que confían vean el cambio. Las revocaciones se persisten independientemente del registro del certificado y sobreviven a la eliminación.
 
 ## Revocar un certificado
 

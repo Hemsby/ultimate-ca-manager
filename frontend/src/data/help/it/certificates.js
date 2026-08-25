@@ -29,7 +29,8 @@ export default {
         items: [
           { label: 'Emetti', text: 'Crea un nuovo certificato firmato da una delle tue CA' },
           { label: 'Importa', text: 'Importa un certificato esistente (PEM, DER o PKCS#12)' },
-          { label: 'Rinnova', text: 'Riemetti con lo stesso soggetto e un nuovo periodo di validità' },
+          { label: 'Rinnova', text: 'In loco dalla v2.214: stessi id/refid, nuovo numero di serie e nuova validità — il numero di serie sostituito resta nella CRL fino alla vecchia scadenza. Un certificato revocato non può essere rinnovato' },
+          { label: 'Rinomina', text: 'Imposta un nome visualizzato indipendente dal CN (predefinito: il CN o il primo nome DNS SAN per i certificati senza CN)' },
           { label: 'Revoca', text: 'Segna come revocato con un motivo — apparirà nella CRL' },
           { label: 'Rimuovi sospensione', text: 'Riattiva un certificato revocato con motivo "Sospensione certificato" — ripristina lo stato valido' },
           { label: 'Revoca e sostituisci', text: 'Revoca e riemetti immediatamente un sostituto' },
@@ -62,12 +63,12 @@ export default {
     tips: [
       'Aggiungi la stella ⭐ ai certificati importanti per inserirli nella lista dei preferiti',
       'Usa i filtri per trovare rapidamente i certificati per stato, CA o testo di ricerca — la selezione viene conservata al ricaricamento della pagina',
-      'Il rinnovo preserva lo stesso soggetto ma genera una nuova coppia di chiavi',
+      'Il rinnovo conserva lo stesso record (id, refid, data di creazione) — le chiavi detenute da UCM vengono rigenerate, i certificati registrati via protocollo (SCEP/EST/ACME) mantengono la loro chiave lato client',
       'Serve un EKU non standard (Microsoft RDP, smartcard logon, document signing)? Aggiungilo via "EKU extra" invece di modificare i template',
     ],
     warnings: [
       'La revoca è generalmente permanente — tranne per "Sospensione certificato" che può essere rimossa',
-      'L\'eliminazione di un certificato lo rimuove da UCM ma non lo revoca',
+      'Un certificato valido e non revocato non può essere eliminato (409) — revocalo prima affinché la revoca raggiunga CRL/OCSP; le revoche sopravvivono all\'eliminazione',
     ],
   },
   helpGuides: {
@@ -109,13 +110,15 @@ Formati supportati:
 
 ## Rinnovo di un certificato
 
-Il rinnovo crea un nuovo certificato con:
-- Stesso Soggetto e SAN
-- Nuova coppia di chiavi (generata automaticamente)
-- Nuovo periodo di validità
-- Nuovo numero di serie
+Dalla v2.214, il rinnovo aggiorna il certificato **in loco**:
+- Stesso record: **id, refid e data di creazione non cambiano mai** — le integrazioni mantengono i loro riferimenti
+- Stessi Soggetto e SAN; nuovo numero di serie e nuovo periodo di validità
+- I certificati la cui chiave è detenuta da UCM vengono **rigenerati con una nuova chiave**; i certificati registrati via protocollo (SCEP/EST/ACME) vengono rifirmati con la loro chiave pubblica esistente
+- Il **numero di serie sostituito resta pubblicato nella CRL** (motivo \`superseded\`) e risponde \`revoked\` via OCSP fino alla scadenza originale del vecchio certificato
+- \`renewed_at\` / \`renewed_times\` tracciano la cronologia dei rinnovi
+- Un certificato revocato non può essere rinnovato (409) — emettine invece uno nuovo
 
-Il certificato originale rimane valido fino alla scadenza o alla revoca.
+**Eliminazione**: un certificato valido e non revocato non può essere eliminato (409) — revocalo prima affinché le relying party vedano il cambiamento. Le revoche sono persistite indipendentemente dal record del certificato e sopravvivono all'eliminazione.
 
 ## Revoca di un certificato
 

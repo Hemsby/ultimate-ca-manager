@@ -29,7 +29,8 @@ export default {
         items: [
           { label: 'Ausstellen', text: 'Ein neues Zertifikat erstellen, das von einer Ihrer CAs signiert wird' },
           { label: 'Importieren', text: 'Ein vorhandenes Zertifikat importieren (PEM, DER oder PKCS#12)' },
-          { label: 'Erneuern', text: 'Mit demselben Betreff und einer neuen Gültigkeitsdauer erneut ausstellen' },
+          { label: 'Erneuern', text: 'In-place seit v2.214: gleiche id/refid, neue Seriennummer und Gültigkeit — die ersetzte Seriennummer bleibt bis zum alten Ablaufdatum auf der CRL. Ein widerrufenes Zertifikat kann nicht erneuert werden' },
+          { label: 'Umbenennen', text: 'Einen vom CN unabhängigen Anzeigenamen festlegen (Standard: CN oder erster SAN-DNS-Name bei Zertifikaten ohne CN)' },
           { label: 'Widerrufen', text: 'Als widerrufen markieren mit einem Grund — erscheint in der CRL' },
           { label: 'Sperre aufheben', text: 'Ein mit dem Grund „Zertifikat gesperrt" widerrufenes Zertifikat entsperren — stellt den gültigen Status wieder her' },
           { label: 'Widerrufen & Ersetzen', text: 'Widerrufen und sofort ein Ersatzzertifikat ausstellen' },
@@ -62,12 +63,12 @@ export default {
     tips: [
       'Markieren Sie ⭐ wichtige Zertifikate, um sie zu Ihrer Favoritenliste hinzuzufügen',
       'Verwenden Sie Filter, um Zertifikate schnell nach Status, CA oder Suchtext zu finden — Ihre Auswahl wird über Reloads hinweg gespeichert',
-      'Beim Erneuern wird derselbe Betreff beibehalten, aber ein neues Schlüsselpaar generiert',
+      'Beim Erneuern bleibt derselbe Datensatz erhalten (id, refid, Erstellungsdatum) — von UCM gehaltene Schlüssel werden neu generiert, per Protokoll ausgestellte Zertifikate (SCEP/EST/ACME) behalten ihren clientseitigen Schlüssel',
       'Brauchen Sie eine nicht-standardisierte EKU (Microsoft RDP, Smartcard-Anmeldung, Dokumentsignierung)? Fügen Sie sie über "Extra EKUs" hinzu, statt Templates zu bearbeiten',
     ],
     warnings: [
       'Widerruf ist grundsätzlich dauerhaft — außer bei „Zertifikat gesperrt", das aufgehoben werden kann (Sperre aufheben)',
-      'Das Löschen eines Zertifikats entfernt es aus UCM, widerruft es aber nicht',
+      'Ein gültiges, nicht widerrufenes Zertifikat kann nicht gelöscht werden (409) — widerrufen Sie es zuerst, damit der Widerruf CRL/OCSP erreicht; Widerrufe überleben das Löschen',
     ],
   },
   helpGuides: {
@@ -109,13 +110,15 @@ Unterstützte Formate:
 
 ## Zertifikat erneuern
 
-Eine Erneuerung erstellt ein neues Zertifikat mit:
-- Gleichem Betreff und SANs
-- Neuem Schlüsselpaar (automatisch generiert)
-- Neuer Gültigkeitsdauer
-- Neuer Seriennummer
+Seit v2.214 wird das Zertifikat bei der Erneuerung **in place** aktualisiert:
+- Gleicher Datensatz: **id, refid und Erstellungsdatum ändern sich nie** — Integrationen behalten ihre Referenzen
+- Gleicher Betreff und gleiche SANs; neue Seriennummer und neue Gültigkeitsdauer
+- Zertifikate, deren Schlüssel UCM hält, erhalten ein **neues Schlüsselpaar**; per Protokoll ausgestellte Zertifikate (SCEP/EST/ACME) werden mit ihrem vorhandenen öffentlichen Schlüssel erneut signiert
+- Die **ersetzte Seriennummer bleibt auf der CRL veröffentlicht** (Grund \`superseded\`) und antwortet über OCSP mit \`revoked\`, bis das ursprüngliche Ablaufdatum des alten Zertifikats erreicht ist
+- \`renewed_at\` / \`renewed_times\` protokollieren die Erneuerungshistorie
+- Ein widerrufenes Zertifikat kann nicht erneuert werden (409) — stellen Sie stattdessen ein neues aus
 
-Das Originalzertifikat bleibt gültig, bis es abläuft oder widerrufen wird.
+**Löschen**: Ein gültiges, nicht widerrufenes Zertifikat kann nicht gelöscht werden (409) — widerrufen Sie es zuerst, damit Relying Parties die Änderung sehen. Widerrufe werden unabhängig vom Zertifikatsdatensatz gespeichert und überleben das Löschen.
 
 ## Zertifikat widerrufen
 

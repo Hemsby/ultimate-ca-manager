@@ -24,6 +24,17 @@ export default {
         ]
       },
       {
+        title: 'CA signées en externe (mode CSR, v2.214)',
+        content: 'Le type de création « Signée par une CA externe (CSR) » couvre le schéma de racine hors ligne : la paire de clés vit dans UCM, le certificat est signé ailleurs. La clé privée ne quitte jamais UCM.',
+        items: [
+          { label: 'Créer', text: 'UCM génère la paire de clés (locale ou HSM) et un CSR de type CA — le CSR est téléchargé automatiquement' },
+          { label: 'En attente de certificat', text: "La CA en attente ne peut ni signer, ni être exportée, ni être parente, ni passer hors ligne tant que son certificat n'est pas installé" },
+          { label: 'Téléverser le certificat', text: 'Collez ou téléversez le certificat signé en externe (PEM/DER). Sa clé publique doit correspondre à la clé privée stockée ; les contraintes de CA sont vérifiées' },
+          { label: 'Chaîne', text: "Liée automatiquement lorsque l'émetteur est connu de UCM — importez la racine externe (certificat seul) pour une chaîne complète" },
+          { label: 'Renouveler via CSR', text: 'Réémet un CSR depuis la même clé (SKI stable) ; faites-le signer en externe et téléversez le nouveau certificat' },
+        ]
+      },
+      {
         title: 'CA adossées HSM',
         items: [
           { label: 'Stockage de la clé', text: 'Choisissez Local (chiffré en BD) ou HSM lors de la création de la CA' },
@@ -105,6 +116,18 @@ Regroupe les CA par leur champ Organisation (O). Utile pour les configurations m
 5. Cliquez sur **Créer**
 
 > ⚠ La validité de la CA intermédiaire ne peut pas dépasser celle de sa CA parente.
+
+### Créer une CA signée en externe (mode CSR, v2.214)
+Pour le schéma de racine hors ligne — la clé de la CA émettrice vit dans UCM, son certificat est signé ailleurs :
+1. Cliquez sur **Créer** → type **Signée par une CA externe (CSR)**
+2. Renseignez le sujet et les paramètres de clé (locale ou HSM) — la validité est décidée par le signataire externe
+3. Validez : UCM génère la paire de clés et un CSR de type CA (téléchargé automatiquement)
+4. Faites signer le CSR par votre CA racine externe/hors ligne
+5. De retour sur la CA (badge **En attente de certificat**), cliquez sur **Téléverser le certificat** et fournissez le certificat signé (PEM ou DER)
+
+UCM n'active la CA que si la clé publique du certificat correspond à la clé privée stockée et que les contraintes de CA sont respectées. La chaîne se lie automatiquement lorsque l'émetteur est connu de UCM — importez la racine externe (certificat seul) pour une chaîne complète. Tant qu'elle n'est pas activée, la CA en attente ne peut ni signer, ni être exportée, ni être CA parente, ni passer hors ligne.
+
+Pour renouveler, utilisez **Renouveler via CSR** : un nouveau CSR est émis **depuis la même clé** (le SKI reste stable), signé en externe, puis téléversé via le même flux.
 
 ## Importer une CA
 

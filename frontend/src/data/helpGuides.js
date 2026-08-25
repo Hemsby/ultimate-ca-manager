@@ -123,6 +123,18 @@ Groups CAs by their Organization (O) field. Useful for multi-tenant setups where
 
 > ⚠ The Intermediate CA validity cannot exceed its parent CA's validity.
 
+### Create an externally-signed CA (CSR mode, v2.214)
+For the offline-root pattern — the issuing CA's key lives in UCM, its certificate is signed elsewhere:
+1. Click **Create** → type **Signed by external CA (CSR)**
+2. Fill in the Subject and key settings (local or HSM) — validity is decided by the external signer
+3. Submit: UCM generates the key pair and a CA-type CSR (downloads automatically)
+4. Have the CSR signed by your external/offline root CA
+5. Back on the CA (badge **Awaiting certificate**), click **Upload certificate** and provide the signed certificate (PEM or DER)
+
+UCM only activates the CA if the certificate's public key matches the stored private key and the CA constraints hold. The chain links automatically when the issuer is known to UCM — import the external root (certificate only) for a complete chain. Until activation, the pending CA cannot sign, be exported, be a parent CA or go offline.
+
+To renew, use **Renew via CSR**: a new CSR is issued **from the same key** (the SKI stays stable), signed externally, and uploaded through the same flow.
+
 ## Importing a CA
 
 Import existing CA certificates via:
@@ -280,13 +292,15 @@ Supported formats:
 
 ## Renewing a Certificate
 
-Renewal creates a new certificate with:
-- Same Subject and SANs
-- New key pair (generated automatically)
-- New validity period
-- New serial number
+Since v2.214, renewal updates the certificate **in place**:
+- Same record: **id, refid and creation date never change** — integrations keep their references
+- Same Subject and SANs; new serial number and validity period
+- Certificates whose key UCM holds are **re-keyed**; protocol-enrolled certificates (SCEP/EST/ACME) are re-signed with their existing public key
+- The **superseded serial stays published on the CRL** (reason \`superseded\`) and answers \`revoked\` over OCSP until the old certificate's original expiry
+- \`renewed_at\` / \`renewed_times\` track the renewal history
+- A revoked certificate cannot be renewed (409) — issue a new one instead
 
-The original certificate remains valid until it expires or is revoked.
+**Deleting**: a valid, non-revoked certificate cannot be deleted (409) — revoke it first so relying parties see the change. Revocations are persisted independently of the certificate record and survive deletion.
 
 ## Revoking a Certificate
 
