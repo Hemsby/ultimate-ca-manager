@@ -7,7 +7,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
-## [Unreleased]
+## [2.214] - 2026-08-25
 
 ### Security
 - Certificates: a valid, non-revoked X.509 certificate can no longer be deleted — deletion removed the record while the certificate stayed trusted until expiry, with no CRL/OCSP trace; revoke it first so relying parties see the change (single delete returns 409, bulk delete reports the item as failed). Expired or revoked certificates, and CSR-only records, are unaffected (#296, contributed by @gb-123-git & PMGA Tech LLP)
