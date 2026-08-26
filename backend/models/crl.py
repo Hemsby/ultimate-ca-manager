@@ -28,6 +28,9 @@ class CRLMetadata(db.Model):
     # Delta CRL support (RFC 5280 §5.2.4)
     is_delta = db.Column(db.Boolean, default=False)
     base_crl_number = db.Column(db.Integer)  # Base CRL number for delta CRLs
+
+    # Externally-signed CRL uploaded for a key-less/offline CA (#302)
+    is_external = db.Column(db.Boolean, default=False)
     
     # Statistics
     revoked_count = db.Column(db.Integer, default=0)
@@ -74,6 +77,7 @@ class CRLMetadata(db.Model):
             "generated_by": self.generated_by,
             "is_delta": self.is_delta or False,
             "base_crl_number": self.base_crl_number,
+            "is_external": self.is_external or False,
         }
         if include_crl_data:
             data["crl_pem"] = self.crl_pem

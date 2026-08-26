@@ -104,6 +104,20 @@ export const casService = {
     return apiClient.post(`/cas/${id}/renew-csr`, digest ? { digest } : {})
   },
 
+  /**
+   * Install an externally-generated CRL on a key-less/offline CA (#302).
+   * - pass { pemContent } for pasted PEM
+   * - pass { file } for an uploaded file (PEM or DER)
+   */
+  async uploadCrl(id, { pemContent, file } = {}) {
+    if (file) {
+      const fd = new FormData()
+      fd.append('file', file)
+      return apiClient.upload(`/cas/${id}/crl`, fd)
+    }
+    return apiClient.post(`/cas/${id}/crl`, { pem_content: pemContent })
+  },
+
   // Bulk operations
   async bulkDelete(ids) {
     return apiClient.post('/cas/bulk/delete', { ids })

@@ -12,6 +12,7 @@ import { ExportModal } from '../../components/ExportModal'
 import { TakeOfflineModal } from '../../components/cas/TakeOfflineModal'
 import { RestoreModal } from '../../components/cas/RestoreModal'
 import { ManageTemplatePinsModal } from '../../components/cas/ManageTemplatePinsModal'
+import { CACrlSection } from '../../components/cas/CACrlSection'
 import { UploadCACertModal } from './UploadCACertModal'
 import { casService } from '../../services'
 import { formatDate, downloadBlob } from '../../lib/utils'
@@ -175,6 +176,9 @@ export function CADetailsPanel({ ca, canWrite, canDelete, onExport, onDelete, t 
           </Button>
         )}
       </div>
+
+      {/* Revocation list — key-less/offline CA served from an external CRL (#302) */}
+      <CACrlSection ca={ca} />
 
       {/* Subject Info */}
       <CompactSection title={t('common.subject')}>

@@ -449,6 +449,15 @@ class OCSPService:
             Certificate.caref == ca.refid,
             Certificate.serial_number.in_(variants),
         ).first()
+        if certificate and certificate.revoked:
+            return (
+                certificate,
+                'revoked',
+                certificate.revoked_at or utc_now(),
+                _REASON_MAP.get(
+                    certificate.revoke_reason, x509.ReasonFlags.unspecified
+                ),
+            )
         if not certificate:
             # Fallback: check the persistent revocation table for deleted certs
             rs = RevokedSerial.query.filter(
@@ -459,17 +468,19 @@ class OCSPService:
                 return None, 'revoked', rs.revoked_at or utc_now(), _REASON_MAP.get(
                     rs.revoke_reason, x509.ReasonFlags.unspecified
                 )
+        # Externally-signed CRL uploaded for a key-less/offline CA (#302):
+        # revocations decided next to the offline key exist only on that CRL,
+        # so it overrides a 'good'/absent local record for this issuer.
+        from services.crl_service import CRLService
+        ext = CRLService.get_external_revocation(ca.id, cert_serial)
+        if ext:
+            # reason may be None (CRL entry without CRLReason) — the response
+            # then omits revocationReason instead of claiming 'unspecified'.
+            revoked_at, reason = ext
+            return certificate, 'revoked', revoked_at or utc_now(), reason
+        if not certificate:
             return None, 'unknown', None, None
-        if not certificate.revoked:
-            return certificate, 'good', None, None
-        return (
-            certificate,
-            'revoked',
-            certificate.revoked_at or utc_now(),
-            _REASON_MAP.get(
-                certificate.revoke_reason, x509.ReasonFlags.unspecified
-            ),
-        )
+        return certificate, 'good', None, None
 
     @staticmethod
     def _asn1_time(value: datetime) -> datetime:

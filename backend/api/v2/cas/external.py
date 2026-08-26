@@ -20,9 +20,12 @@ from utils.response import success_response, error_response
 from utils.file_validation import validate_upload, CERT_EXTENSIONS
 from utils.sanitize import sanitize_filename
 from services.ca_service import CAService
+from services.crl import CRLService, ExternalCRLConflict
 from models import CA, db
 
 logger = logging.getLogger(__name__)
+
+CRL_EXTENSIONS = {'.crl', '.pem', '.der'}
 
 
 def _actor_username():
@@ -129,6 +132,65 @@ def install_ca_certificate(ca_id):
         data=data,
         message='CA certificate installed'
     )
+
+
+@bp.route('/api/v2/cas/<int:ca_id>/crl', methods=['POST'])
+@require_auth(['write:crl'])
+def upload_external_crl(ca_id):
+    """
+    Install an externally-generated CRL on a key-less/offline CA (#302).
+
+    Accepts multipart 'file' (PEM or DER) or 'pem_content' (form or JSON).
+    The CRL must verify against the CA certificate, match its subject, and
+    be newer than the currently served one; it is then served at the CA's
+    CDP path and consulted by OCSP for this issuer.
+    """
+    ca = db.session.get(CA, ca_id)
+    if not ca:
+        return error_response('CA not found', 404)
+
+    crl_data = None
+    if 'file' in request.files and request.files['file'].filename:
+        try:
+            crl_data, _ = validate_upload(request.files['file'], CRL_EXTENSIONS)
+        except ValueError as e:
+            logger.warning(f"CRL upload validation error: {e}")
+            return error_response('Invalid file upload', 400)
+    elif request.form.get('pem_content'):
+        crl_data = request.form.get('pem_content').encode('utf-8')
+    elif request.is_json and (request.json or {}).get('pem_content'):
+        crl_data = request.json['pem_content'].encode('utf-8')
+    if not crl_data:
+        return error_response('No CRL file or PEM content provided', 400)
+
+    username = _actor_username()
+    try:
+        crl_metadata = CRLService.install_external_crl(
+            ca.id, crl_data, username=username)
+    except ExternalCRLConflict as e:
+        db.session.rollback()
+        logger.info(f"External CRL refused for CA {ca_id}: {e}")
+        return error_response(str(e), 409)
+    except ValueError as e:
+        db.session.rollback()
+        logger.info(f"External CRL rejected for CA {ca_id}: {e}")
+        return error_response(str(e), 400)
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to install external CRL on CA {ca_id}: {e}", exc_info=True)
+        return error_response('Failed to install CRL', 500)
+
+    data = crl_metadata.to_dict()
+    data['caref'] = ca.refid
+
+    try:
+        from websocket.emitters import on_crl_regenerated
+        on_crl_regenerated(
+            ca.id, ca.descr, data.get('next_update', ''), data.get('revoked_count', 0))
+    except Exception:
+        pass
+
+    return success_response(data=data, message='External CRL installed')
 
 
 @bp.route('/api/v2/cas/<int:ca_id>/renew-csr', methods=['POST'])

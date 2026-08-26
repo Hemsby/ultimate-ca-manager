@@ -33,6 +33,7 @@ import { Badge, CATypeIcon } from './Badge'
 import { Button } from './Button'
 import { CompactSection, CompactGrid, CompactField } from './DetailCard'
 import { CertificateExtensions } from './CertificateExtensions'
+import { CACrlSection } from './cas/CACrlSection'
 import { cn } from '../lib/utils'
 
 // Format date helper - delegates to shared util
@@ -259,6 +260,9 @@ export function CADetails({
           </CompactGrid>
         </CompactSection>
       )}
+
+      {/* Revocation list — key-less/offline CA served from an external CRL (#302) */}
+      <CACrlSection ca={ca} />
 
       {/* X.509 Extensions */}
       <CertificateExtensions extensions={ca.extensions} defaultOpen={false} />
