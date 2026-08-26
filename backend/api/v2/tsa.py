@@ -97,7 +97,7 @@ def update_tsa_config():
         )
     if 'ca_refid' in data:
         set_config('tsa_ca_refid', data['ca_refid'] or '')
-    if 'ca_id' in data:
+    elif 'ca_id' in data:
         ca = db.session.get(CA, data['ca_id']) if data['ca_id'] else None
         set_config('tsa_ca_refid', ca.refid if ca else '')
     if policy_oid is not None:

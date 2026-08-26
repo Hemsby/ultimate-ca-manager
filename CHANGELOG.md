@@ -7,6 +7,11 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- TSA: selecting the signing CA on the TSA settings page now persists — the page echoed the read-only `ca_id` field back to the API, which silently overrode the just-saved `ca_refid` (selection wiped on first save, reverted to the previous CA when switching) while the UI still reported "saved" (#300)
+
 ## [2.214] - 2026-08-25
 
 ### Security
