@@ -705,6 +705,7 @@
     "csrDownloadFailed": "Échec du téléchargement de la CSR",
     "certInstalled": "Certificat d'AC installé",
     "certInstallFailed": "Échec de l'installation du certificat d'AC",
+    "certSupersededNotice": "Le certificat précédent (numéro de série {{serial}}) reste valide jusqu'au {{date}} — révoquez-le auprès de votre AC racine externe s'il ne doit plus être approuvé",
     "yearsValidity": "{{count}} ans",
     "exportAs": "Exporter en {{format}}",
     "p12PasswordDescription": "Entrez un mot de passe pour protéger le fichier PKCS#12.",

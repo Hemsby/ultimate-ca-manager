@@ -16,7 +16,8 @@ from models import CA, db
 from models.hsm import HsmKey
 from services.audit_service import AuditService
 from services.trust_store import TrustStoreService
-from utils.datetime_utils import to_naive_utc, utc_now
+from utils.datetime_utils import to_naive_utc, utc_isoformat, utc_now
+from utils.serial_format import serial_to_int
 from .helpers import save_ca_files, save_ca_key_file
 
 logger = logging.getLogger(__name__)
@@ -512,7 +513,11 @@ class CACreationMixin:
         public key MUST match the stored private key. Raises ValueError with
         a user-safe message on every rejection.
 
-        Returns (ca, warnings).
+        Returns (ca, warnings, superseded) — superseded is None on first
+        activation, else {'serial', 'valid_to'} for the replaced certificate,
+        which stays valid until its notAfter unless revoked at the external
+        root (UCM cannot publish that revocation: the issuer's key is not
+        held here, see #298).
         """
         from services.hsm.ca_key_loader import get_ca_signing_key
         from utils.ca_profile import validate_ca_certificate
@@ -602,7 +607,17 @@ class CACreationMixin:
                 "(certificate only) to complete the chain"
             )
 
-        # 7. Install
+        # 7. Install — on renewal, remember the certificate being replaced so
+        #    the operator can revoke it at the external root
+        superseded = None
+        if not was_pending and ca.serial_number \
+                and ca.serial_number != str(cert.serial_number):
+            old_serial_int = serial_to_int(ca.serial_number)
+            superseded = {
+                'serial': format(old_serial_int, 'x')
+                          if old_serial_int is not None else ca.serial_number,
+                'valid_to': utc_isoformat(ca.valid_to),
+            }
         ca.crt = base64.b64encode(cert_pem).decode('utf-8')
         ca.subject = cert_subject
         ca.issuer = cert.issuer.rfc4514_string()
@@ -637,12 +652,14 @@ class CACreationMixin:
         AuditService.log_ca(
             'ca_certificate_installed', ca,
             f'External certificate installed (issuer: {cert.issuer.rfc4514_string()}, '
-            f'chained: {bool(ca.caref)}, renewal: {not was_pending})'
+            f'chained: {bool(ca.caref)}, renewal: {not was_pending}'
+            + (f", superseded serial: {superseded['serial']}" if superseded else '')
+            + ')'
         )
 
         save_ca_files(ca, cert_pem, None)
 
-        return ca, warnings
+        return ca, warnings, superseded
 
     @staticmethod
     def regenerate_ca_csr(

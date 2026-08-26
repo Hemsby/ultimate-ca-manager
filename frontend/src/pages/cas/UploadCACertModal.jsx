@@ -48,6 +48,15 @@ export function UploadCACertModal({ open, onClose, ca, onSuccess }) {
       })
       const data = extractData(response) || {}
       showSuccess(t('cas.certInstalled'))
+      if (data.superseded_serial) {
+        const notice = t('cas.certSupersededNotice', {
+          serial: data.superseded_serial,
+          date: data.superseded_valid_to
+            ? new Date(data.superseded_valid_to).toLocaleDateString()
+            : '?',
+        })
+        showWarning ? showWarning(notice) : showError(notice)
+      }
       for (const w of data.warnings || []) {
         showWarning ? showWarning(w) : showError(w)
       }

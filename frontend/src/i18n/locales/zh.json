@@ -846,6 +846,7 @@
     "csrDownloadFailed": "下载CSR失败",
     "certInstalled": "CA证书已安装",
     "certInstallFailed": "安装CA证书失败",
+    "certSupersededNotice": "先前的证书（序列号 {{serial}}）在 {{date}} 之前仍然有效——如果不应再信任它，请在您的外部根CA上将其吊销",
     "yearsValidity": "{{count}}年",
     "exportAs": "导出为{{format}}",
     "p12PasswordDescription": "输入密码以保护PKCS#12文件。",

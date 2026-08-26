@@ -9,6 +9,9 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+### Added
+- External-CSR CAs: installing a renewal certificate now reports the superseded certificate's serial and expiry (API response, notice in the upload dialog, audit log) as a reminder to revoke it at the external root — UCM cannot publish that revocation itself, since the issuer's key is not held here (follow-up to #298)
+
 ### Fixed
 - TSA: selecting the signing CA on the TSA settings page now persists — the page echoed the read-only `ca_id` field back to the API, which silently overrode the just-saved `ca_refid` (selection wiped on first save, reverted to the previous CA when switching) while the UI still reported "saved" (#300)
 

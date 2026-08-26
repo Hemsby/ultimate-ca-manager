@@ -846,6 +846,7 @@
     "csrDownloadFailed": "CSRのダウンロードに失敗しました",
     "certInstalled": "CA証明書をインストールしました",
     "certInstallFailed": "CA証明書のインストールに失敗しました",
+    "certSupersededNotice": "以前の証明書（シリアル番号 {{serial}}）は {{date}} まで有効です。信頼すべきでない場合は、外部ルートCAで失効させてください",
     "yearsValidity": "{{count}}年",
     "exportAs": "{{format}}としてエクスポート",
     "p12PasswordDescription": "PKCS#12ファイルを保護するパスワードを入力してください。",

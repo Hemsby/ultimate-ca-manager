@@ -102,7 +102,8 @@ def install_ca_certificate(ca_id):
 
     username = _actor_username()
     try:
-        ca, warnings = CAService.complete_external_ca(ca, cert_pem, username=username)
+        ca, warnings, superseded = CAService.complete_external_ca(
+            ca, cert_pem, username=username)
     except ValueError as e:
         db.session.rollback()
         logger.info(f"Certificate install refused for CA {ca_id}: {e}")
@@ -117,8 +118,15 @@ def install_ca_certificate(ca_id):
     from services.webhook_service import emit_ca_updated
     emit_ca_updated(ca_dict, actor=username, changes={'certificate': 'installed'})
 
+    data = {**ca_dict, 'warnings': warnings}
+    if superseded:
+        # Renewal: the replaced certificate stays valid until its notAfter —
+        # only the external root can revoke it, so surface what to revoke.
+        data['superseded_serial'] = superseded['serial']
+        data['superseded_valid_to'] = superseded['valid_to']
+
     return success_response(
-        data={**ca_dict, 'warnings': warnings},
+        data=data,
         message='CA certificate installed'
     )
 

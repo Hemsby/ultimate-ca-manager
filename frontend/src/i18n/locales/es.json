@@ -846,6 +846,7 @@
     "csrDownloadFailed": "Error al descargar el CSR",
     "certInstalled": "Certificado de CA instalado",
     "certInstallFailed": "Error al instalar el certificado de CA",
+    "certSupersededNotice": "El certificado anterior (número de serie {{serial}}) sigue siendo válido hasta el {{date}} — revóquelo en su CA raíz externa si ya no debe ser de confianza",
     "yearsValidity": "{{count}} años",
     "exportAs": "Exportar como {{format}}",
     "p12PasswordDescription": "Ingrese contraseña para proteger el archivo PKCS#12.",

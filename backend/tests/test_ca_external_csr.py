@@ -283,6 +283,8 @@ class TestRenewExternalCA:
             auth_client, f"{BASE}/{data['id']}/certificate", {'pem_content': signed}))
         old_valid_to = out['valid_to']
         old_ski = out['ski']
+        # First activation replaces nothing — no revoke-at-root reminder
+        assert 'superseded_serial' not in out
 
         r = post_json(auth_client, f"{BASE}/{data['id']}/renew-csr", {})
         renewed = assert_success(r)
@@ -298,6 +300,13 @@ class TestRenewExternalCA:
         assert out2['valid_to'] > old_valid_to
         assert out2['ski'] == old_ski
         assert out2['has_csr'] is False
+
+        # Renewal surfaces the replaced certificate so the operator can
+        # revoke it at the external root (#298)
+        first_cert = x509.load_pem_x509_certificate(
+            signed.encode(), default_backend())
+        assert out2['superseded_serial'] == format(first_cert.serial_number, 'x')
+        assert out2['superseded_valid_to'][:10] == old_valid_to[:10]
 
     def test_renew_offline_refused(self, auth_client):
         root_key, root_cert = _make_external_root(cn=_next_cn('OffRenewRoot'))
