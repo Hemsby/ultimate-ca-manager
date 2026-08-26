@@ -32,6 +32,7 @@ export default {
           { label: 'Subir certificado', text: 'Pegue o suba el certificado firmado externamente (PEM/DER). Su clave pública debe coincidir con la clave privada almacenada; se verifican las restricciones de CA' },
           { label: 'Cadena', text: 'Se vincula automáticamente cuando el emisor es conocido por UCM — importe la raíz externa (solo el certificado) para una cadena completa' },
           { label: 'Renovar vía CSR', text: 'Reemite un CSR desde la misma clave (SKI estable); fírmelo externamente y suba el nuevo certificado' },
+          { label: 'Después de la renovación', text: 'El certificado sustituido sigue siendo válido hasta su notAfter — UCM muestra su número de serie tras la subida; revóquelo en la raíz externa si ya no debe ser de confianza' },
         ]
       },
       {

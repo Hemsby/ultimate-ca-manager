@@ -32,6 +32,7 @@ export default {
           { label: 'Enviar certificado', text: 'Cole ou envie o certificado assinado externamente (PEM/DER). Sua chave pública deve corresponder à chave privada armazenada; as restrições de CA são aplicadas' },
           { label: 'Cadeia', text: 'Vinculada automaticamente quando o emissor é conhecido pelo UCM — importe a raiz externa (apenas o certificado) para uma cadeia completa' },
           { label: 'Renovar via CSR', text: 'Reemite um CSR a partir da mesma chave (SKI estável); faça-o ser assinado externamente e envie o novo certificado' },
+          { label: 'Após a renovação', text: 'O certificado substituído permanece válido até seu notAfter — o UCM mostra seu número de série após o envio; revogue-o na raiz externa se ele não deve mais ser confiável' },
         ]
       },
       {

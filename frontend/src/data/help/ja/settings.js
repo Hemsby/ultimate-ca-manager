@@ -52,6 +52,17 @@ export default {
         ]
       },
       {
+        title: '自動更新（v2.215）',
+        content: '設定 › 更新: 新バージョンの毎日のバックグラウンドチェックと、オプションの無人インストール。',
+        items: [
+          { label: 'チャンネル', text: '「安定版」はリリースのみを対象。「リリース候補」はプレリリース（RC）も提供します' },
+          { label: '通知', text: '新しいバージョンが利用可能になると、system.update_available の Webhook/メールイベントがバージョンごとに 1 回発火します' },
+          { label: '自動インストール', text: 'デフォルトは無効。有効にすると、UCM は指定した時刻に更新をダウンロード・検証・インストールして再起動します — DEB/RPM インストールのみ' },
+          { label: 'チェックサム', text: '無人インストールには検証用にリリースで公開された SHA256 が必須。手動インストールでも、チェックサムが公開されていれば必ず検証されます' },
+          { label: 'Docker', text: 'コンテナは自己更新できません — チェックと通知は動作します。更新するには新しいイメージを pull してください' },
+        ]
+      },
+      {
         title: "HSTS（Strict Transport Security）",
         content: "オペレーター設定可能なHSTSポリシー。初期セットアップ時に自己署名証明書を使用するインスタンスは、HSTSを完全にオプトアウトできます。",
         items: [
@@ -73,7 +84,7 @@ export default {
           { label: '監査', text: 'ログ保持、Syslog転送、整合性の検証' },
           { label: 'データベース', text: 'アクティブなバックエンド（SQLiteまたはPostgreSQL）、サイズ、テーブル数、バックエンド間のテスト/切り替え/移行' },
           { label: 'HTTPS', text: 'UCM WebインターフェースのTLS証明書' },
-          { label: '更新', text: '新バージョンの確認、変更ログの表示、自動更新（DEB/RPM）' },
+          { label: '更新', text: '新バージョンの確認、変更ログの表示、毎日のスケジュールチェックとオプトインの無人インストール（DEB/RPM）' },
           { label: 'Webhook', text: '証明書イベント（発行、失効、期限切れ）のHTTP Webhook — 内部LANのURLは許可、クラウドメタデータIPはブロック。オプションの送信認証：Bearer、Basic、APIキー、カスタムヘッダー' },
           { label: 'Active Directory', text: '証明書関連の参照 (Kerberos プリンシパルの解決、AD 由来のサブジェクト) のための UCM 独自の AD/LDAP 接続' },
           { label: 'Windows 自動登録', text: 'MS-XCEP/MS-WSTEP によるネイティブ Windows 登録: ポリシー検出、証明書発行、Kerberos/SPNEGO バインディング' },

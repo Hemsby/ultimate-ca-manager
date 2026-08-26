@@ -32,6 +32,7 @@ export default {
           { label: 'Zertifikat hochladen', text: 'Das extern signierte Zertifikat einfügen oder hochladen (PEM/DER). Sein öffentlicher Schlüssel muss zum gespeicherten privaten Schlüssel passen; CA-Constraints werden erzwungen' },
           { label: 'Kette', text: 'Automatische Verknüpfung, wenn der Aussteller UCM bekannt ist — importieren Sie die externe Root (nur Zertifikat) für eine vollständige Kette' },
           { label: 'Erneuern via CSR', text: 'Stellt einen CSR aus demselben Schlüssel erneut aus (stabile SKI); extern signieren und das neue Zertifikat hochladen' },
+          { label: 'Nach der Erneuerung', text: 'Das abgelöste Zertifikat bleibt bis zu seinem notAfter gültig — UCM zeigt seine Seriennummer nach dem Hochladen an; widerrufen Sie es bei der externen Root, wenn ihm nicht mehr vertraut werden soll' },
         ]
       },
       {

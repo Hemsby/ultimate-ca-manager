@@ -32,6 +32,7 @@ export default {
           { label: 'Carica certificato', text: 'Incolla o carica il certificato firmato esternamente (PEM/DER). La sua chiave pubblica deve corrispondere alla chiave privata memorizzata; i vincoli CA vengono applicati' },
           { label: 'Catena', text: 'Collegata automaticamente quando l\'emittente è noto a UCM — importa la root esterna (solo certificato) per una catena completa' },
           { label: 'Rinnova via CSR', text: 'Riemette una CSR dalla stessa chiave (SKI stabile); firmala esternamente e carica il nuovo certificato' },
+          { label: 'Dopo il rinnovo', text: 'Il certificato sostituito resta valido fino al suo notAfter — UCM ne mostra il numero di serie dopo il caricamento; revocalo presso la root esterna se non deve più essere considerato attendibile' },
         ]
       },
       {

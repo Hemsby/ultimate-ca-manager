@@ -52,6 +52,17 @@ export default {
         ]
       },
       {
+        title: '自动更新（v2.215）',
+        content: '设置 › 更新：每日后台检查新版本，并可选启用无人值守安装。',
+        items: [
+          { label: '通道', text: '"稳定版"仅跟随正式发布；"候选发布版"还提供预发布版本（RC）' },
+          { label: '通知', text: '发现新版本时触发 system.update_available Webhook/邮件事件，每个版本仅一次' },
+          { label: '自动安装', text: '默认关闭。启用后，UCM 会在选定的时间下载、验证并安装更新，然后重启——仅限 DEB/RPM 安装' },
+          { label: '校验和', text: '无人值守安装要求发布版提供已公布的 SHA256 用于验证；手动安装在有校验和公布时也会进行验证' },
+          { label: 'Docker', text: '容器无法自行更新——检查和通知仍然有效；请拉取新镜像来完成更新' },
+        ]
+      },
+      {
         title: "HSTS（Strict Transport Security）",
         content: "可由操作员配置的 HSTS 策略，以便在初始设置期间使用自签名证书的实例可以完全退出。",
         items: [
@@ -73,7 +84,7 @@ export default {
           { label: '审计', text: '日志保留、syslog 转发、完整性验证' },
           { label: '数据库', text: '活动后端（SQLite 或 PostgreSQL）、大小、表数量、在后端之间测试/切换/迁移' },
           { label: 'HTTPS', text: 'UCM Web 界面的 TLS 证书' },
-          { label: '更新', text: '检查新版本、查看变更日志、自动更新（DEB/RPM）' },
+          { label: '更新', text: '检查新版本、查看变更日志、每日计划检查并可选启用无人值守安装（DEB/RPM）' },
           { label: 'Webhook', text: '证书事件（签发、吊销、过期）的 HTTP Webhook — 允许内部 LAN URL；阻止云元数据 IP。可选出站认证：Bearer、Basic、API 密钥或自定义标头' },
           { label: 'Active Directory', text: 'UCM 自身的 AD/LDAP 连接，用于与证书相关的查询（Kerberos 主体解析、AD 派生主题）' },
           { label: 'Windows 自动注册', text: 'MS-XCEP/MS-WSTEP 原生 Windows 注册：策略发现、证书签发和 Kerberos/SPNEGO 绑定' },

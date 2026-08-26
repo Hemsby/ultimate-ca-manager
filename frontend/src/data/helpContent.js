@@ -83,6 +83,7 @@ export const helpContent = {
           { label: 'Upload certificate', text: 'Paste or upload the externally signed certificate (PEM/DER). Its public key must match the stored private key; CA constraints are enforced' },
           { label: 'Chain', text: 'Linked automatically when the issuer is known to UCM — import the external root (certificate only) for a complete chain' },
           { label: 'Renew via CSR', text: 'Re-issues a CSR from the same key (stable SKI); sign it externally and upload the new certificate' },
+          { label: 'After renewal', text: 'The superseded certificate stays valid until its notAfter — UCM shows its serial after the upload; revoke it at the external root if it should no longer be trusted' },
         ]
       },
       {
@@ -855,6 +856,17 @@ export const helpContent = {
         ]
       },
       {
+        title: 'Automatic updates (v2.215)',
+        content: 'Settings › Updates: a daily background check for new versions, and an optional unattended install.',
+        items: [
+          { label: 'Channel', text: 'Stable follows releases only; Release candidates also offers prereleases (RC)' },
+          { label: 'Notification', text: 'A newly available version fires the system.update_available webhook/email event, once per version' },
+          { label: 'Auto-install', text: 'Off by default. When enabled, UCM downloads, verifies and installs the update at the chosen hour, then restarts — DEB/RPM installs only' },
+          { label: 'Checksum', text: "An unattended install requires the release's published SHA256 to verify; a manual install also verifies whenever a checksum is published" },
+          { label: 'Docker', text: 'Containers cannot update themselves — the check and notification still work; pull the new image to update' },
+        ]
+      },
+      {
         title: 'HSTS (Strict Transport Security)',
         icon: Globe,
         content: 'Operator-configurable HSTS policy so instances serving self-signed certificates during setup can opt out entirely.',
@@ -878,7 +890,7 @@ export const helpContent = {
           { label: 'Audit', text: 'Log retention, syslog forwarding, integrity verification' },
           { label: 'Database', text: 'Active backend (SQLite or native PostgreSQL), size, table count, bidirectional migration UI with safety checks' },
           { label: 'HTTPS', text: 'TLS certificate for the UCM web interface' },
-          { label: 'Updates', text: 'Check for new versions, view changelog, auto-update (DEB/RPM)' },
+          { label: 'Updates', text: 'Check for new versions, view changelog, scheduled daily check with opt-in unattended install (DEB/RPM)' },
           { label: 'Webhooks', text: 'HTTP webhooks for certificate events (issue, revoke, expire) — internal LAN URLs allowed; cloud-metadata IPs blocked. Optional outbound auth: Bearer, Basic, API key, or custom header' },
           { label: 'Active Directory', text: "UCM's own AD/LDAP connection for certificate-related lookups (Kerberos principal resolution, AD-derived subjects)" },
           { label: 'Windows Autoenrollment', text: 'MS-XCEP/MS-WSTEP native Windows enrollment: policy discovery, certificate issuance, and Kerberos/SPNEGO binding' },

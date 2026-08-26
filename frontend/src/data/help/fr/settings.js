@@ -52,6 +52,17 @@ export default {
         ]
       },
       {
+        title: "Mises à jour automatiques (v2.215)",
+        content: "Paramètres › Mises à jour : vérification quotidienne en arrière-plan des nouvelles versions, et installation sans surveillance optionnelle.",
+        items: [
+          { label: "Canal", text: "« Versions stables » ne suit que les releases ; « Versions candidates » propose aussi les préversions (RC)" },
+          { label: "Notification", text: "Une version nouvellement disponible déclenche l'événement webhook/e-mail system.update_available, une fois par version" },
+          { label: "Installation auto", text: "Désactivée par défaut. Une fois activée, UCM télécharge, vérifie et installe la mise à jour à l'heure choisie, puis redémarre — installations DEB/RPM uniquement" },
+          { label: "Somme de contrôle", text: "Une installation sans surveillance exige le SHA256 publié de la release pour vérification ; une installation manuelle vérifie aussi dès qu'une somme de contrôle est publiée" },
+          { label: "Docker", text: "Les conteneurs ne peuvent pas se mettre à jour eux-mêmes — la vérification et la notification fonctionnent toujours ; récupérez la nouvelle image pour mettre à jour" },
+        ]
+      },
+      {
         title: "HSTS (Strict Transport Security)",
         content: "Politique HSTS configurable par l'opérateur afin que les instances utilisant des certificats auto-signés lors de la configuration initiale puissent s'exclure entièrement.",
         items: [
@@ -73,7 +84,7 @@ export default {
           { label: 'Audit', text: 'Rétention des journaux, transfert syslog, vérification d\'intégrité' },
           { label: 'Base de données', text: 'Backend actif (SQLite ou PostgreSQL), taille, nombre de tables, tester/basculer/migrer entre les backends' },
           { label: 'HTTPS', text: 'Certificat TLS pour l\'interface web UCM' },
-          { label: 'Mises à jour', text: 'Vérifier les nouvelles versions, voir le journal des modifications, mise à jour automatique (DEB/RPM)' },
+          { label: 'Mises à jour', text: 'Vérifier les nouvelles versions, voir le journal des modifications, vérification quotidienne planifiée avec installation sans surveillance en opt-in (DEB/RPM)' },
           { label: 'Webhooks', text: 'Webhooks HTTP pour les événements de certificat (émission, révocation, expiration). Authentification sortante optionnelle : Bearer, Basic, API key ou en-tête personnalisé' },
           { label: 'Active Directory', text: "Connexion AD/LDAP propre à UCM pour les recherches liées aux certificats (résolution de principal Kerberos, sujets dérivés d'AD)" },
           { label: 'Auto-inscription Windows', text: 'Inscription Windows native MS-XCEP/MS-WSTEP : découverte de stratégie, émission de certificats et liaison Kerberos/SPNEGO' },

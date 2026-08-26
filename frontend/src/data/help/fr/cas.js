@@ -32,6 +32,7 @@ export default {
           { label: 'Téléverser le certificat', text: 'Collez ou téléversez le certificat signé en externe (PEM/DER). Sa clé publique doit correspondre à la clé privée stockée ; les contraintes de CA sont vérifiées' },
           { label: 'Chaîne', text: "Liée automatiquement lorsque l'émetteur est connu de UCM — importez la racine externe (certificat seul) pour une chaîne complète" },
           { label: 'Renouveler via CSR', text: 'Réémet un CSR depuis la même clé (SKI stable) ; faites-le signer en externe et téléversez le nouveau certificat' },
+          { label: 'Après renouvellement', text: "Le certificat remplacé reste valide jusqu'à son notAfter — UCM affiche son numéro de série après le téléversement ; révoquez-le auprès de la racine externe s'il ne doit plus être approuvé" },
         ]
       },
       {
