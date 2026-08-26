@@ -631,16 +631,17 @@ def create_app(config_name=None):
         except ImportError:
             pass
         
-        # Register update check task (runs daily)
+        # Register update check task (hourly tick; the task itself checks at
+        # most daily and only installs in the configured window, #301)
         try:
             from services.updates import scheduled_update_check
             scheduler.register_task(
                 name="update_check",
                 func=scheduled_update_check,
-                interval=86400,  # 24 hours
-                description="Check for available UCM updates"
+                interval=3600,  # hourly gate for the auto-install window
+                description="Check for available UCM updates (opt-in auto-install)"
             )
-            app.logger.info("Registered update check task (daily)")
+            app.logger.info("Registered update check task (hourly)")
         except ImportError:
             pass
         

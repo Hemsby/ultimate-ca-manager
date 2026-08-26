@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { Rocket } from '@phosphor-icons/react'
 import { DetailHeader, DetailContent, UpdateChecker } from '../../components'
+import AutoUpdateSettings from './AutoUpdateSettings'
 
 export default function UpdatesSection() {
   const { t } = useTranslation()
@@ -12,6 +13,7 @@ export default function UpdatesSection() {
         subtitle={t('settings.updatesSubtitle')}
       />
       <UpdateChecker />
+      <AutoUpdateSettings />
     </DetailContent>
   )
 }

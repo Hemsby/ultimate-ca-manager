@@ -229,14 +229,16 @@ jobs:
               
               # Copy outputs
               cp ~/rpmbuild/RPMS/noarch/*.rpm /output/
-              cd /output && sha256sum *.rpm > checksums.sha256
+              cd /output && for f in *.rpm; do sha256sum "$f" > "$f.sha256"; done
             '
-      
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
           name: rpm-package
-          path: /tmp/rpm-output/*.rpm
+          path: |
+            /tmp/rpm-output/*.rpm
+            /tmp/rpm-output/*.rpm.sha256
 
   # ============================================================
   # Build Docker Image

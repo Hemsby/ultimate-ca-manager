@@ -10,6 +10,8 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 ## [Unreleased]
 
 ### Added
+- **Automatic updates** — a daily background check on your chosen channel (stable or release candidates) surfaces new versions in the UI and through the notification pipeline (new `system.update_available` / `system.update_installed` webhook events), and an opt-in unattended install (off by default) downloads, verifies and installs the update at a configurable hour, with a full audit trail. DEB/RPM installs only — Docker deployments get the check and notification with a pointer to pull the new image (#301)
+- Update downloads are now verified against the release's published SHA256 checksum — a manual install refuses to proceed when the published checksum can't be retrieved or doesn't cover the package, and an unattended install additionally requires a checksum to exist; RPM releases now publish a `.sha256` next to the package like DEB releases already did (#301)
 - External-CSR CAs: installing a renewal certificate now reports the superseded certificate's serial and expiry (API response, notice in the upload dialog, audit log) as a reminder to revoke it at the external root — UCM cannot publish that revocation itself, since the issuer's key is not held here (follow-up to #298)
 
 ### Fixed

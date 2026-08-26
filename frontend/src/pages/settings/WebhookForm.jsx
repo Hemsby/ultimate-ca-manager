@@ -20,6 +20,8 @@ const WEBHOOK_EVENTS = [
   'csr.rejected',
   'template.created',
   'template.updated',
+  'system.update_available',
+  'system.update_installed',
 ]
 
 export const WEBHOOK_EVENT_LABELS = {
@@ -38,6 +40,8 @@ export const WEBHOOK_EVENT_LABELS = {
   'csr.rejected': 'CSR Rejected',
   'template.created': 'Template Created',
   'template.updated': 'Template Updated',
+  'system.update_available': 'Update Available',
+  'system.update_installed': 'Update Installed',
 }
 
 // labelKey pattern: module-level constant, resolved with t() in component
