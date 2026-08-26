@@ -56,6 +56,17 @@ export default {
           { label: '子 CA', text: '根 CA 和中间 CA 可以独立地脱机' },
         ]
       },
+      {
+        title: '无密钥 CA 的外部 CRL（v2.215）',
+        content: 'UCM 无法使用其密钥的 CA（离线 CA、仅证书导入）无法签署自己的 CRL——请改为上传在离线密钥旁生成的 CRL。',
+        items: [
+          { label: '位置', text: 'CA 详情视图 › 吊销列表（CRL）：显示当前提供的 CRL 编号、条目数量、thisUpdate/nextUpdate，并在 nextUpdate 过期后显示警告' },
+          { label: '上传', text: '仅支持 PEM 或 DER 格式的完整（非增量）CRL。签名必须能通过 CA 证书验证，且签发者必须与其主题匹配' },
+          { label: '单调性', text: '比当前提供的 CRL 更旧的上传（CRL 编号或 thisUpdate）会被拒绝——请使用更高的 CRL 编号重新签发' },
+          { label: '分发', text: '上传的 CRL 在该 CA 现有的 CDP 路径上提供，OCSP 对其中列出的序列号返回已吊销状态' },
+          { label: '工作流程', text: '在离线根 CA 处吊销，在 air-gap 隔离环境中生成根 CRL，然后在此上传——根密钥永远不会上线' },
+        ]
+      },
     ],
     tips: [
       '带有钥匙图标（🔑）的 CA 拥有私钥，可以签署证书',

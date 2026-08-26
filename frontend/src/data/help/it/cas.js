@@ -56,6 +56,17 @@ export default {
           { label: 'Sub-CA', text: 'Sia le CA root che intermedie possono essere portate offline indipendentemente' },
         ]
       },
+      {
+        title: 'CRL esterne per CA senza chiave (v2.215)',
+        content: 'Una CA la cui chiave non è utilizzabile da UCM (CA offline, importazione solo certificato) non può firmare la propria CRL — carica invece una CRL generata accanto alla chiave offline.',
+        items: [
+          { label: 'Dove', text: 'Pannello di dettaglio della CA › Lista di revoca (CRL): mostra il numero della CRL servita, il conteggio delle voci, this/next update e un avviso una volta superato il nextUpdate' },
+          { label: 'Caricamento', text: 'Solo CRL complete (non delta), in formato PEM o DER. La firma deve essere verificabile con il certificato della CA e l\'emittente deve corrispondere al suo soggetto' },
+          { label: 'Monotonicità', text: 'Un caricamento più vecchio della CRL attualmente servita (numero CRL o thisUpdate) viene rifiutato — emettila con un numero CRL più alto' },
+          { label: 'Pubblicazione', text: 'La CRL caricata viene servita al percorso CDP esistente della CA e OCSP risponde «revocato» per i numeri di serie che elenca' },
+          { label: 'Flusso di lavoro', text: 'Revoca presso la root offline, genera la CRL della root nell\'ambiente air-gap, caricala qui — la chiave della root non va mai online' },
+        ]
+      },
     ],
     tips: [
       'Le CA con l\'icona della chiave (🔑) hanno una chiave privata e possono firmare certificati',

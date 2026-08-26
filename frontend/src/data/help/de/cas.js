@@ -56,6 +56,17 @@ export default {
           { label: 'Sub-CAs', text: 'Root- und Intermediate-CAs können unabhängig offline genommen werden' },
         ]
       },
+      {
+        title: 'Externe CRLs für CAs ohne Schlüssel (v2.215)',
+        content: 'Eine CA, deren Schlüssel UCM nicht verwenden kann (Offline-CA, Nur-Zertifikat-Import), kann ihre eigene CRL nicht signieren — laden Sie stattdessen eine hoch, die neben dem Offline-Schlüssel erzeugt wurde.',
+        items: [
+          { label: 'Wo', text: 'CA-Detailansicht › Widerrufsliste (CRL): zeigt die Nummer der ausgelieferten CRL, die Anzahl der Einträge, thisUpdate/nextUpdate sowie eine Warnung, sobald nextUpdate überschritten ist' },
+          { label: 'Hochladen', text: 'PEM oder DER, nur vollständige CRLs (keine Delta-CRLs). Die Signatur muss sich gegen das CA-Zertifikat verifizieren lassen und der Aussteller muss zu dessen Subject passen' },
+          { label: 'Monotonie', text: 'Ein Upload, der älter ist als die aktuell ausgelieferte CRL (CRL-Nummer oder thisUpdate), wird abgelehnt — stellen Sie sie mit einer höheren CRL-Nummer aus' },
+          { label: 'Auslieferung', text: 'Die hochgeladene CRL wird unter dem bestehenden CDP-Pfad der CA ausgeliefert, und OCSP antwortet für die darin aufgeführten Seriennummern mit „widerrufen"' },
+          { label: 'Ablauf', text: 'Widerrufen Sie an der Offline-Root, erzeugen Sie die Root-CRL in der Air-Gap-Umgebung und laden Sie sie hier hoch — der Root-Schlüssel geht nie online' },
+        ]
+      },
     ],
     tips: [
       'CAs mit einem Schlüsselsymbol (🔑) haben einen privaten Schlüssel und können Zertifikate signieren',

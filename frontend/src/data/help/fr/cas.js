@@ -56,6 +56,17 @@ export default {
           { label: 'Sous-CA', text: 'Les CA racines et intermédiaires peuvent être mises hors ligne indépendamment' },
         ]
       },
+      {
+        title: 'CRL externes pour les CA sans clé (v2.215)',
+        content: "Une CA dont UCM ne peut pas utiliser la clé (CA hors ligne, import du certificat seul) ne peut pas signer sa propre CRL — téléversez à la place une CRL générée auprès de la clé hors ligne.",
+        items: [
+          { label: 'Où', text: "Panneau de détails de la CA › Liste de révocation (CRL) : affiche le numéro de la CRL servie, le nombre d'entrées, thisUpdate/nextUpdate, et un avertissement dès que nextUpdate est dépassé" },
+          { label: 'Téléversement', text: "CRL complètes (non delta) uniquement, au format PEM ou DER. La signature doit se vérifier avec le certificat de la CA et l'émetteur doit correspondre à son sujet" },
+          { label: 'Monotonie', text: 'Un téléversement plus ancien que la CRL actuellement servie (numéro de CRL ou thisUpdate) est refusé — émettez-la avec un numéro de CRL supérieur' },
+          { label: 'Publication', text: "La CRL téléversée est servie au chemin CDP existant de la CA, et l'OCSP répond « révoqué » pour les numéros de série qu'elle liste" },
+          { label: 'Flux de travail', text: "Révoquez auprès de la racine hors ligne, générez la CRL de la racine dans l'environnement isolé (air-gap), puis téléversez-la ici — la clé de la racine ne passe jamais en ligne" },
+        ]
+      },
     ],
     tips: [
       'Les CA avec une icône de clé (🔑) possèdent une clé privée et peuvent signer des certificats',

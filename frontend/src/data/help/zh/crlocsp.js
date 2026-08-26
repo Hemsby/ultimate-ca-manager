@@ -12,6 +12,7 @@ export default {
           { label: '下载 CRL', text: '以 DER 或 PEM 格式下载 CRL 文件' },
           { label: 'CDP URL', text: '嵌入证书中的 CRL 分发点 URL' },
           { label: '有效期', text: '每个 CA 的 CRL 有效期从 1 天到 5 年（90d/180d/1y/3y/5y 适用于无法按计划重新签名的离线 CA）。超过一年会显示警告——依赖方可能在整个有效期窗口内保留过期的吊销数据' },
+          { label: '外部 CRL', text: '无密钥/离线 CA 无法自签 CRL——请从 CA 详情视图上传在离线密钥旁生成的 CRL；上传会经过验证（签名、签发者、单调性）并在相同的 CDP URL 上提供（v2.215）' },
         ]
       },
       {

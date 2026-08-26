@@ -109,6 +109,18 @@ export const helpContent = {
           { label: 'Sub-CAs', text: 'Both Root and Intermediate CAs can be taken offline independently' },
         ]
       },
+      {
+        title: 'External CRLs for key-less CAs (v2.215)',
+        icon: ListChecks,
+        content: 'A CA whose key UCM cannot use (offline CA, certificate-only import) cannot sign its own CRL — upload one generated next to the offline key instead.',
+        items: [
+          { label: 'Where', text: 'CA detail view › Revocation list (CRL): shows the served CRL number, entry count, this/next update, and a warning once nextUpdate has passed' },
+          { label: 'Upload', text: 'PEM or DER, complete (non-delta) CRLs only. The signature must verify against the CA certificate and the issuer must match its subject' },
+          { label: 'Monotonicity', text: 'An upload older than the currently served CRL (CRL number or thisUpdate) is refused — issue it with a higher CRL number' },
+          { label: 'Serving', text: "The uploaded CRL is served at the CA's existing CDP path, and OCSP answers revoked for the serials it lists" },
+          { label: 'Workflow', text: 'Revoke at the offline root, generate the root CRL in the air-gapped environment, upload it here — the root key never goes online' },
+        ]
+      },
     ],
     tips: [
       'CAs with a key icon (🔑) have a private key and can sign certificates',
@@ -346,6 +358,7 @@ export const helpContent = {
           { label: 'Download CRL', text: 'Download the CRL file in DER or PEM format' },
           { label: 'CDP URL', text: 'CRL Distribution Point URL to embed in certificates' },
           { label: 'Validity', text: 'Per-CA CRL validity from 1 day up to 5 years (90d/180d/1y/3y/5y for offline CAs that cannot re-sign on schedule). A warning appears past one year — relying parties may keep stale revocation data for the whole window' },
+          { label: 'External CRL', text: 'Key-less/offline CAs cannot self-sign a CRL — upload one generated next to the offline key from the CA detail view; it is validated (signature, issuer, monotonicity) and served at the same CDP URL (v2.215)' },
         ]
       },
       {

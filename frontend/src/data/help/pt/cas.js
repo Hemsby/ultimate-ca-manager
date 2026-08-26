@@ -56,6 +56,17 @@ export default {
           { label: 'Sub-CAs', text: 'Tanto CAs raízes quanto intermediárias podem ser colocadas offline independentemente' },
         ]
       },
+      {
+        title: 'CRLs externas para CAs sem chave (v2.215)',
+        content: 'Uma CA cuja chave o UCM não pode usar (CA offline, importação apenas de certificado) não pode assinar sua própria CRL — envie em vez disso uma CRL gerada junto à chave offline.',
+        items: [
+          { label: 'Onde', text: 'Painel de detalhes da CA › Lista de revogação (CRL): mostra o número da CRL servida, a contagem de entradas, thisUpdate/nextUpdate e um aviso quando o nextUpdate tiver passado' },
+          { label: 'Envio', text: 'PEM ou DER, apenas CRLs completas (não delta). A assinatura deve ser verificável com o certificado da CA e o emissor deve corresponder ao seu sujeito' },
+          { label: 'Monotonicidade', text: 'Um envio mais antigo que a CRL atualmente servida (número de CRL ou thisUpdate) é recusado — emita-a com um número de CRL maior' },
+          { label: 'Publicação', text: 'A CRL enviada é servida no caminho CDP existente da CA, e o OCSP responde revogado para os seriais que ela lista' },
+          { label: 'Fluxo de trabalho', text: 'Revogue na raiz offline, gere a CRL da raiz no ambiente air-gap e envie-a aqui — a chave da raiz nunca fica online' },
+        ]
+      },
     ],
     tips: [
       'CAs com ícone de chave (🔑) possuem chave privada e podem assinar certificados',

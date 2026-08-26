@@ -12,6 +12,7 @@ export default {
           { label: 'Baixar CRL', text: 'Baixar o arquivo CRL em formato DER ou PEM' },
           { label: 'URL do CDP', text: 'URL do Ponto de Distribuição de CRL para incorporar nos certificados' },
           { label: 'Validade', text: 'Validade da CRL por CA de 1 dia até 5 anos (90d/180d/1y/3y/5y para CAs offline que não podem reassinar no prazo). Um aviso aparece acima de um ano — as partes confiantes podem manter dados de revogação obsoletos durante toda a janela' },
+          { label: 'CRL Externa', text: 'CAs sem chave/offline não podem autoassinar uma CRL — envie uma gerada junto à chave offline a partir do painel de detalhes da CA; ela é validada (assinatura, emissor, monotonicidade) e servida na mesma URL do CDP (v2.215)' },
         ]
       },
       {

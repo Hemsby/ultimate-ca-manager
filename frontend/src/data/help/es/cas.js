@@ -56,6 +56,17 @@ export default {
           { label: 'Sub-CAs', text: 'Tanto las CAs raíces como las intermedias pueden ponerse sin conexión de forma independiente' },
         ]
       },
+      {
+        title: 'CRLs externas para CAs sin clave (v2.215)',
+        content: 'Una CA cuya clave UCM no puede usar (CA sin conexión, importación solo del certificado) no puede firmar su propia CRL — suba en su lugar una generada junto a la clave sin conexión.',
+        items: [
+          { label: 'Dónde', text: 'Panel de detalles de la CA › Lista de revocación (CRL): muestra el número de la CRL servida, la cantidad de entradas, thisUpdate/nextUpdate y una advertencia una vez pasado nextUpdate' },
+          { label: 'Subida', text: 'Solo CRLs completas (no delta), en PEM o DER. La firma debe verificarse contra el certificado de la CA y el emisor debe coincidir con su sujeto' },
+          { label: 'Monotonía', text: 'Una subida más antigua que la CRL servida actualmente (número de CRL o thisUpdate) se rechaza — emítala con un número de CRL más alto' },
+          { label: 'Publicación', text: 'La CRL subida se sirve en la ruta CDP existente de la CA, y OCSP responde «revocado» para los números de serie que lista' },
+          { label: 'Flujo de trabajo', text: 'Revoque en la raíz sin conexión, genere la CRL de la raíz en el entorno air-gap y súbala aquí — la clave de la raíz nunca pasa a estar en línea' },
+        ]
+      },
     ],
     tips: [
       'Las CAs con un icono de llave (🔑) tienen clave privada y pueden firmar certificados',
