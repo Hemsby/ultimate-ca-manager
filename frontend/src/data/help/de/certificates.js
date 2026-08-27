@@ -58,6 +58,16 @@ export default {
           { label: 'Nicht blockierend', text: 'Schreibfehler werden geloggt, brechen aber nie die DB-Transaktion ab' },
         ]
       },
+      {
+        title: 'Bereitstellung (v2.215)',
+        content: 'Dieses Zertifikat per SSH/SFTP auf entfernte Hosts übertragen — nur für Admins, Ziele werden unter Einstellungen › Bereitstellung verwaltet.',
+        items: [
+          { label: 'Ziel verknüpfen', text: 'Aus der Zertifikat-Detailansicht: ein Deploy-Ziel wählen und absolute Zielpfade für Zertifikat, privaten Schlüssel und/oder vollständige Kette festlegen (mindestens einen)' },
+          { label: 'Automatisch', text: 'Bei Ausstellung und Erneuerung werden die verknüpften Dateien erneut übertragen und der Reload-Befehl des Ziels ausgeführt — Zustellungen werden mit Wiederholungen in die Warteschlange gestellt' },
+          { label: 'Dateien', text: 'Werden atomar an den exakt konfigurierten Pfaden geschrieben (übergeordnetes Verzeichnis muss existieren): Schlüssel 0600, Zertifikat/Kette 0644' },
+          { label: 'Jetzt bereitstellen', text: 'Manuelle Übertragung aus der Detailansicht, mit Zustellstatus und letztem Fehler pro Ziel' },
+        ]
+      },
 
     ],
     tips: [

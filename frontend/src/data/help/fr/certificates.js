@@ -58,6 +58,16 @@ export default {
           { label: 'Non bloquant', text: 'Les erreurs d\'écriture sont loguées mais n\'interrompent jamais la transaction DB' },
         ]
       },
+      {
+        title: 'Déploiement (v2.215)',
+        content: "Poussez ce certificat vers des hôtes distants en SSH/SFTP — réservé aux admins, les cibles se gèrent dans Paramètres › Déploiement.",
+        items: [
+          { label: 'Attacher une cible', text: "Depuis le panneau de détails du certificat : choisissez une cible de déploiement et définissez des chemins de destination absolus pour le certificat, la clé privée et/ou la chaîne complète (au moins un)" },
+          { label: 'Automatique', text: "À l'émission et au renouvellement, les fichiers liés sont poussés à nouveau et la commande de rechargement de la cible s'exécute — les livraisons sont mises en file avec réessais" },
+          { label: 'Fichiers', text: "Écrits de façon atomique aux chemins exacts configurés (le répertoire parent doit exister) : clé 0600, certificat/chaîne 0644" },
+          { label: 'Déployer maintenant', text: "Envoi manuel depuis le panneau de détails, avec le statut de livraison et la dernière erreur affichés par cible" },
+        ]
+      },
 
     ],
     tips: [

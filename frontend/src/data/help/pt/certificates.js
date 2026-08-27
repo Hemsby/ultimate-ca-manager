@@ -58,6 +58,16 @@ export default {
           { label: 'Não bloqueante', text: 'Erros de escrita são logados mas nunca abortam a transação de DB' },
         ]
       },
+      {
+        title: 'Implantação (v2.215)',
+        content: 'Envie este certificado para hosts remotos via SSH/SFTP — somente admin, os alvos são gerenciados em Configurações › Implantação.',
+        items: [
+          { label: 'Anexar alvo', text: 'A partir da visão de detalhe do certificado: escolha um alvo de implantação e defina caminhos de destino absolutos para o certificado, a chave privada e/ou a cadeia completa (pelo menos um)' },
+          { label: 'Automático', text: 'Na emissão e na renovação, os arquivos vinculados são reenviados e o comando de recarga do alvo é executado — as entregas são enfileiradas com tentativas de repetição' },
+          { label: 'Arquivos', text: 'Gravados de forma atômica exatamente nos caminhos configurados (o diretório pai deve existir): chave 0600, certificado/cadeia 0644' },
+          { label: 'Implantar agora', text: 'Envio manual a partir da visão de detalhe, com o status da entrega e o último erro exibidos por alvo' },
+        ]
+      },
 
     ],
     tips: [

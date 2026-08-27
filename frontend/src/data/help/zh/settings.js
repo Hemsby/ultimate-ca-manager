@@ -86,8 +86,21 @@ export default {
           { label: 'HTTPS', text: 'UCM Web 界面的 TLS 证书' },
           { label: '更新', text: '检查新版本、查看变更日志、每日计划检查并可选启用无人值守安装（DEB/RPM）' },
           { label: 'Webhook', text: '证书事件（签发、吊销、过期）的 HTTP Webhook — 允许内部 LAN URL；阻止云元数据 IP。可选出站认证：Bearer、Basic、API 密钥或自定义标头' },
+          { label: '部署', text: '部署目标：在签发和续期时通过 SSH/SFTP 将证书推送到的远程主机，并附带一条固定的重载命令（仅管理员，v2.215）' },
           { label: 'Active Directory', text: 'UCM 自身的 AD/LDAP 连接，用于与证书相关的查询（Kerberos 主体解析、AD 派生主题）' },
           { label: 'Windows 自动注册', text: 'MS-XCEP/MS-WSTEP 原生 Windows 注册：策略发现、证书签发和 Kerberos/SPNEGO 绑定' },
+        ]
+      },
+      {
+        title: '部署钩子（v2.215）',
+        content: '设置 › 部署（仅管理员）：UCM 通过 SFTP 将证书推送到的远程主机，随后通过 SSH 运行一条固定的重载命令。',
+        items: [
+          { label: '目标', text: '主机、端口、SSH 用户。UCM 会生成一个 ed25519 密钥（将显示的公钥安装到目标主机上），也接受导入的私钥 —— 均加密存储' },
+          { label: '主机密钥', text: '在首次成功连接时固定（首次使用即信任，TOFU）；此后任何变化都会直接导致连接失败。更改主机后会重新固定' },
+          { label: '重载命令', text: '推送成功后运行的一条由管理员定义的固定命令（例如 systemctl reload nginx）—— exit 0 即成功，不支持模板' },
+          { label: '绑定', text: '在证书详情视图中将证书关联到目标，并为每个文件指定目标路径' },
+          { label: '投递', text: '推送通过带重试和退避的持久队列异步执行；提供每次投递的状态、手动"立即部署"和重试，以及完整的审计记录' },
+          { label: '最小权限', text: '在每台目标主机上使用专用 SSH 账户：仅具备证书路径的写入权限和重载服务的权限，别无其他' },
         ]
       },
       {

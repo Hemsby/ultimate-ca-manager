@@ -86,8 +86,21 @@ export default {
           { label: 'HTTPS', text: 'Certificat TLS pour l\'interface web UCM' },
           { label: 'Mises à jour', text: 'Vérifier les nouvelles versions, voir le journal des modifications, vérification quotidienne planifiée avec installation sans surveillance en opt-in (DEB/RPM)' },
           { label: 'Webhooks', text: 'Webhooks HTTP pour les événements de certificat (émission, révocation, expiration). Authentification sortante optionnelle : Bearer, Basic, API key ou en-tête personnalisé' },
+          { label: 'Déploiement', text: "Cibles de déploiement : hôtes distants vers lesquels les certificats sont poussés en SSH/SFTP à l'émission et au renouvellement, avec une commande de rechargement fixe (réservé aux admins, v2.215)" },
           { label: 'Active Directory', text: "Connexion AD/LDAP propre à UCM pour les recherches liées aux certificats (résolution de principal Kerberos, sujets dérivés d'AD)" },
           { label: 'Auto-inscription Windows', text: 'Inscription Windows native MS-XCEP/MS-WSTEP : découverte de stratégie, émission de certificats et liaison Kerberos/SPNEGO' },
+        ]
+      },
+      {
+        title: 'Hooks de déploiement (v2.215)',
+        content: "Paramètres › Déploiement (réservé aux admins) : hôtes distants vers lesquels UCM pousse les certificats en SFTP, puis exécute une commande de rechargement fixe en SSH.",
+        items: [
+          { label: 'Cible', text: "Hôte, port, utilisateur SSH. UCM génère une clé ed25519 (installez la clé publique affichée sur la cible) ou accepte une clé privée importée — stockée chiffrée" },
+          { label: "Clé d'hôte", text: "Épinglée à la première connexion réussie (trust-on-first-use) ; tout changement ultérieur fait échouer la connexion. Changer l'hôte ré-épingle la clé" },
+          { label: 'Commande de rechargement', text: "Une commande fixe, définie par l'admin, exécutée après un envoi réussi (par ex. systemctl reload nginx) — exit 0 = succès, pas de templating" },
+          { label: 'Liaisons', text: "Les certificats sont attachés aux cibles depuis le panneau de détails du certificat, avec des chemins de destination par fichier" },
+          { label: 'Livraison', text: "Les envois s'exécutent de façon asynchrone via une file durable avec réessais et backoff ; statut par livraison, « Déployer maintenant » et réessai manuels, piste d'audit complète" },
+          { label: 'Moindre privilège', text: "Utilisez un compte SSH dédié sur chaque cible : accès en écriture aux chemins des certificats et permission de recharger le service, rien de plus" },
         ]
       },
       {

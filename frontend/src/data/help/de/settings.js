@@ -86,8 +86,21 @@ export default {
           { label: 'HTTPS', text: 'TLS-Zertifikat für die UCM-Weboberfläche' },
           { label: 'Updates', text: 'Nach neuen Versionen suchen, Änderungsprotokoll anzeigen, geplante tägliche Prüfung mit optionaler unbeaufsichtigter Installation (DEB/RPM)' },
           { label: 'Webhooks', text: 'HTTP-Webhooks für Zertifikatsereignisse (Ausstellung, Widerruf, Ablauf)' },
+          { label: 'Bereitstellung', text: 'Deploy-Ziele: entfernte Hosts, auf die Zertifikate bei Ausstellung und Erneuerung per SSH/SFTP übertragen werden, mit einem festen Reload-Befehl (nur Admins, v2.215)' },
           { label: 'Active Directory', text: 'UCMs eigene AD/LDAP-Verbindung für zertifikatsbezogene Abfragen (Kerberos-Prinzipalauflösung, AD-abgeleitete Betreffe)' },
           { label: 'Windows-Autoregistrierung', text: 'MS-XCEP/MS-WSTEP native Windows-Registrierung: Richtlinienermittlung, Zertifikatsausstellung und Kerberos/SPNEGO-Bindung' },
+        ]
+      },
+      {
+        title: 'Deploy-Hooks (v2.215)',
+        content: 'Einstellungen › Bereitstellung (nur Admins): entfernte Hosts, auf die UCM Zertifikate per SFTP überträgt und anschließend einen festen Reload-Befehl per SSH ausführt.',
+        items: [
+          { label: 'Ziel', text: 'Host, Port, SSH-Benutzer. UCM generiert einen ed25519-Schlüssel (den angezeigten öffentlichen Schlüssel auf dem Ziel installieren) oder akzeptiert einen importierten privaten Schlüssel — verschlüsselt gespeichert' },
+          { label: 'Host-Key', text: 'Wird bei der ersten erfolgreichen Verbindung gepinnt (Trust-on-first-use); jede spätere Änderung lässt die Verbindung fehlschlagen (fail-closed). Bei Änderung des Hosts wird neu gepinnt' },
+          { label: 'Reload-Befehl', text: 'Ein fester, vom Admin definierter Befehl, der nach einer erfolgreichen Übertragung ausgeführt wird (z. B. systemctl reload nginx) — exit 0 = Erfolg, kein Templating' },
+          { label: 'Verknüpfungen', text: 'Zertifikate werden aus der Zertifikat-Detailansicht mit Zielen verknüpft, mit Zielpfaden pro Datei' },
+          { label: 'Zustellung', text: 'Übertragungen laufen asynchron über eine dauerhafte Warteschlange mit Wiederholungen und Backoff; Status pro Zustellung, manuelles „Jetzt bereitstellen" und Wiederholen, vollständiger Audit-Trail' },
+          { label: 'Minimale Rechte', text: 'Verwenden Sie auf jedem Ziel ein dediziertes SSH-Konto: Schreibzugriff auf die Zertifikatspfade und die Berechtigung, den Dienst neu zu laden — mehr nicht' },
         ]
       },
       {
