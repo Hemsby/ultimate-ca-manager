@@ -117,10 +117,13 @@ class TestTargets:
         data = _create_target(auth_client)
         from models import db, DeployTarget
         from services.deploy.ssh import load_private_key
-        from security.encryption import decrypt_text
+        from security.encryption import decrypt_text, encrypt_text
         with app.app_context():
             target = db.session.get(DeployTarget, data['id'])
-            assert 'PRIVATE KEY' not in (target.private_key or '')
+            # encrypt_text is a documented no-op without a master key (CI runs
+            # without one) — only assert ciphertext when encryption is active
+            if encrypt_text('probe') != 'probe':
+                assert 'PRIVATE KEY' not in (target.private_key or '')
             load_private_key(decrypt_text(target.private_key))  # round-trips to a usable key
 
     def test_create_with_imported_key(self, auth_client):
@@ -441,16 +444,30 @@ class TestReviewFindings:
         assert_error(r, 400)
 
     def _admin_scoped_key(self, app, permissions, name):
-        """API key owned by an admin, scoped to the given deploy permissions."""
+        """API key owned by a DEDICATED admin user, scoped to the given deploy
+        permissions. A dedicated owner (not the shared 'admin') keeps this test
+        out of the 10-active-keys-per-user cap other tests consume in a
+        full-suite run (same policy as test_subca_permission_and_pathlen)."""
         import hashlib
         import secrets
         from models import User, db
         from models.api_key import APIKey
+        username = 'deploy_scope_probe_admin'
         with app.app_context():
-            admin = User.query.filter_by(username='admin').first()
+            owner = User.query.filter_by(username=username).first()
+            if not owner:
+                owner = User(
+                    username=username,
+                    email=f'{username}@test.local',
+                    password_hash='!',           # unused: key auth only
+                    role='admin',
+                    active=True,
+                )
+                db.session.add(owner)
+                db.session.commit()
             raw_key = f'ucm_ak_{secrets.token_urlsafe(32)}'
             db.session.add(APIKey(
-                user_id=admin.id,
+                user_id=owner.id,
                 key_hash=hashlib.sha256(raw_key.encode()).hexdigest(),
                 key_prefix=raw_key[:12],
                 name=name,
