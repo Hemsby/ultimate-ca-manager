@@ -200,6 +200,35 @@ class TestUpdateResultConsumption:
         assert events[0]['error'] == 'dpkg exited 1'
         assert events[0]['step'] == 'dpkg'
 
+    def test_installed_with_version_mismatch_downgraded_to_failed(
+            self, app, monkeypatch, tmp_path):
+        """Backend re-verifies the watcher's claim: 'installed' without a
+        matching version must emit update_failed, never update_installed."""
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(wh, 'emit_update_installed',
+                            lambda *a, **k: events.append(('installed',)))
+        monkeypatch.setattr(wh, 'emit_update_failed',
+                            lambda update, actor=None: events.append(('failed', update)))
+        self._write_result(tmp_path, status='installed', installed_version='2.0')
+        with app.app_context():
+            updates.consume_update_result()
+        assert len(events) == 1 and events[0][0] == 'failed'
+        assert events[0][1]['step'] == 'verify'
+
+    def test_installed_accepts_package_revision_suffix(
+            self, app, monkeypatch, tmp_path):
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(wh, 'emit_update_installed',
+                            lambda update, actor=None: events.append(update))
+        self._write_result(tmp_path, installed_version='99.0-1')
+        with app.app_context():
+            updates.consume_update_result()
+        assert len(events) == 1
+
     def test_corrupt_result_is_discarded_silently(
             self, app, monkeypatch, tmp_path):
         import services.webhook_service as wh

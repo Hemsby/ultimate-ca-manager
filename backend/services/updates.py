@@ -434,7 +434,32 @@ def consume_update_result():
         'op_id': data.get('op_id'),
     }
     actor = data.get('initiated_by') or 'system'
-    if data.get('status') == 'installed':
+
+    def _version_matches(detected, target):
+        # DEB/RPM package versions may carry a revision ('2.216-1')
+        if not detected or not target:
+            return False
+        return detected == target or detected.split('-', 1)[0] == target
+
+    # Independent backend check on top of the watcher's own verification:
+    # 'installed' additionally requires the recorded installed_version to
+    # match the target — a watcher result claiming success without a
+    # matching version is downgraded to a failure.
+    verified = (
+        data.get('status') == 'installed'
+        and _version_matches(data.get('installed_version'), data.get('to_version'))
+    )
+    if data.get('status') == 'installed' and not verified:
+        data['status'] = 'failed'
+        if not data.get('step'):
+            data['step'] = 'verify'
+        if not data.get('error'):
+            data['error'] = (
+                f"installed version {data.get('installed_version')!r} does not "
+                f"match target {data.get('to_version')!r}"
+            )
+
+    if verified:
         AuditService.log_action(
             action='settings_update', resource_type='system', resource_id='ucm',
             resource_name='UCM Auto-Update',
