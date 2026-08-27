@@ -1846,6 +1846,8 @@
     "helpTitle": "Deploy hooks",
     "helpDescription": "On issuance and renewal, UCM pushes the chosen files (certificate, private key, full chain) to the bound remote hosts over SFTP, then runs the target's reload command over SSH. Use a dedicated low-privilege SSH account on each target: write access to the certificate paths and permission to reload the service, nothing more.",
     "targets": "Deploy targets",
+    "noTargets": "No deploy targets",
+    "noTargetsDescription": "Create a target to push certificates to a remote host over SSH on issuance and renewal.",
     "addTarget": "Add target",
     "editTarget": "Edit target",
     "deleteTarget": "Delete target",
