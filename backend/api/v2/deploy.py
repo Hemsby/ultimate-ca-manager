@@ -9,6 +9,8 @@ and every mutation is audited.
 from flask import Blueprint, request, g
 import logging
 
+from sqlalchemy.exc import IntegrityError
+
 from auth.unified import require_auth
 from utils.response import success_response, error_response, created_response
 from utils.db_transaction import safe_commit
@@ -218,21 +220,43 @@ def create_binding():
         created_by=_actor(),
         **fields,
     )
+    cert_label = certificate.descr or certificate.refid
     db.session.add(binding)
-    db.session.flush()
-    # First push queued right away (drained by the scheduler with retries) —
-    # the issued event can never match a binding created after issuance.
-    DeployService.enqueue_initial_push(binding, actor=_actor())
+    delivery = None
+    # Binding + initial delivery commit in ONE transaction, flush protected:
+    # a concurrent create races past the pre-check and must yield 409 (unique
+    # constraint), never an unhandled 500 (review R-03).
+    try:
+        db.session.flush()
+        # First push queued right away (drained by the scheduler with
+        # retries) — the issued event can never match a binding created
+        # after issuance. None when the binding or target is disabled.
+        delivery = DeployService.enqueue_initial_push(binding, actor=_actor())
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return error_response('This certificate is already bound to this target', 409)
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f'Failed to create deploy binding: {e}', exc_info=True)
+        return error_response('Failed to create deploy binding', 500)
+
+    queued = delivery is not None
+    result = binding.to_dict()
+    # Audit AFTER the business commit — its internal commit/rollback can no
+    # longer undo the binding (R-03); wording reflects whether a delivery was
+    # actually queued (R-04: a disabled binding/target is a valid state, not
+    # an error, but must not be announced as queued).
     AuditService.log_action(
         action='deploy_binding_create', resource_type='deploy_target',
         resource_id=str(target.id), resource_name=target.name,
-        details=(f"Bound certificate {certificate.descr or certificate.refid} "
-                 f"to {target.name}; initial deployment queued"),
+        details=(f"Bound certificate {cert_label} to {target.name}; "
+                 + ('initial deployment queued' if queued else
+                    'initial deployment not queued (binding or target disabled)')),
         success=True)
-    ok, err = safe_commit(logger, 'Failed to create deploy binding')
-    if not ok:
-        return err
-    return created_response(data=binding.to_dict(), message='Deploy binding created — initial deployment queued')
+    message = ('Deploy binding created — initial deployment queued' if queued
+               else 'Deploy binding created — no deployment queued (binding or target disabled)')
+    return created_response(data=result, message=message)
 
 
 @bp.route('/api/v2/deploy/bindings/<int:binding_id>', methods=['PATCH'])

@@ -87,8 +87,19 @@ def install_update():
             expected_sha256=expected_sha256,
         )
 
-        # Install (this will restart the service)
-        do_install(package_path)
+        # Install (this will restart the service). The truthful outcome —
+        # system.update_installed / system.update_failed — is emitted after
+        # the restart from the watcher's durable result.
+        do_install(
+            package_path,
+            to_version=update_info['latest_version'],
+            initiated_by='admin',
+        )
+        from services.webhook_service import emit_update_initiated
+        emit_update_initiated({
+            'current_version': update_info['current_version'],
+            'latest_version': update_info['latest_version'],
+        }, actor='admin')
 
         # Log the update
         AuditService.log_action(
@@ -97,8 +108,9 @@ def install_update():
             resource_id='ucm',
             resource_name='UCM Update',
             details=(
-                f"Updated from {update_info['current_version']} to "
-                f"{update_info['latest_version']} ({checksum_note})"
+                f"Update from {update_info['current_version']} to "
+                f"{update_info['latest_version']} triggered ({checksum_note}) — "
+                f"performed by the update watcher on restart"
             )
         )
 

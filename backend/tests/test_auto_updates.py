@@ -155,6 +155,89 @@ class TestChannelFilter:
         assert result['latest_version'] == '99.2'
 
 
+class TestUpdateResultConsumption:
+    """R-01: system.update_installed / system.update_failed come from the
+    watcher's durable result, consumed exactly once."""
+
+    def _write_result(self, tmp_path, **over):
+        data = {
+            'op_id': 'abc123', 'from_version': '2.0', 'to_version': '99.0',
+            'initiated_by': 'scheduler', 'status': 'installed',
+            'installed_version': '99.0', 'step': None, 'error': None,
+        }
+        data.update(over)
+        (tmp_path / '.update_result.json').write_text(json.dumps(data))
+
+    def test_installed_result_emits_installed_once(
+            self, app, monkeypatch, tmp_path):
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(wh, 'emit_update_installed',
+                            lambda update, actor=None: events.append(update))
+        self._write_result(tmp_path)
+        with app.app_context():
+            result = updates.consume_update_result()
+            assert result['status'] == 'installed'
+            assert updates.consume_update_result() is None  # consumed once
+        assert len(events) == 1
+        assert events[0]['latest_version'] == '99.0'
+        assert not (tmp_path / '.update_result.json').exists()
+
+    def test_failed_result_emits_failed(self, app, monkeypatch, tmp_path):
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(wh, 'emit_update_failed',
+                            lambda update, actor=None: events.append(update))
+        monkeypatch.setattr(wh, 'emit_update_installed',
+                            lambda *a, **k: events.append('WRONG'))
+        self._write_result(tmp_path, status='failed', step='dpkg',
+                           error='dpkg exited 1', installed_version='2.0')
+        with app.app_context():
+            updates.consume_update_result()
+        assert len(events) == 1
+        assert events[0]['error'] == 'dpkg exited 1'
+        assert events[0]['step'] == 'dpkg'
+
+    def test_corrupt_result_is_discarded_silently(
+            self, app, monkeypatch, tmp_path):
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(wh, 'emit_update_installed',
+                            lambda *a, **k: events.append('x'))
+        monkeypatch.setattr(wh, 'emit_update_failed',
+                            lambda *a, **k: events.append('x'))
+        (tmp_path / '.update_result.json').write_text('{not json')
+        with app.app_context():
+            assert updates.consume_update_result() is None
+        assert events == []
+        assert not (tmp_path / '.update_result.json').exists()
+
+    def test_no_result_file_is_noop(self, app, monkeypatch, tmp_path):
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        with app.app_context():
+            assert updates.consume_update_result() is None
+
+
+class TestNotifyMarker:
+    def test_marker_failure_is_visible(self, app, clean_update_config, monkeypatch):
+        """R-05: a failed dedup-marker persist must not be silent."""
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(wh, 'emit_update_available',
+                            lambda update: events.append(update))
+        monkeypatch.setattr(updates, '_cfg_set', lambda k, v: False)
+        with app.app_context():
+            ok = updates._notify_update_available({
+                'current_version': '2.0', 'latest_version': '99.0',
+                'html_url': 'http://x', 'prerelease': False,
+            })
+        assert ok is False
+        assert len(events) == 1  # emitted, but the failure is reported
+
+
 class TestScheduledTask:
     def _base_result(self, **over):
         result = {
@@ -187,7 +270,7 @@ class TestScheduledTask:
         monkeypatch.setattr(updates, 'download_update',
                             lambda *a, **k: installed.append('dl') or '/tmp/p.deb')
         monkeypatch.setattr(updates, 'install_update',
-                            lambda p: installed.append('install'))
+                            lambda p, **k: installed.append('install'))
         with app.app_context():
             updates.scheduled_update_check()
         assert installed == []
@@ -209,13 +292,41 @@ class TestScheduledTask:
             lambda url, name, expected_sha256=None:
                 calls.append(('download', expected_sha256)) or '/tmp/p.deb')
         monkeypatch.setattr(updates, 'install_update',
-                            lambda p: calls.append(('install', p)))
+                            lambda p, **k: calls.append(('install', p)))
         self._enable_auto(app, datetime.now().hour)
         with app.app_context():
             updates.scheduled_update_check()
             # second tick in the same window: one attempt per version only
             updates.scheduled_update_check()
         assert calls == [('download', 'e' * 64), ('install', '/tmp/p.deb')]
+
+    def test_auto_install_emits_initiated_not_installed(
+            self, app, clean_update_config, monkeypatch, tmp_path):
+        """R-01: the trigger only warrants 'initiated' — 'installed' comes
+        from the watcher's durable result after the restart."""
+        from datetime import datetime
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(updates, 'check_for_updates',
+                            lambda **k: self._base_result())
+        monkeypatch.setattr(updates, 'fetch_expected_sha256',
+                            lambda url, name: 'e' * 64)
+        monkeypatch.setattr(updates, 'download_update',
+                            lambda *a, **k: '/tmp/p.deb')
+        monkeypatch.setattr(wh, 'emit_update_initiated',
+                            lambda *a, **k: events.append('initiated'))
+        monkeypatch.setattr(wh, 'emit_update_installed',
+                            lambda *a, **k: events.append('installed'))
+        self._enable_auto(app, datetime.now().hour)
+        with app.app_context():
+            updates.scheduled_update_check()
+        assert events == ['initiated']
+        # trigger + manifest both written
+        assert (tmp_path / '.update_pending').read_text() == '/tmp/p.deb'
+        manifest = json.loads((tmp_path / '.update_manifest.json').read_text())
+        assert manifest['to_version'] == '99.0'
+        assert manifest['op_id']
 
     def test_trigger_failure_emits_no_installed_event(
             self, app, clean_update_config, monkeypatch):
@@ -229,7 +340,7 @@ class TestScheduledTask:
                             lambda url, name: 'e' * 64)
         monkeypatch.setattr(updates, 'download_update',
                             lambda *a, **k: '/tmp/p.deb')
-        def _boom(path):
+        def _boom(path, **k):
             raise Exception('trigger write failed')
         monkeypatch.setattr(updates, 'install_update', _boom)
         monkeypatch.setattr(wh, 'emit_update_installed',
@@ -265,7 +376,7 @@ class TestScheduledTask:
         monkeypatch.setattr(updates, 'download_update',
                             lambda *a, **k: installed.append('dl'))
         monkeypatch.setattr(updates, 'install_update',
-                            lambda p: installed.append('install'))
+                            lambda p, **k: installed.append('install'))
         self._enable_auto(app, datetime.now().hour)
         with app.app_context():
             updates.scheduled_update_check()
@@ -281,7 +392,7 @@ class TestScheduledTask:
         monkeypatch.setattr(updates, 'download_update',
                             lambda *a, **k: installed.append('dl'))
         monkeypatch.setattr(updates, 'install_update',
-                            lambda p: installed.append('install'))
+                            lambda p, **k: installed.append('install'))
         self._enable_auto(app, (datetime.now().hour + 2) % 24)
         with app.app_context():
             updates.scheduled_update_check()

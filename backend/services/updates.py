@@ -357,26 +357,110 @@ def download_update(download_url, package_name, expected_sha256=None):
         raise Exception(f"Download failed: {str(e)}")
 
 
-def install_update(package_path):
+def install_update(package_path, *, to_version=None, initiated_by='admin'):
     """
     Install downloaded update package via systemd path-activated watcher.
-    
-    Writes the package path to /opt/ucm/data/.update_pending which triggers
-    the ucm-watcher.path systemd unit. The ucm-watcher.service runs as root
-    (no NoNewPrivileges restriction) and handles dpkg/rpm install + restart.
+
+    Writes an atomic operation manifest (.update_manifest.json) then the
+    package path to /opt/ucm/data/.update_pending, which triggers the
+    ucm-watcher.path systemd unit. The ucm-watcher.service runs as root
+    (no NoNewPrivileges restriction), handles dpkg/rpm install + restart, and
+    writes a durable .update_result.json consumed by consume_update_result()
+    after the restart — only that result decides installed vs failed.
     """
     if not package_path.endswith('.deb') and not package_path.endswith('.rpm'):
         raise Exception(f"Unknown package format: {package_path}")
-    
+
     try:
+        import json as _json
+        import uuid
+        manifest = {
+            'op_id': uuid.uuid4().hex,
+            'package_path': package_path,
+            'from_version': get_current_version(),
+            'to_version': to_version,
+            'initiated_by': initiated_by,
+            'initiated_at': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+        }
+        manifest_path = Path(DATA_DIR) / '.update_manifest.json'
+        tmp_path = Path(DATA_DIR) / '.update_manifest.json.tmp'
+        tmp_path.write_text(_json.dumps(manifest))
+        os.replace(tmp_path, manifest_path)
+
         trigger_file = Path(DATA_DIR) / '.update_pending'
         logger.info(f"Auto-update: writing trigger for {package_path}")
         trigger_file.write_text(package_path)
-        
+
         logger.info(f"Auto-update: trigger written, ucm-watcher.path will handle install + restart")
         return True
     except Exception as e:
         raise Exception(f"Install trigger failed: {str(e)}")
+
+
+def consume_update_result():
+    """Consume the watcher's durable install result exactly once (#301).
+
+    The watcher writes .update_result.json (atomic rename) after performing
+    the actual dpkg/rpm install and verifying the installed package version.
+    The first check after the post-install restart consumes it and emits the
+    truthful outcome: system.update_installed only for a verified install,
+    system.update_failed otherwise. Returns the parsed result or None.
+    """
+    import json as _json
+    result_path = Path(DATA_DIR) / '.update_result.json'
+    if not result_path.exists():
+        return None
+    try:
+        data = _json.loads(result_path.read_text())
+    except Exception as e:
+        logger.error(f"Unreadable update result file, discarding: {e}")
+        data = None
+    # Consume BEFORE emitting: if the file cannot be removed, bail without
+    # emitting so a later pass never duplicates the event.
+    try:
+        result_path.unlink()
+    except OSError as e:
+        logger.error(f"Could not consume update result file: {e}")
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    from services.audit_service import AuditService
+    from services.webhook_service import emit_update_installed, emit_update_failed
+    payload = {
+        'current_version': data.get('from_version'),
+        'latest_version': data.get('to_version'),
+        'installed_version': data.get('installed_version'),
+        'op_id': data.get('op_id'),
+    }
+    actor = data.get('initiated_by') or 'system'
+    if data.get('status') == 'installed':
+        AuditService.log_action(
+            action='settings_update', resource_type='system', resource_id='ucm',
+            resource_name='UCM Auto-Update',
+            details=(
+                f"Update to {data.get('to_version')} installed and verified "
+                f"(installed version: {data.get('installed_version')})"
+            ),
+            success=True, username=actor,
+        )
+        emit_update_installed(payload, actor=actor)
+        logger.info(f"Update result consumed: installed {data.get('installed_version')}")
+    else:
+        payload['error'] = (data.get('error') or 'unknown failure')[:500]
+        payload['step'] = data.get('step')
+        AuditService.log_action(
+            action='settings_update', resource_type='system', resource_id='ucm',
+            resource_name='UCM Auto-Update',
+            details=(
+                f"Update to {data.get('to_version')} FAILED at step "
+                f"{data.get('step') or '?'}: {payload['error']}"
+            ),
+            success=False, username=actor,
+        )
+        emit_update_failed(payload, actor=actor)
+        logger.error(f"Update result consumed: FAILED ({payload['error']})")
+    return data
 
 
 def get_update_history():
@@ -450,10 +534,11 @@ def get_update_settings():
 
 
 def _notify_update_available(result):
-    """Emit the bus event once per newly seen version."""
+    """Emit the bus event once per newly seen version. Returns True when the
+    deduplication marker was durably persisted (review R-05)."""
     latest = result['latest_version']
     if _cfg_get(_NOTIFIED_VERSION_KEY) == latest:
-        return
+        return True
     from services.webhook_service import emit_update_available
     emit_update_available({
         'current_version': result['current_version'],
@@ -461,10 +546,16 @@ def _notify_update_available(result):
         'html_url': result.get('html_url'),
         'prerelease': result.get('prerelease', False),
     })
-    _cfg_set(_NOTIFIED_VERSION_KEY, latest)
+    if not _cfg_set(_NOTIFIED_VERSION_KEY, latest):
+        logger.warning(
+            "Update notification emitted but the deduplication marker could "
+            "not be persisted — the next check may notify again"
+        )
+        return False
     logger.info(
         f"Update available: {result['current_version']} -> {latest}"
     )
+    return True
 
 
 def _auto_install(result):
@@ -514,7 +605,7 @@ def _auto_install(result):
     # the actual dpkg/rpm install after this process restarts, so the audit
     # wording stays 'triggered', not 'installed'.
     try:
-        install_update(package_path)
+        install_update(package_path, to_version=latest, initiated_by='scheduler')
     except Exception as e:
         return refuse(f'install trigger failed ({e})')
 
@@ -529,9 +620,11 @@ def _auto_install(result):
         ),
         success=True,
     )
-    # Queued durably — delivered by the scheduler after the restart
-    from services.webhook_service import emit_update_installed
-    emit_update_installed({
+    # Only 'initiated' here — system.update_installed / system.update_failed
+    # are emitted by consume_update_result() from the watcher's durable
+    # result, after the install actually happened and was version-verified.
+    from services.webhook_service import emit_update_initiated
+    emit_update_initiated({
         'current_version': result['current_version'],
         'latest_version': latest,
     }, actor='scheduler')
@@ -546,6 +639,12 @@ def scheduled_update_check():
     auto_update_enabled is on, and only with a verified SHA256 (#301).
     """
     from datetime import datetime
+    # First tick after a post-install restart: consume the watcher's durable
+    # result and emit the truthful installed/failed outcome.
+    try:
+        consume_update_result()
+    except Exception as e:
+        logger.error(f"Failed to consume update result: {e}")
     try:
         settings = get_update_settings()
         now = time.time()

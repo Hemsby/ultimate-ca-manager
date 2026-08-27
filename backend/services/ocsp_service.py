@@ -244,17 +244,26 @@ class OCSPService:
         certificate-only import or a file-exported offline CA has no usable CA
         key, but a delegated responder whose own key stays online can still
         sign. Returns (signing_cert, signing_key, use_delegated); raises
-        OCSPSigningUnavailable when neither is usable.
+        OCSPSigningUnavailable for the EXPECTED no-identity states — CA taken
+        offline (both password-protected and file-exported modes), or no key
+        at all. Real faults (HSM failure, corrupt key material) keep
+        propagating so they surface as internalError, not unauthorized.
         """
         responder_cert, responder_key = self._get_delegated_responder(ca)
         if responder_cert is not None and responder_key is not None:
             return responder_cert, responder_key, True
-        try:
-            return ca_cert, self._load_ca_key(ca), False
-        except ValueError as e:
+        # Signing-freeze invariant: an offline CA never signs with its own key
+        # — a password-protected offline CA still holds an (encrypted) key,
+        # but using it is exactly what taking the CA offline forbids.
+        if ca.offline:
             raise OCSPSigningUnavailable(
-                f"CA {ca.descr} has no usable signing key and no delegated responder: {e}"
+                f"CA {ca.descr} is offline and has no delegated responder"
             )
+        if not ca.has_private_key:
+            raise OCSPSigningUnavailable(
+                f"CA {ca.descr} has no private key and no delegated responder"
+            )
+        return ca_cert, self._load_ca_key(ca), False
 
     def _load_ca_key(self, ca: CA):
         """Load CA private key, supporting both local and HSM storage"""

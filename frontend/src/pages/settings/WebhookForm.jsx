@@ -21,7 +21,9 @@ const WEBHOOK_EVENTS = [
   'template.created',
   'template.updated',
   'system.update_available',
+  'system.update_initiated',
   'system.update_installed',
+  'system.update_failed',
 ]
 
 export const WEBHOOK_EVENT_LABELS = {
@@ -41,7 +43,9 @@ export const WEBHOOK_EVENT_LABELS = {
   'template.created': 'Template Created',
   'template.updated': 'Template Updated',
   'system.update_available': 'Update Available',
+  'system.update_initiated': 'Update Initiated',
   'system.update_installed': 'Update Installed',
+  'system.update_failed': 'Update Failed',
 }
 
 // labelKey pattern: module-level constant, resolved with t() in component

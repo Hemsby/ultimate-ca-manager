@@ -260,7 +260,11 @@ class WebhookService:
     ACME_PREFLIGHT = 'acme.preflight'
     # System updates (#301)
     UPDATE_AVAILABLE = 'system.update_available'
+    # Trigger written, watcher will install on restart (#301 review R-01)
+    UPDATE_INITIATED = 'system.update_initiated'
+    # Emitted only after the watcher's durable result confirms the install
     UPDATE_INSTALLED = 'system.update_installed'
+    UPDATE_FAILED = 'system.update_failed'
 
     ALL_EVENTS = [
         CERT_ISSUED, CERT_REVOKED, CERT_RENEWED, CERT_EXPIRING,
@@ -269,7 +273,7 @@ class WebhookService:
         CSR_SUBMITTED, CSR_APPROVED, CSR_REJECTED,
         TEMPLATE_CREATED, TEMPLATE_UPDATED,
         ACME_PREFLIGHT,
-        UPDATE_AVAILABLE, UPDATE_INSTALLED,
+        UPDATE_AVAILABLE, UPDATE_INITIATED, UPDATE_INSTALLED, UPDATE_FAILED,
     ]
 
     # Retry policy for asynchronous delivery
@@ -580,8 +584,16 @@ def emit_update_available(update: dict):
     _emit(WebhookService.UPDATE_AVAILABLE, {'update': update}, None, _meta())
 
 
+def emit_update_initiated(update: dict, actor: str = None):
+    _emit(WebhookService.UPDATE_INITIATED, {'update': update}, None, _meta(actor))
+
+
 def emit_update_installed(update: dict, actor: str = None):
     _emit(WebhookService.UPDATE_INSTALLED, {'update': update}, None, _meta(actor))
+
+
+def emit_update_failed(update: dict, actor: str = None):
+    _emit(WebhookService.UPDATE_FAILED, {'update': update}, None, _meta(actor))
 
 
 # Backward-compatible aliases (previous names)

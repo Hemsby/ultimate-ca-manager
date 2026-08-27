@@ -610,6 +610,54 @@ class TestKeylessCASigning:
             resp = ocsp.load_der_ocsp_response(der)
             assert resp.response_status == ocsp.OCSPResponseStatus.UNAUTHORIZED
 
+    @pytest.mark.parametrize('offline_mode,wipe_key', [
+        ('password_protected', False),  # key kept, PEM password-encrypted
+        ('file_exported', True),        # key wiped from the database
+    ])
+    def test_offline_ca_without_responder_is_unauthorized(
+        self, app, create_ca, create_cert, offline_mode, wipe_key
+    ):
+        """R-02: both offline modes must answer 'unauthorized' — the
+        password-protected mode used to leak a TypeError into internalError,
+        and an offline CA must never sign OCSP with its own key."""
+        with app.app_context():
+            ca = create_ca(cn=f'Offline OCSP CA {offline_mode}')
+            target = create_cert(
+                cn=f'offline-{offline_mode}.example.com', ca_id=ca['id'])
+            ca_obj = _ca_model(ca)
+            serial = int(_cert_model(target).serial_number, 16)
+            ca_obj.offline = True
+            ca_obj.offline_mode = offline_mode
+            if wipe_key:
+                ca_obj.prv = None
+            db.session.commit()
+
+            der, status = OCSPService().generate_response(ca_obj, serial)
+            assert status == 'unauthorized'
+            resp = ocsp.load_der_ocsp_response(der)
+            assert resp.response_status == ocsp.OCSPResponseStatus.UNAUTHORIZED
+
+    def test_offline_ca_with_responder_still_signs(
+        self, app, create_ca, create_cert, monkeypatch
+    ):
+        """An offline CA with a delegated responder kept online keeps
+        answering signed OCSP — the offline gate applies to the CA key only."""
+        with app.app_context():
+            ca_obj, _, target, responder_cert = self._keyless_with_responder(
+                create_ca, create_cert, monkeypatch, 'Offline Responder CA')
+            ca_obj.offline = True
+            ca_obj.offline_mode = 'file_exported'
+            db.session.commit()
+            serial = int(_cert_model(target).serial_number, 16)
+
+            der, status = OCSPService().generate_response(ca_obj, serial)
+            assert status == 'good'
+            resp = ocsp.load_der_ocsp_response(der)
+            assert resp.response_status == ocsp.OCSPResponseStatus.SUCCESSFUL
+            assert resp.certificates[0].fingerprint(hashes.SHA256()) == (
+                responder_cert.fingerprint(hashes.SHA256())
+            )
+
 
 class TestCleanup:
     def test_cleanup_runs(self, app):

@@ -418,9 +418,64 @@ class TestReviewFindings:
         assert_success(patch_json(auth_client, f"{BASE}/targets/{target['id']}",
                                   {'enabled': False}))
         cert = create_cert()
-        binding = _create_binding(auth_client, target['id'], cert['id'])
+        r = post_json(auth_client, f'{BASE}/bindings', {
+            'target_id': target['id'], 'certificate_id': cert['id'],
+            'cert_path': '/etc/ssl/ucm/cert.pem'})
+        assert r.status_code == 201
+        # R-04: the message must not claim a queued deployment
+        assert 'no deployment queued' in get_json(r)['message']
+        binding = get_json(r)['data']
         listed = assert_success(
             auth_client.get(f"{BASE}/deliveries?binding_id={binding['id']}"))
+        assert listed == []
+
+    def test_disabled_binding_message_not_queued(self, auth_client, create_cert):
+        """R-04: a binding created disabled announces no queued deployment."""
+        target = _create_target(auth_client)
+        cert = create_cert()
+        r = post_json(auth_client, f'{BASE}/bindings', {
+            'target_id': target['id'], 'certificate_id': cert['id'],
+            'cert_path': '/etc/ssl/ucm/cert.pem', 'enabled': False})
+        assert r.status_code == 201
+        assert 'no deployment queued' in get_json(r)['message']
+
+    def test_concurrent_duplicate_maps_integrity_error_to_409(
+            self, app, auth_client, create_cert, monkeypatch):
+        """R-03: a race past the uniqueness pre-check must yield 409, and the
+        rolled-back binding must not be half-persisted."""
+        from sqlalchemy.exc import IntegrityError
+        from services.deploy import DeployService
+        target = _create_target(auth_client)
+        cert = create_cert()
+
+        def _race(binding, actor='system'):
+            raise IntegrityError('INSERT INTO deploy_bindings', {}, Exception('unique'))
+        monkeypatch.setattr(DeployService, 'enqueue_initial_push',
+                            staticmethod(_race))
+        r = post_json(auth_client, f'{BASE}/bindings', {
+            'target_id': target['id'], 'certificate_id': cert['id'],
+            'cert_path': '/etc/ssl/ucm/cert.pem'})
+        assert_error(r, 409)
+        listed = assert_success(
+            auth_client.get(f"{BASE}/bindings?target_id={target['id']}"))
+        assert listed == []  # nothing half-persisted
+
+    def test_flush_error_rolls_back_cleanly(
+            self, app, auth_client, create_cert, monkeypatch):
+        from services.deploy import DeployService
+        target = _create_target(auth_client)
+        cert = create_cert()
+
+        def _boom(binding, actor='system'):
+            raise RuntimeError('unexpected DB error')
+        monkeypatch.setattr(DeployService, 'enqueue_initial_push',
+                            staticmethod(_boom))
+        r = post_json(auth_client, f'{BASE}/bindings', {
+            'target_id': target['id'], 'certificate_id': cert['id'],
+            'cert_path': '/etc/ssl/ucm/cert.pem'})
+        assert_error(r, 500)
+        listed = assert_success(
+            auth_client.get(f"{BASE}/bindings?target_id={target['id']}"))
         assert listed == []
 
     def test_colliding_paths_rejected_on_create(self, auth_client, create_cert):
