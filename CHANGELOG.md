@@ -7,7 +7,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
-## [Unreleased]
+## [2.215] - 2026-08-28
 
 ### Added
 - **Automatic updates** — a daily background check on your chosen channel surfaces new versions in the UI and through the notification pipeline (new `system.update_available` / `system.update_initiated` / `system.update_installed` / `system.update_failed` webhook events), and an opt-in unattended install (off by default) downloads, verifies and installs the update at a configurable hour, with a full audit trail. Channels are strict: `stable` takes final releases only and `rc` additionally takes rcN prereleases only — alpha/beta/dev tags never qualify for either. The install outcome is truthful end-to-end: `system.update_initiated` fires when the checksum-verified trigger is written, then the privileged update watcher installs the package, verifies the installed version against the target and records a durable result; `system.update_installed` or `system.update_failed` (with the failing step) is emitted from that result after the restart — never before the install actually happened. The unattended install refuses to run when its anti-repeat marker cannot be persisted, and the settings PATCH is transactional (an error is reported instead of a partially saved config). DEB/RPM installs only — Docker deployments get the check and notification with a pointer to pull the new image (#301)
