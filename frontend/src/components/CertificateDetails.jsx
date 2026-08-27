@@ -50,6 +50,7 @@ import { ExportModal } from './ExportModal'
 import { CertificateLintModal } from './CertificateLintModal'
 import { CompactSection, CompactGrid, CompactField } from './DetailCard'
 import { CertificateExtensions, SubjectAltNames } from './CertificateExtensions'
+import { CertDeploySection } from './deploy/CertDeploySection'
 import { cn } from '../lib/utils'
 
 // Maps a template_override field name to the i18n key of its label (#258).
@@ -483,6 +484,9 @@ export function CertificateDetails({
         </CompactSection>
       )}
       
+      {/* Deployment — push to remote hosts over SSH (#299, admin-only) */}
+      <CertDeploySection certificate={cert} />
+
       {/* Thumbprints */}
       <CompactSection title={t('common.fingerprints')} icon={Fingerprint} iconClass="icon-bg-gray" collapsible defaultOpen={false}>
         <CompactGrid cols={1}>

@@ -513,6 +513,21 @@ class LifecycleMixin:
             db.session.rollback()
             return False
 
+        # Deploy bindings (#299): remove the cert's bindings and their delivery
+        # history — DeployBinding.certificate_id is a real FK with no cascade.
+        try:
+            from models import DeployBinding, DeployDelivery
+            binding_ids = [b.id for b in DeployBinding.query.filter_by(certificate_id=cert_id)]
+            if binding_ids:
+                DeployDelivery.query.filter(
+                    DeployDelivery.binding_id.in_(binding_ids)).delete(synchronize_session=False)
+                DeployBinding.query.filter(
+                    DeployBinding.id.in_(binding_ids)).delete(synchronize_session=False)
+        except Exception as e:
+            logger.error(f"Failed to clean deploy bindings for cert {cert_id}: {e}")
+            db.session.rollback()
+            return False
+
         # Null out the certificate_id FK on RevokedSerial rows so the CRL/OCSP
         # query treats them as orphaned (the cert row is about to be deleted,
         # but the revocation data must persist).

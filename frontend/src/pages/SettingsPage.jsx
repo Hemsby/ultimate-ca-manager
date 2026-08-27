@@ -13,7 +13,7 @@ import {
   Plus, PencilSimple, TestTube, Lightning, Globe, Shield, CheckCircle, XCircle, MagnifyingGlass,
   Bell, Copy, Power, ArrowClockwise, LockKey, Warning, User, GithubLogo,
   Plugs, UsersThree, UserPlus, TreeStructure, CaretDown, Play,
-  WindowsLogo, ClockClockwise, IdentificationBadge
+  WindowsLogo, ClockClockwise, IdentificationBadge, CloudArrowUp
 } from '@phosphor-icons/react'
 import {
   ResponsiveLayout,
@@ -58,6 +58,7 @@ import AuditSection from './settings/AuditSection'
 import DatabaseSection from './settings/DatabaseSection'
 import HttpsSection from './settings/HttpsSection'
 import UpdatesSection from './settings/UpdatesSection'
+import DeploySection from './settings/DeploySection'
 import SchedulerSection from './settings/SchedulerSection'
 import WebhooksSection from './settings/WebhooksSection'
 import CTSection from './settings/CTSection'
@@ -82,6 +83,8 @@ const BASE_SETTINGS_CATEGORIES = [
   { id: 'webhooks', labelKey: 'settings.tabs.webhooks', icon: Bell, color: 'icon-bg-rose' },
   { id: 'ct', labelKey: 'settings.tabs.ct', icon: Eye, color: 'icon-bg-cyan' },
   { id: 'autoRenewal', labelKey: 'settings.tabs.autoRenewal', icon: ClockClockwise, color: 'icon-bg-emerald' },
+  // Admin-only (#299) — hidden from non-admin roles below
+  { id: 'deploy', labelKey: 'settings.tabs.deploy', icon: CloudArrowUp, color: 'icon-bg-emerald', permission: 'read:deploy' },
   { id: 'microsoftCA', labelKey: 'settings.tabs.microsoftCA', icon: WindowsLogo, color: 'icon-bg-indigo' },
   { id: 'adConnector', labelKey: 'settings.tabs.adConnector', icon: IdentificationBadge, color: 'icon-bg-blue' },
   { id: 'xcepWstep', labelKey: 'settings.tabs.xcepWstep', icon: WindowsLogo, color: 'icon-bg-indigo' },
@@ -1557,6 +1560,8 @@ export default function SettingsPage() {
             handleCtRemoveLogUrl={handleCtRemoveLogUrl}
           />
         )
+      case 'deploy':
+        return <DeploySection />
       case 'autoRenewal':
         return (
           <AutoRenewalSection
@@ -1653,7 +1658,8 @@ export default function SettingsPage() {
   }
 
   // Transform categories to tabs format with translations
-  const tabs = SETTINGS_CATEGORIES.map(cat => ({
+  // (permission-gated categories, e.g. deploy, are hidden from non-admins)
+  const tabs = SETTINGS_CATEGORIES.filter(cat => !cat.permission || hasPermission(cat.permission)).map(cat => ({
     id: cat.id,
     label: t(cat.labelKey),
     icon: cat.icon,
@@ -1678,7 +1684,7 @@ export default function SettingsPage() {
           { labelKey: 'settings.groups.system', tabs: ['general', 'updates', 'scheduler', 'database', 'https', 'backup'], color: 'icon-bg-blue' },
           { labelKey: 'settings.groups.security', tabs: ['security', 'sso', 'ct'], color: 'icon-bg-amber' },
           { labelKey: 'settings.groups.notifications', tabs: ['email', 'webhooks'], color: 'icon-bg-teal' },
-          { labelKey: 'settings.groups.automation', tabs: ['autoRenewal'], color: 'icon-bg-emerald' },
+          { labelKey: 'settings.groups.automation', tabs: ['autoRenewal', 'deploy'], color: 'icon-bg-emerald' },
           { labelKey: 'settings.groups.integrations', tabs: ['microsoftCA', 'adConnector', 'xcepWstep'], color: 'icon-bg-indigo' },
           { labelKey: 'settings.groups.interface', tabs: ['appearance', 'audit'], color: 'icon-bg-violet' },
           { labelKey: 'settings.groups.about', tabs: ['about'], color: 'icon-bg-sky' },

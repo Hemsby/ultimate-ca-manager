@@ -98,6 +98,7 @@ from api.v2.reports import bp as reports_bp
 from api.v2.webhooks import bp as webhooks_bp
 from api.v2.discovery import bp as discovery_bp
 from api.v2.msca import bp as msca_bp
+from api.v2.deploy import bp as deploy_bp
 from api.v2.database import bp as database_bp
 from api.v2.ssh_cas import bp as ssh_cas_bp
 from api.v2.ssh_certificates import bp as ssh_certificates_bp
@@ -151,6 +152,7 @@ API_V2_BLUEPRINTS = [
     ssh_cas_bp,
     ssh_certificates_bp,
     key_recovery_bp,
+    deploy_bp,
 ]
 
 

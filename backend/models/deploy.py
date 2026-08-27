@@ -1,0 +1,164 @@
+"""Deploy hooks models (#299).
+
+Push issued/renewed certificates to remote hosts over SFTP and run a fixed
+reload command over SSH. Admin-only feature: UCM holds SSH credentials that
+can execute a command on the fleet, so everything is encrypted at rest and
+audited.
+"""
+import json
+
+from models import db
+from utils.datetime_utils import utc_now, utc_isoformat
+
+
+class DeployTarget(db.Model):
+    """A remote host certificates can be pushed to."""
+    __tablename__ = 'deploy_targets'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True)
+    host = db.Column(db.String(255), nullable=False)
+    port = db.Column(db.Integer, nullable=False, default=22)
+    username = db.Column(db.String(120), nullable=False)
+    # SSH private key (PEM/OpenSSH), encrypted at rest like every other secret
+    private_key = db.Column(db.Text, nullable=False)
+    # Matching OpenSSH public key — shown to the admin to install on the target
+    public_key = db.Column(db.Text)
+    # Pinned host key, '<type> <base64>', recorded on first connect (TOFU)
+    host_key = db.Column(db.Text)
+    # One fixed, admin-defined command run over SSH after a successful push.
+    # No templating, no uploaded scripts (v1 scope).
+    reload_command = db.Column(db.String(512))
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, default=utc_now)
+    created_by = db.Column(db.String(80))
+    last_success_at = db.Column(db.DateTime)
+    last_failure_at = db.Column(db.DateTime)
+    failure_count = db.Column(db.Integer, nullable=False, default=0)
+
+    def host_key_fingerprint(self):
+        """SHA256 fingerprint of the pinned host key (OpenSSH style)."""
+        if not self.host_key:
+            return None
+        try:
+            import base64
+            import hashlib
+            key_b64 = self.host_key.split()[1]
+            digest = hashlib.sha256(base64.b64decode(key_b64)).digest()
+            return 'SHA256:' + base64.b64encode(digest).decode().rstrip('=')
+        except Exception:
+            return None
+
+    def to_dict(self):
+        # private_key is never exposed through the API
+        return {
+            'id': self.id,
+            'name': self.name,
+            'host': self.host,
+            'port': self.port,
+            'username': self.username,
+            'public_key': self.public_key,
+            'host_key_fingerprint': self.host_key_fingerprint(),
+            'host_key_pinned': bool(self.host_key),
+            'reload_command': self.reload_command,
+            'enabled': self.enabled,
+            'created_at': utc_isoformat(self.created_at),
+            'created_by': self.created_by,
+            'last_success_at': utc_isoformat(self.last_success_at),
+            'last_failure_at': utc_isoformat(self.last_failure_at),
+            'failure_count': self.failure_count or 0,
+        }
+
+
+class DeployBinding(db.Model):
+    """Attach a certificate to a target with fixed destination paths."""
+    __tablename__ = 'deploy_bindings'
+    __table_args__ = (
+        db.UniqueConstraint('target_id', 'certificate_id', name='uq_deploy_binding'),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    target_id = db.Column(db.Integer, db.ForeignKey('deploy_targets.id'), nullable=False, index=True)
+    certificate_id = db.Column(db.Integer, db.ForeignKey('certificates.id'), nullable=False, index=True)
+    # Destination paths on the target; NULL = don't push that file
+    cert_path = db.Column(db.String(512))
+    key_path = db.Column(db.String(512))
+    fullchain_path = db.Column(db.String(512))
+    enabled = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, default=utc_now)
+    created_by = db.Column(db.String(80))
+
+    target = db.relationship('DeployTarget', backref=db.backref('bindings', lazy='dynamic'))
+    certificate = db.relationship('Certificate', backref=db.backref('deploy_bindings', lazy='dynamic'))
+
+    def to_dict(self, include_target=True):
+        data = {
+            'id': self.id,
+            'target_id': self.target_id,
+            'certificate_id': self.certificate_id,
+            'cert_path': self.cert_path,
+            'key_path': self.key_path,
+            'fullchain_path': self.fullchain_path,
+            'enabled': self.enabled,
+            'created_at': utc_isoformat(self.created_at),
+            'created_by': self.created_by,
+        }
+        if include_target and self.target:
+            data['target_name'] = self.target.name
+            data['target_host'] = self.target.host
+            data['target_enabled'] = self.target.enabled
+        return data
+
+
+class DeployDelivery(db.Model):
+    """Durable deploy queue — same model as webhook_deliveries: pending rows
+    are drained by a scheduler task with retry/backoff."""
+    __tablename__ = 'deploy_deliveries'
+
+    STATUS_PENDING = 'pending'
+    STATUS_DELIVERED = 'delivered'
+    STATUS_FAILED = 'failed'
+
+    id = db.Column(db.Integer, primary_key=True)
+    # Logical reference to deploy_bindings.id (no DB-level FK so delivery
+    # history survives binding deletion until explicitly cleaned up).
+    binding_id = db.Column(db.Integer, nullable=False, index=True)
+    # 'certificate.issued' | 'certificate.renewed' | 'manual'
+    event_type = db.Column(db.String(32), nullable=False)
+
+    status = db.Column(db.String(16), nullable=False, default=STATUS_PENDING, index=True)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
+    max_attempts = db.Column(db.Integer, nullable=False, default=5)
+    next_attempt_at = db.Column(db.DateTime, default=utc_now, index=True)
+
+    last_error = db.Column(db.Text)
+    # JSON summary of what was pushed / reload outcome, for the UI history
+    detail = db.Column(db.Text)
+    triggered_by = db.Column(db.String(80))
+
+    created_at = db.Column(db.DateTime, default=utc_now)
+    delivered_at = db.Column(db.DateTime)
+
+    def get_detail(self):
+        try:
+            return json.loads(self.detail) if self.detail else None
+        except Exception:
+            return None
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'binding_id': self.binding_id,
+            'event_type': self.event_type,
+            'status': self.status,
+            'attempts': self.attempts,
+            'max_attempts': self.max_attempts,
+            'next_attempt_at': utc_isoformat(self.next_attempt_at),
+            'last_error': self.last_error,
+            'detail': self.get_detail(),
+            'triggered_by': self.triggered_by,
+            'created_at': utc_isoformat(self.created_at),
+            'delivered_at': utc_isoformat(self.delivered_at),
+        }

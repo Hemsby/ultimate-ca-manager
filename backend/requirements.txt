@@ -34,6 +34,9 @@ pyasn1-modules==0.4.2
 josepy>=2.2.0
 dnspython==2.8.0
 
+# Deploy hooks (#299) — SSH/SFTP push of issued certificates to remote hosts
+paramiko==5.0.0
+
 # HTTP & Utils
 requests==2.34.2
 python-dotenv==1.2.2

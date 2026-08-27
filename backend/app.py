@@ -740,6 +740,20 @@ def create_app(config_name=None):
         except ImportError:
             pass
 
+        # Register deploy-hook delivery task (#299) — importing the service
+        # also wires its event-bus subscriber (certificate.issued/renewed).
+        try:
+            from services.deploy import DeployService
+            scheduler.register_task(
+                name="deploy_delivery",
+                func=DeployService.process_pending_deliveries,
+                interval=30,  # Drain pending certificate deployments every 30s
+                description="Push queued certificate deployments over SSH with retry/backoff"
+            )
+            app.logger.info("Registered deploy delivery task (every 30s)")
+        except ImportError:
+            pass
+
         # Wire email + WebSocket notifications onto the event bus so lifecycle
         # code emits one event instead of calling three notification systems.
         try:
