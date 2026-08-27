@@ -3411,6 +3411,27 @@
     "trustAnchor": "信任锚"
   },
   "webhooks": {
+    "eventLabels": {
+      "certificateIssued": "已签发",
+      "certificateRevoked": "已吊销",
+      "certificateRenewed": "已续期",
+      "certificateExpiring": "即将过期",
+      "certificateExpired": "已过期",
+      "certificateImported": "已导入",
+      "certificateDeleted": "已删除",
+      "caCreated": "CA 已创建",
+      "caUpdated": "CA 已更新",
+      "caDeleted": "CA 已删除",
+      "csrSubmitted": "CSR 已提交",
+      "csrApproved": "CSR 已批准",
+      "csrRejected": "CSR 已拒绝",
+      "templateCreated": "模板已创建",
+      "templateUpdated": "模板已更新",
+      "systemUpdateAvailable": "有可用更新",
+      "systemUpdateInitiated": "更新已启动",
+      "systemUpdateInstalled": "更新已安装",
+      "systemUpdateFailed": "更新失败"
+    },
     "title": "Webhooks",
     "subtitle": "证书事件触发时发送 HTTP 通知",
     "helpTitle": "Webhook 通知",

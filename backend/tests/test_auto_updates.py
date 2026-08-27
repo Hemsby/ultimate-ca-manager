@@ -18,6 +18,7 @@ def _clear_update_config(app):
             updates.UPDATE_CHANNEL_KEY, updates.AUTO_UPDATE_ENABLED_KEY,
             updates.AUTO_UPDATE_HOUR_KEY, updates._LAST_CHECK_TS_KEY,
             updates._NOTIFIED_VERSION_KEY, updates._ATTEMPTED_VERSION_KEY,
+            updates._RESULT_OP_KEY,
         ):
             SystemConfig.query.filter_by(key=key).delete()
         db.session.commit()
@@ -169,13 +170,13 @@ class TestUpdateResultConsumption:
         (tmp_path / '.update_result.json').write_text(json.dumps(data))
 
     def test_installed_result_emits_installed_once(
-            self, app, monkeypatch, tmp_path):
+            self, app, clean_update_config, monkeypatch, tmp_path):
         import services.webhook_service as wh
         events = []
         monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
         monkeypatch.setattr(wh, 'emit_update_installed',
                             lambda update, actor=None: events.append(update))
-        self._write_result(tmp_path)
+        self._write_result(tmp_path, op_id='op-inst')
         with app.app_context():
             result = updates.consume_update_result()
             assert result['status'] == 'installed'
@@ -184,7 +185,7 @@ class TestUpdateResultConsumption:
         assert events[0]['latest_version'] == '99.0'
         assert not (tmp_path / '.update_result.json').exists()
 
-    def test_failed_result_emits_failed(self, app, monkeypatch, tmp_path):
+    def test_failed_result_emits_failed(self, app, clean_update_config, monkeypatch, tmp_path):
         import services.webhook_service as wh
         events = []
         monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
@@ -192,7 +193,7 @@ class TestUpdateResultConsumption:
                             lambda update, actor=None: events.append(update))
         monkeypatch.setattr(wh, 'emit_update_installed',
                             lambda *a, **k: events.append('WRONG'))
-        self._write_result(tmp_path, status='failed', step='dpkg',
+        self._write_result(tmp_path, op_id='op-fail', status='failed', step='dpkg',
                            error='dpkg exited 1', installed_version='2.0')
         with app.app_context():
             updates.consume_update_result()
@@ -201,7 +202,7 @@ class TestUpdateResultConsumption:
         assert events[0]['step'] == 'dpkg'
 
     def test_installed_with_version_mismatch_downgraded_to_failed(
-            self, app, monkeypatch, tmp_path):
+            self, app, clean_update_config, monkeypatch, tmp_path):
         """Backend re-verifies the watcher's claim: 'installed' without a
         matching version must emit update_failed, never update_installed."""
         import services.webhook_service as wh
@@ -211,23 +212,94 @@ class TestUpdateResultConsumption:
                             lambda *a, **k: events.append(('installed',)))
         monkeypatch.setattr(wh, 'emit_update_failed',
                             lambda update, actor=None: events.append(('failed', update)))
-        self._write_result(tmp_path, status='installed', installed_version='2.0')
+        self._write_result(tmp_path, op_id='op-mm', status='installed', installed_version='2.0')
         with app.app_context():
             updates.consume_update_result()
         assert len(events) == 1 and events[0][0] == 'failed'
         assert events[0][1]['step'] == 'verify'
 
     def test_installed_accepts_package_revision_suffix(
-            self, app, monkeypatch, tmp_path):
+            self, app, clean_update_config, monkeypatch, tmp_path):
         import services.webhook_service as wh
         events = []
         monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
         monkeypatch.setattr(wh, 'emit_update_installed',
                             lambda update, actor=None: events.append(update))
-        self._write_result(tmp_path, installed_version='99.0-1')
+        self._write_result(tmp_path, op_id='op-rev', installed_version='99.0-1')
         with app.app_context():
             updates.consume_update_result()
         assert len(events) == 1
+
+    def test_prerelease_tilde_versions_match(self, app, clean_update_config, monkeypatch, tmp_path):
+        """S-01: DEB/RPM ship 2.215-rc1 as 2.215~rc1 — a successful RC
+        install must emit installed, not failed."""
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(wh, 'emit_update_installed',
+                            lambda update, actor=None: events.append(('installed', update)))
+        monkeypatch.setattr(wh, 'emit_update_failed',
+                            lambda update, actor=None: events.append(('failed', update)))
+        self._write_result(tmp_path, op_id='op-tilde', to_version='2.215-rc1',
+                           installed_version='2.215~rc1')
+        with app.app_context():
+            updates.consume_update_result()
+        assert len(events) == 1 and events[0][0] == 'installed'
+
+    def test_claimed_result_recovered_after_crash(self, app, clean_update_config, monkeypatch, tmp_path):
+        """S-02: a crash mid-processing leaves .update_result.processing —
+        the next pass must recover it instead of losing the outcome."""
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(wh, 'emit_update_installed',
+                            lambda update, actor=None: events.append(update))
+        data = {'op_id': 'crashop', 'from_version': '2.0', 'to_version': '99.0',
+                'initiated_by': 'scheduler', 'status': 'installed',
+                'installed_version': '99.0', 'step': None, 'error': None}
+        (tmp_path / '.update_result.processing').write_text(json.dumps(data))
+        with app.app_context():
+            result = updates.consume_update_result()
+        assert result and result['op_id'] == 'crashop'
+        assert len(events) == 1
+        assert not (tmp_path / '.update_result.processing').exists()
+
+    def test_op_id_replay_guard_prevents_duplicate_emit(
+            self, app, clean_update_config, monkeypatch, tmp_path):
+        """S-02: replaying the same op_id (crash between marker and cleanup)
+        must not emit the outcome twice."""
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(wh, 'emit_update_installed',
+                            lambda update, actor=None: events.append(update))
+        self._write_result(tmp_path, op_id='replay-op')
+        with app.app_context():
+            updates.consume_update_result()
+            # same result reappears (crash after marker, before cleanup)
+            self._write_result(tmp_path, op_id='replay-op')
+            assert updates.consume_update_result() is None
+        assert len(events) == 1
+        assert not (tmp_path / '.update_result.json').exists()
+
+    def test_install_refused_while_operation_pending(self, monkeypatch, tmp_path):
+        """S-03: one update operation at a time — a live trigger refuses a
+        second install instead of interleaving manifests."""
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(updates, 'consume_update_result', lambda: None)
+        (tmp_path / '.update_pending').write_text('/tmp/other.deb')
+        with pytest.raises(Exception, match='already pending'):
+            updates.install_update('/tmp/p.deb', to_version='99.0')
+
+    def test_trigger_written_atomically(self, monkeypatch, tmp_path):
+        """S-03: the trigger appears by rename — no .tmp leftovers, full
+        content visible the moment the file exists."""
+        monkeypatch.setattr(updates, 'DATA_DIR', str(tmp_path))
+        monkeypatch.setattr(updates, 'consume_update_result', lambda: None)
+        updates.install_update('/tmp/p.deb', to_version='99.0')
+        assert (tmp_path / '.update_pending').read_text() == '/tmp/p.deb'
+        assert not (tmp_path / '.update_pending.tmp').exists()
+        assert not (tmp_path / '.update_manifest.json.tmp').exists()
 
     def test_corrupt_result_is_discarded_silently(
             self, app, monkeypatch, tmp_path):

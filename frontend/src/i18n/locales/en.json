@@ -3414,6 +3414,27 @@
     "trustAnchor": "Trust anchor"
   },
   "webhooks": {
+    "eventLabels": {
+      "certificateIssued": "Issued",
+      "certificateRevoked": "Revoked",
+      "certificateRenewed": "Renewed",
+      "certificateExpiring": "Expiring",
+      "certificateExpired": "Expired",
+      "certificateImported": "Imported",
+      "certificateDeleted": "Deleted",
+      "caCreated": "CA Created",
+      "caUpdated": "CA Updated",
+      "caDeleted": "CA Deleted",
+      "csrSubmitted": "CSR Submitted",
+      "csrApproved": "CSR Approved",
+      "csrRejected": "CSR Rejected",
+      "templateCreated": "Template Created",
+      "templateUpdated": "Template Updated",
+      "systemUpdateAvailable": "Update Available",
+      "systemUpdateInitiated": "Update Initiated",
+      "systemUpdateInstalled": "Update Installed",
+      "systemUpdateFailed": "Update Failed"
+    },
     "title": "Webhooks",
     "subtitle": "Send HTTP notifications when certificate events occur",
     "helpTitle": "Webhook Notifications",

@@ -371,6 +371,19 @@ def install_update(package_path, *, to_version=None, initiated_by='admin'):
     if not package_path.endswith('.deb') and not package_path.endswith('.rpm'):
         raise Exception(f"Unknown package format: {package_path}")
 
+    # Drain a not-yet-consumed result from a previous operation before this
+    # one can overwrite it (the watcher writes results to a fixed path).
+    try:
+        consume_update_result()
+    except Exception as e:
+        logger.warning(f"Could not drain previous update result: {e}")
+
+    trigger_file = Path(DATA_DIR) / '.update_pending'
+    if trigger_file.exists():
+        # One operation at a time: a second trigger while the watcher is (or
+        # should be) working would interleave manifests and results.
+        raise Exception("An update operation is already pending — retry after it completes")
+
     try:
         import json as _json
         import uuid
@@ -387,9 +400,12 @@ def install_update(package_path, *, to_version=None, initiated_by='admin'):
         tmp_path.write_text(_json.dumps(manifest))
         os.replace(tmp_path, manifest_path)
 
-        trigger_file = Path(DATA_DIR) / '.update_pending'
         logger.info(f"Auto-update: writing trigger for {package_path}")
-        trigger_file.write_text(package_path)
+        # Atomic rename: systemd's PathExists= sees the trigger the moment it
+        # is created, so it must never be observable half-written.
+        trigger_tmp = Path(DATA_DIR) / '.update_pending.tmp'
+        trigger_tmp.write_text(package_path)
+        os.replace(trigger_tmp, trigger_file)
 
         logger.info(f"Auto-update: trigger written, ucm-watcher.path will handle install + restart")
         return True
@@ -405,24 +421,44 @@ def consume_update_result():
     The first check after the post-install restart consumes it and emits the
     truthful outcome: system.update_installed only for a verified install,
     system.update_failed otherwise. Returns the parsed result or None.
+
+    Consumption is crash-safe (review S-02): the file is CLAIMED by atomic
+    rename to .update_result.processing, processed, then deleted — a crash
+    mid-processing leaves the claimed file for the next pass instead of
+    losing the result, and the op_id replay guard keeps that retry from
+    emitting the same outcome twice.
     """
     import json as _json
     result_path = Path(DATA_DIR) / '.update_result.json'
-    if not result_path.exists():
+    claimed_path = Path(DATA_DIR) / '.update_result.processing'
+    if result_path.exists():
+        try:
+            # A fresh result supersedes a stale claim from a crashed pass
+            os.replace(result_path, claimed_path)
+        except OSError as e:
+            logger.error(f"Could not claim update result file: {e}")
+            return None
+    if not claimed_path.exists():
         return None
     try:
-        data = _json.loads(result_path.read_text())
+        data = _json.loads(claimed_path.read_text())
     except Exception as e:
         logger.error(f"Unreadable update result file, discarding: {e}")
         data = None
-    # Consume BEFORE emitting: if the file cannot be removed, bail without
-    # emitting so a later pass never duplicates the event.
-    try:
-        result_path.unlink()
-    except OSError as e:
-        logger.error(f"Could not consume update result file: {e}")
-        return None
     if not isinstance(data, dict):
+        try:
+            claimed_path.unlink()
+        except OSError:
+            pass
+        return None
+    op_id = data.get('op_id')
+    if op_id and _cfg_get(_RESULT_OP_KEY) == op_id:
+        # Already processed on a previous pass (crash between marker and
+        # cleanup) — just finish the cleanup, never re-emit.
+        try:
+            claimed_path.unlink()
+        except OSError:
+            pass
         return None
 
     from services.audit_service import AuditService
@@ -436,10 +472,15 @@ def consume_update_result():
     actor = data.get('initiated_by') or 'system'
 
     def _version_matches(detected, target):
-        # DEB/RPM package versions may carry a revision ('2.216-1')
-        if not detected or not target:
+        # Tolerate the packaging transforms (review S-01): the prerelease
+        # separator '-' becomes '~' in DEB/RPM versions (2.215-rc1 ships as
+        # 2.215~rc1), and a package revision ('-1') may be appended.
+        d = (detected or '').replace('~', '-').strip()
+        t = (target or '').replace('~', '-').strip()
+        if not d or not t:
             return False
-        return detected == target or detected.split('-', 1)[0] == target
+        base = re.sub(r'-\d+$', '', d)
+        return d == t or base == t
 
     # Independent backend check on top of the watcher's own verification:
     # 'installed' additionally requires the recorded installed_version to
@@ -485,6 +526,15 @@ def consume_update_result():
         )
         emit_update_failed(payload, actor=actor)
         logger.error(f"Update result consumed: FAILED ({payload['error']})")
+
+    # Outcome emitted (durably queued via the bus): record the replay guard,
+    # then finish the claim cleanup.
+    if op_id:
+        _cfg_set(_RESULT_OP_KEY, op_id)
+    try:
+        claimed_path.unlink()
+    except OSError as e:
+        logger.warning(f"Could not remove processed update result: {e}")
     return data
 
 
@@ -500,6 +550,9 @@ AUTO_UPDATE_HOUR_KEY = 'auto_update_hour'            # local hour 0-23 (default 
 _LAST_CHECK_TS_KEY = 'update_last_check_ts'
 _NOTIFIED_VERSION_KEY = 'update_notified_version'
 _ATTEMPTED_VERSION_KEY = 'auto_update_attempted_version'
+# op_id of the last processed watcher result — replay guard for the
+# claim/process/delete consumption (review S-02)
+_RESULT_OP_KEY = 'update_result_last_op'
 
 
 def _cfg_get(key, default=None):

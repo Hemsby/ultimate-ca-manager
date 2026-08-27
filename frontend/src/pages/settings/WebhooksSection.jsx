@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bell, TestTube, ArrowsClockwise, Lightning, PencilSimple, Trash, Plus, ClockCounterClockwise } from '@phosphor-icons/react'
 import { Button, Badge, HelpCard, DetailSection, DetailContent, DetailHeader, EmptyState } from '../../components'
-import { WEBHOOK_EVENT_LABELS } from './WebhookForm'
+import { webhookEventLabel } from './WebhookForm'
 import WebhookDeliveriesModal from './WebhookDeliveriesModal'
 
 export default function WebhooksSection({ webhooks, webhooksLoading, webhookTesting, handleWebhookCreate, handleWebhookEdit, handleWebhookToggle, handleWebhookTest, setWebhookConfirmDelete, hasPermission }) {
@@ -50,7 +50,7 @@ export default function WebhooksSection({ webhooks, webhooksLoading, webhookTest
                     <p className="text-xs text-text-secondary truncate">{webhook.url}</p>
                     <div className="flex items-center gap-1 mt-1">
                       {(webhook.events || []).slice(0, 3).map(ev => (
-                        <Badge key={ev} variant="outline" size="sm">{WEBHOOK_EVENT_LABELS[ev] || ev}</Badge>
+                        <Badge key={ev} variant="outline" size="sm">{webhookEventLabel(t, ev)}</Badge>
                       ))}
                       {(webhook.events || []).length > 3 && (
                         <Badge variant="outline" size="sm">+{webhook.events.length - 3}</Badge>

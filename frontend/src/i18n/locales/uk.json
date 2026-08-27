@@ -3411,6 +3411,27 @@
     "trustAnchor": "Якір довіри"
   },
   "webhooks": {
+    "eventLabels": {
+      "certificateIssued": "Видано",
+      "certificateRevoked": "Відкликано",
+      "certificateRenewed": "Поновлено",
+      "certificateExpiring": "Скоро спливає",
+      "certificateExpired": "Прострочено",
+      "certificateImported": "Імпортовано",
+      "certificateDeleted": "Видалено",
+      "caCreated": "ЦС створено",
+      "caUpdated": "ЦС оновлено",
+      "caDeleted": "ЦС видалено",
+      "csrSubmitted": "CSR подано",
+      "csrApproved": "CSR схвалено",
+      "csrRejected": "CSR відхилено",
+      "templateCreated": "Шаблон створено",
+      "templateUpdated": "Шаблон оновлено",
+      "systemUpdateAvailable": "Доступне оновлення",
+      "systemUpdateInitiated": "Оновлення розпочато",
+      "systemUpdateInstalled": "Оновлення встановлено",
+      "systemUpdateFailed": "Оновлення не вдалося"
+    },
     "title": "Webhooks",
     "subtitle": "Надсилайте HTTP-сповіщення, коли відбуваються події сертифікатів",
     "helpTitle": "Сповіщення через вебхук",

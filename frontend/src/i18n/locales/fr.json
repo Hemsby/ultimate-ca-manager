@@ -3414,6 +3414,27 @@
     "invalidFormat": "Format invalide"
   },
   "webhooks": {
+    "eventLabels": {
+      "certificateIssued": "Émis",
+      "certificateRevoked": "Révoqué",
+      "certificateRenewed": "Renouvelé",
+      "certificateExpiring": "Expire bientôt",
+      "certificateExpired": "Expiré",
+      "certificateImported": "Importé",
+      "certificateDeleted": "Supprimé",
+      "caCreated": "CA créée",
+      "caUpdated": "CA modifiée",
+      "caDeleted": "CA supprimée",
+      "csrSubmitted": "CSR soumise",
+      "csrApproved": "CSR approuvée",
+      "csrRejected": "CSR rejetée",
+      "templateCreated": "Modèle créé",
+      "templateUpdated": "Modèle modifié",
+      "systemUpdateAvailable": "Mise à jour disponible",
+      "systemUpdateInitiated": "Mise à jour lancée",
+      "systemUpdateInstalled": "Mise à jour installée",
+      "systemUpdateFailed": "Mise à jour échouée"
+    },
     "title": "Webhooks",
     "subtitle": "Envoyer des notifications HTTP lors d'événements de certificats",
     "helpTitle": "Notifications Webhook",

@@ -26,27 +26,31 @@ const WEBHOOK_EVENTS = [
   'system.update_failed',
 ]
 
-export const WEBHOOK_EVENT_LABELS = {
-  'certificate.issued': 'Issued',
-  'certificate.revoked': 'Revoked',
-  'certificate.renewed': 'Renewed',
-  'certificate.expiring': 'Expiring',
-  'certificate.expired': 'Expired',
-  'certificate.imported': 'Imported',
-  'certificate.deleted': 'Deleted',
-  'ca.created': 'CA Created',
-  'ca.updated': 'CA Updated',
-  'ca.deleted': 'CA Deleted',
-  'csr.submitted': 'CSR Submitted',
-  'csr.approved': 'CSR Approved',
-  'csr.rejected': 'CSR Rejected',
-  'template.created': 'Template Created',
-  'template.updated': 'Template Updated',
-  'system.update_available': 'Update Available',
-  'system.update_initiated': 'Update Initiated',
-  'system.update_installed': 'Update Installed',
-  'system.update_failed': 'Update Failed',
+// labelKey pattern: i18n keys stored at module level, resolved with t()
+export const WEBHOOK_EVENT_LABEL_KEYS = {
+  'certificate.issued': 'webhooks.eventLabels.certificateIssued',
+  'certificate.revoked': 'webhooks.eventLabels.certificateRevoked',
+  'certificate.renewed': 'webhooks.eventLabels.certificateRenewed',
+  'certificate.expiring': 'webhooks.eventLabels.certificateExpiring',
+  'certificate.expired': 'webhooks.eventLabels.certificateExpired',
+  'certificate.imported': 'webhooks.eventLabels.certificateImported',
+  'certificate.deleted': 'webhooks.eventLabels.certificateDeleted',
+  'ca.created': 'webhooks.eventLabels.caCreated',
+  'ca.updated': 'webhooks.eventLabels.caUpdated',
+  'ca.deleted': 'webhooks.eventLabels.caDeleted',
+  'csr.submitted': 'webhooks.eventLabels.csrSubmitted',
+  'csr.approved': 'webhooks.eventLabels.csrApproved',
+  'csr.rejected': 'webhooks.eventLabels.csrRejected',
+  'template.created': 'webhooks.eventLabels.templateCreated',
+  'template.updated': 'webhooks.eventLabels.templateUpdated',
+  'system.update_available': 'webhooks.eventLabels.systemUpdateAvailable',
+  'system.update_initiated': 'webhooks.eventLabels.systemUpdateInitiated',
+  'system.update_installed': 'webhooks.eventLabels.systemUpdateInstalled',
+  'system.update_failed': 'webhooks.eventLabels.systemUpdateFailed',
 }
+
+export const webhookEventLabel = (t, event) =>
+  WEBHOOK_EVENT_LABEL_KEYS[event] ? t(WEBHOOK_EVENT_LABEL_KEYS[event]) : event
 
 // labelKey pattern: module-level constant, resolved with t() in component
 const AUTH_TYPE_OPTIONS = [
@@ -516,7 +520,7 @@ export default function WebhookForm({ webhook, onSave, onCancel }) {
                 onChange={() => toggleEvent(event)}
                 className="rounded border-border bg-bg-tertiary"
               />
-              <span className="text-xs text-text-primary">{WEBHOOK_EVENT_LABELS[event] || event}</span>
+              <span className="text-xs text-text-primary">{webhookEventLabel(t, event)}</span>
             </label>
           ))}
         </div>

@@ -637,24 +637,27 @@ class TestKeylessCASigning:
             resp = ocsp.load_der_ocsp_response(der)
             assert resp.response_status == ocsp.OCSPResponseStatus.UNAUTHORIZED
 
-    def test_hsm_fault_stays_internal_error(self, app, create_ca, create_cert):
-        """A real fault (HSM unavailable) is NOT an expected no-identity state:
-        it must surface as internalError, never as unauthorized."""
+    def test_hsm_fault_stays_internal_error(
+        self, app, create_ca, create_cert, monkeypatch
+    ):
+        """A real fault (HSM/key-load failure) is NOT an expected no-identity
+        state: it must surface as internalError, never as unauthorized.
+        Simulated by faulting the key loader — no FK-violating DB state
+        (CA.hsm_key_id carries a real FK that PostgreSQL enforces)."""
         with app.app_context():
             ca = create_ca(cn='HSM Fault OCSP CA')
             target = create_cert(cn='hsm-fault.example.com', ca_id=ca['id'])
             ca_obj = _ca_model(ca)
             serial = int(_cert_model(target).serial_number, 16)
-            ca_obj.hsm_key_id = 999999  # nonexistent HSM key -> load fault
-            db.session.commit()
-            try:
-                der, status = OCSPService().generate_response(ca_obj, serial)
-                assert status == 'error'
-                resp = ocsp.load_der_ocsp_response(der)
-                assert resp.response_status == ocsp.OCSPResponseStatus.INTERNAL_ERROR
-            finally:
-                ca_obj.hsm_key_id = None
-                db.session.commit()
+
+            def _hsm_down(self, ca_arg):
+                raise ValueError('HSM signing failed: provider unreachable')
+            monkeypatch.setattr(OCSPService, '_load_ca_key', _hsm_down)
+
+            der, status = OCSPService().generate_response(ca_obj, serial)
+            assert status == 'error'
+            resp = ocsp.load_der_ocsp_response(der)
+            assert resp.response_status == ocsp.OCSPResponseStatus.INTERNAL_ERROR
 
     def test_offline_ca_with_responder_still_signs(
         self, app, create_ca, create_cert, monkeypatch

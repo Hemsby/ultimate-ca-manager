@@ -10,7 +10,12 @@ DATA_DIR="/opt/ucm/data"
 RESTART_FILE="$DATA_DIR/.restart_requested"
 UPDATE_FILE="$DATA_DIR/.update_pending"
 MANIFEST_FILE="$DATA_DIR/.update_manifest.json"
+# Claimed copy of the manifest for THIS operation: a concurrent trigger may
+# replace $MANIFEST_FILE while we work, so all metadata is read from the
+# claimed copy only (never from the mutable global file)
+PROCESSING_FILE="$DATA_DIR/.update_manifest.processing"
 RESULT_FILE="$DATA_DIR/.update_result.json"
+VERSION_FILE="/opt/ucm/VERSION"
 LOG_FILE="/var/log/ucm/ucm.log"
 
 log() {
@@ -18,11 +23,11 @@ log() {
 }
 
 manifest_get() {
-    # Read one string field from the operation manifest ('' when absent)
-    python3 - "$1" <<'PYEOF' 2>/dev/null || true
-import json, sys
+    # Read one string field from the CLAIMED operation manifest ('' when absent)
+    MANIFEST_PATH="$PROCESSING_FILE" python3 - "$1" <<'PYEOF' 2>/dev/null || true
+import json, os, sys
 try:
-    with open("/opt/ucm/data/.update_manifest.json") as f:
+    with open(os.environ["MANIFEST_PATH"]) as f:
         print(json.load(f).get(sys.argv[1]) or '')
 except Exception:
     pass
@@ -30,6 +35,13 @@ PYEOF
 }
 
 installed_version() {
+    # The canonical UCM version shipped by the package itself — matches the
+    # release tag exactly (e.g. 2.215-rc1), unlike dpkg/rpm versions where
+    # the prerelease separator becomes '~' (2.215~rc1)
+    if [ -f "$VERSION_FILE" ]; then
+        tr -d ' \n' < "$VERSION_FILE" 2>/dev/null || true
+        return
+    fi
     if command -v dpkg-query &>/dev/null; then
         dpkg-query -W -f='${Version}' ucm 2>/dev/null || true
     elif command -v rpm &>/dev/null; then
@@ -37,16 +49,30 @@ installed_version() {
     fi
 }
 
+versions_match() {
+    # versions_match <detected> <target> — tolerate the packaging transforms:
+    # prerelease '-' becomes '~' in DEB/RPM versions, and a package revision
+    # ('-1') may be appended. Everything is compared '~'-normalized.
+    local detected target base
+    detected=$(printf '%s' "$1" | tr '~' '-')
+    target=$(printf '%s' "$2" | tr '~' '-')
+    base=$(printf '%s' "$detected" | sed 's/-[0-9][0-9]*$//')
+    [ "$detected" = "$target" ] || [ "$base" = "$target" ]
+}
+
 write_result() {
     # write_result <status> <step> <error> — durable, atomic (rename),
-    # consumed once by the UCM backend after the restart
-    STATUS="$1" STEP="$2" ERROR="$3" INSTALLED="$(installed_version)" \
-        python3 - <<'PYEOF' >> "$LOG_FILE" 2>&1 || true
+    # consumed once by the UCM backend after the restart. The claimed
+    # manifest is removed only after the result is durably written; on a
+    # write failure it is kept for diagnosis and NO result is left behind
+    # (the backend then simply never claims success).
+    if STATUS="$1" STEP="$2" ERROR="$3" INSTALLED="$(installed_version)" \
+        MANIFEST_PATH="$PROCESSING_FILE" RESULT_PATH="$RESULT_FILE" \
+        python3 - <<'PYEOF' >> "$LOG_FILE" 2>&1
 import json, os, time
-data_dir = "/opt/ucm/data"
 manifest = {}
 try:
-    with open(os.path.join(data_dir, ".update_manifest.json")) as f:
+    with open(os.environ["MANIFEST_PATH"]) as f:
         manifest = json.load(f)
 except Exception:
     pass
@@ -61,13 +87,18 @@ result = {
     "installed_version": os.environ["INSTALLED"] or None,
     "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
 }
-tmp = os.path.join(data_dir, ".update_result.json.tmp")
+result_path = os.environ["RESULT_PATH"]
+tmp = result_path + ".tmp"
 with open(tmp, "w") as f:
     json.dump(result, f)
 os.chmod(tmp, 0o644)
-os.replace(tmp, os.path.join(data_dir, ".update_result.json"))
+os.replace(tmp, result_path)
 PYEOF
-    rm -f "$MANIFEST_FILE"
+    then
+        rm -f "$PROCESSING_FILE"
+    else
+        log "ERROR: could not write the update result file — keeping the claimed manifest for diagnosis"
+    fi
 }
 
 finish_update() {
@@ -83,6 +114,11 @@ finish_update() {
 if [ -f "$UPDATE_FILE" ]; then
     PACKAGE_PATH=$(cat "$UPDATE_FILE")
     rm -f "$UPDATE_FILE"
+
+    # Claim the manifest atomically: from here on, every metadata read and
+    # the final result belong to THIS operation even if a new manifest is
+    # written concurrently.
+    mv -f "$MANIFEST_FILE" "$PROCESSING_FILE" 2>/dev/null || true
 
     if [ -z "$PACKAGE_PATH" ] || [ ! -f "$PACKAGE_PATH" ]; then
         log "ERROR: Invalid or missing package path: '$PACKAGE_PATH'"
@@ -124,12 +160,14 @@ if [ -f "$UPDATE_FILE" ]; then
     fi
 
     if [ "$INSTALL_OK" = "1" ]; then
-        # Verify the package version actually on the system before declaring
-        # success — a repaired-but-not-upgraded install must report failed
+        # Verify the version actually installed before declaring success —
+        # a repaired-but-not-upgraded install must report failed. The check
+        # reads the canonical /opt/ucm/VERSION shipped by the package, and
+        # tolerates the DEB/RPM '~' prerelease transform on the fallback.
         TARGET_VERSION="$(manifest_get to_version)"
         DETECTED="$(installed_version)"
-        log "Installed package version: '${DETECTED}' (target: '${TARGET_VERSION}')"
-        if [ -n "$TARGET_VERSION" ] && [ "${DETECTED%%-*}" != "$TARGET_VERSION" ] && [ "$DETECTED" != "$TARGET_VERSION" ]; then
+        log "Installed version: '${DETECTED}' (target: '${TARGET_VERSION}')"
+        if [ -n "$TARGET_VERSION" ] && ! versions_match "$DETECTED" "$TARGET_VERSION"; then
             log "ERROR: installed version does not match the update target"
             write_result failed verify "installed version '$DETECTED' does not match target '$TARGET_VERSION'"
         else

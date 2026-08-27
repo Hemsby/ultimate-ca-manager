@@ -3,7 +3,7 @@ System Updates Operations
 """
 
 from . import bp
-from flask import request
+from flask import request, g
 from auth.unified import require_auth
 from utils.response import success_response, error_response
 from services.audit_service import AuditService
@@ -11,6 +11,20 @@ import os
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _actor():
+    """Authenticated principal for update attribution (review S-04) — never
+    hardcode 'admin': another admin user or an API key owner must be credited
+    consistently in the manifest, the initiated event and the final result."""
+    for attr in ('current_user', 'user'):
+        obj = getattr(g, attr, None)
+        if obj is not None:
+            username = getattr(obj, 'username', None) or (
+                obj.get('username') if isinstance(obj, dict) else None)
+            if username:
+                return username
+    return 'admin'
 
 
 @bp.route('/api/v2/system/updates/check', methods=['GET'])
@@ -90,16 +104,17 @@ def install_update():
         # Install (this will restart the service). The truthful outcome —
         # system.update_installed / system.update_failed — is emitted after
         # the restart from the watcher's durable result.
+        actor = _actor()
         do_install(
             package_path,
             to_version=update_info['latest_version'],
-            initiated_by='admin',
+            initiated_by=actor,
         )
         from services.webhook_service import emit_update_initiated
         emit_update_initiated({
             'current_version': update_info['current_version'],
             'latest_version': update_info['latest_version'],
-        }, actor='admin')
+        }, actor=actor)
 
         # Log the update
         AuditService.log_action(

@@ -3411,6 +3411,27 @@
     "trustAnchor": "トラストアンカー"
   },
   "webhooks": {
+    "eventLabels": {
+      "certificateIssued": "発行",
+      "certificateRevoked": "失効",
+      "certificateRenewed": "更新",
+      "certificateExpiring": "期限間近",
+      "certificateExpired": "期限切れ",
+      "certificateImported": "インポート",
+      "certificateDeleted": "削除",
+      "caCreated": "CA 作成",
+      "caUpdated": "CA 更新",
+      "caDeleted": "CA 削除",
+      "csrSubmitted": "CSR 提出",
+      "csrApproved": "CSR 承認",
+      "csrRejected": "CSR 却下",
+      "templateCreated": "テンプレート作成",
+      "templateUpdated": "テンプレート更新",
+      "systemUpdateAvailable": "アップデートあり",
+      "systemUpdateInitiated": "アップデート開始",
+      "systemUpdateInstalled": "アップデート完了",
+      "systemUpdateFailed": "アップデート失敗"
+    },
     "title": "Webhooks",
     "subtitle": "Send HTTP notifications when certificate events occur",
     "helpTitle": "Webhook Notifications",

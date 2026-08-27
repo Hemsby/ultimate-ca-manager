@@ -3411,6 +3411,27 @@
     "trustAnchor": "Ancla de confianza"
   },
   "webhooks": {
+    "eventLabels": {
+      "certificateIssued": "Emitido",
+      "certificateRevoked": "Revocado",
+      "certificateRenewed": "Renovado",
+      "certificateExpiring": "Por expirar",
+      "certificateExpired": "Expirado",
+      "certificateImported": "Importado",
+      "certificateDeleted": "Eliminado",
+      "caCreated": "CA creada",
+      "caUpdated": "CA actualizada",
+      "caDeleted": "CA eliminada",
+      "csrSubmitted": "CSR enviada",
+      "csrApproved": "CSR aprobada",
+      "csrRejected": "CSR rechazada",
+      "templateCreated": "Plantilla creada",
+      "templateUpdated": "Plantilla actualizada",
+      "systemUpdateAvailable": "Actualización disponible",
+      "systemUpdateInitiated": "Actualización iniciada",
+      "systemUpdateInstalled": "Actualización instalada",
+      "systemUpdateFailed": "Actualización fallida"
+    },
     "title": "Webhooks",
     "subtitle": "Enviar notificaciones HTTP cuando ocurran eventos de certificados",
     "helpTitle": "Notificaciones de Webhook",
