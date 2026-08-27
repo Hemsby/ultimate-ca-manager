@@ -35,7 +35,7 @@
 - **SCEP** -- RFC 8894 device auto-enrollment with approval workflows, GetCert/GetCRL, signed GetNextCACert, AES-128 encryption with password-based (PBKDF2) fallback for non-RSA clients
 - **EST** -- RFC 7030 Enrollment over Secure Transport, incl. server-side key generation (CMS §4.4) and **CA labels** (§3.2.2: serve several CAs from one endpoint)
 - **OCSP** -- RFC 6960 real-time certificate status, multi-certificate requests, nonce support, delegated responder validation, configurable response validity
-- **CRL/CDP** -- Certificate Revocation List distribution with Delta CRL support (RFC 5280 §5.2.4), per-CA schedule (validity decoupled from publish cadence) and configurable signature digest, optional named URLs (CA-name slug in CDP/AIA paths, can be enabled on existing CAs)
+- **CRL/CDP** -- Certificate Revocation List distribution with Delta CRL support (RFC 5280 §5.2.4), per-CA schedule (validity decoupled from publish cadence) and configurable signature digest, optional named URLs (CA-name slug in CDP/AIA paths, can be enabled on existing CAs), **externally-signed CRL upload for offline / key-less CAs** (validated against the CA certificate with CRL-number monotonicity, served at the existing CDP endpoint and consulted by OCSP)
 - **AIA CA Issuers** -- Authority Information Access CA certificate download (RFC 5280 §4.2.2.1)
 
 ### Integrations
@@ -58,11 +58,12 @@
 - **Reports** -- Scheduled PDF reports, executive summaries, custom templates
 - **Certificate Toolbox** -- SSL checker, CSR/cert decoder, key matcher, format converter
 - **Email Notifications** -- SMTP with **OAuth2 (XOAUTH2)** for Gmail, Outlook.com & Microsoft 365, customizable HTML/text templates, certificate expiry alerts
+- **Deploy Hooks** -- Push issued and renewed certificates to remote hosts over SSH/SFTP: key-based auth (generated ed25519 or imported key, encrypted at rest), host-key pinning on first connect, per-binding destination paths (cert / key / full chain, written atomically), one fixed reload command per target, durable delivery queue with retries and per-delivery history
 - **Backup & Restore** -- Manual and scheduled encrypted backups with retention policies
 - **Diagnostic Log Bundle** -- One-click download (Settings → About → Diagnostic) of application logs, error log, systemd journal and a secret-free system diagnostic as a ZIP, with sensitive tokens redacted
 - **Prometheus Metrics** -- opt-in, bearer-gated `/metrics` endpoint exposing certificate, CA, scheduler, webhook and ACME counters
 - **Scheduler** -- admin view of background tasks (expiry checks, CRL refresh, webhook delivery, backups, auto-renewal) with status and run-now
-- **Software Updates** -- In-app update checker with one-click install
+- **Software Updates** -- In-app update checker with one-click install, scheduled daily check on a stable or release-candidate channel, and opt-in unattended install (DEB/RPM) with mandatory SHA256 verification and truthful outcome events (installed only after the actual install is version-verified)
 - **Global Search** -- Cross-resource search and command palette (Ctrl+K)
 
 ### Platform
