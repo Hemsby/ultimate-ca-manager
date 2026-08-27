@@ -427,6 +427,34 @@ class DeployService:
             out['enabled'] = bool(data['enabled'])
         return out
 
+    @staticmethod
+    def ensure_distinct_paths(cert_path, key_path, fullchain_path):
+        """Two files pushed to the same path silently overwrite each other —
+        the last write wins and the delivery still reports success. Refuse."""
+        paths = [posixpath.normpath(p) for p in (cert_path, key_path, fullchain_path) if p]
+        if len(paths) != len(set(paths)):
+            raise ValueError(
+                'cert_path, key_path and fullchain_path must be distinct files')
+
+    @staticmethod
+    def enqueue_initial_push(binding: DeployBinding, actor: str = 'system'):
+        """Queue the first push right after a binding is created (#299 review
+        F-07): a binding can only be attached to an already-issued certificate,
+        so the certificate.issued event can never match a fresh binding —
+        without this, the first deployment always required a manual push."""
+        if not binding.enabled or not binding.target or not binding.target.enabled:
+            return None
+        delivery = DeployDelivery(
+            binding_id=binding.id,
+            event_type='initial',
+            status=DeployDelivery.STATUS_PENDING,
+            next_attempt_at=utc_now(),
+            max_attempts=DeployService.DEFAULT_MAX_ATTEMPTS,
+            triggered_by=actor,
+        )
+        db.session.add(delivery)
+        return delivery
+
 
 def _register_bus_subscriber():
     from services.events import event_bus

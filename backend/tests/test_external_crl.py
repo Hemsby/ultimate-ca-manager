@@ -303,6 +303,93 @@ class TestServingAndOCSP:
             revoked_at, reason = CRLService.get_external_revocation(ca['id'], s2)
             assert reason is None  # no CRLReason on the entry — stays None
 
+    def test_single_certid_ocsp_path_uses_external_crl(
+            self, app, auth_client, keyless_ca, monkeypatch):
+        """generate_response (the single-CertID path) must consult the external
+        CRL like _status_for_serial does — review F-01. Without a signing key
+        or responder the response is 'unauthorized', but the resolved status
+        must be computed from the CRL, so we give the CA a delegated responder."""
+        from cryptography.hazmat.primitives.asymmetric import rsa as _rsa
+        from cryptography.x509 import ocsp as x509_ocsp
+        root_key, root_cert, ca = keyless_ca
+        now = datetime.now(timezone.utc)
+        revoked_serial = 0xF01F01
+        assert_success(_upload_pem(auth_client, ca['id'], _build_crl(
+            root_key, root_cert,
+            entries=((revoked_serial, now - timedelta(hours=1),
+                      x509.ReasonFlags.superseded),))))
+
+        from models import db, CA, Certificate, SystemConfig
+        from services.ocsp_service import OCSPService
+        from datetime import timedelta as _td
+        with app.app_context():
+            ca_obj = db.session.get(CA, ca['id'])
+            # Delegated responder issued next to the offline root key
+            responder_key = _rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            responder_cert = (
+                x509.CertificateBuilder()
+                .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'Ext Responder')]))
+                .issuer_name(root_cert.subject)
+                .public_key(responder_key.public_key())
+                .serial_number(x509.random_serial_number())
+                .not_valid_before(now - _td(minutes=5))
+                .not_valid_after(now + _td(days=30))
+                .add_extension(x509.ExtendedKeyUsage(
+                    [x509.oid.ExtendedKeyUsageOID.OCSP_SIGNING]), critical=False)
+                .add_extension(x509.OCSPNoCheck(), critical=False)
+                .sign(root_key, hashes.SHA256())
+            )
+            import base64 as _b64
+            record = Certificate(
+                refid=f'ext-resp-{ca["id"]}', descr='ext responder',
+                caref=ca_obj.refid,
+                crt=_b64.b64encode(responder_cert.public_bytes(
+                    serialization.Encoding.PEM)).decode(),
+                prv=_b64.b64encode(responder_key.private_bytes(
+                    serialization.Encoding.PEM,
+                    serialization.PrivateFormat.PKCS8,
+                    serialization.NoEncryption())).decode(),
+            )
+            db.session.add(record)
+            db.session.flush()
+            db.session.add(SystemConfig(
+                key=f'ocsp_responder_cert_{ca_obj.id}', value=str(record.id)))
+            db.session.commit()
+            monkeypatch.setattr(
+                'security.encryption.decrypt_private_key', lambda value: value)
+
+            der, status = OCSPService().generate_response(ca_obj, revoked_serial)
+            assert status == 'revoked'
+            resp = x509_ocsp.load_der_ocsp_response(der)
+            assert resp.response_status == x509_ocsp.OCSPResponseStatus.SUCCESSFUL
+            assert resp.certificate_status == x509_ocsp.OCSPCertStatus.REVOKED
+
+            der, status = OCSPService().generate_response(ca_obj, 0x123456)
+            assert status == 'unknown'
+
+    def test_upload_purges_cached_ocsp_responses(self, app, auth_client, keyless_ca):
+        """A pre-generated 'good' OCSP answer must not survive a CRL upload
+        that revokes the serial — review F-03."""
+        root_key, root_cert, ca = keyless_ca
+        serial = 0xF03F03
+        from models import db, OCSPResponse
+        from utils.datetime_utils import utc_now
+        from datetime import timedelta as _td
+        with app.app_context():
+            db.session.add(OCSPResponse(
+                ca_id=ca['id'], cert_serial=f'{serial:x}:sha256',
+                response_der=b'cached', status='good',
+                this_update=utc_now(), next_update=utc_now() + _td(hours=24)))
+            db.session.commit()
+
+        now = datetime.now(timezone.utc)
+        assert_success(_upload_pem(auth_client, ca['id'], _build_crl(
+            root_key, root_cert,
+            entries=((serial, now - timedelta(hours=1), None),))))
+
+        with app.app_context():
+            assert OCSPResponse.query.filter_by(ca_id=ca['id']).count() == 0
+
     def test_no_external_lookup_for_internal_crl(self, app, auth_client, create_ca):
         ca = create_ca()
         assert_success(auth_client.post(f"/api/v2/crl/{ca['id']}/regenerate"))

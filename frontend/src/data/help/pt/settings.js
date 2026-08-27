@@ -55,7 +55,7 @@ export default {
         title: 'Atualizações automáticas (v2.215)',
         content: 'Definições › Atualizações: uma verificação diária em segundo plano de novas versões e uma instalação não assistida opcional.',
         items: [
-          { label: 'Canal', text: 'Stable segue apenas as releases; Release candidates também oferece pré-releases (RC)' },
+          { label: "Canal", text: "Stable segue apenas as releases finais; Release candidates aceita adicionalmente somente versões rcN — nunca alfa/beta" },
           { label: 'Notificação', text: 'Uma nova versão disponível dispara o evento webhook/e-mail system.update_available, uma vez por versão' },
           { label: 'Instalação automática', text: 'Desativada por padrão. Quando ativada, o UCM baixa, verifica e instala a atualização na hora escolhida e depois reinicia — apenas instalações DEB/RPM' },
           { label: 'Checksum', text: 'Uma instalação não assistida exige o SHA256 publicado da release para verificação; uma instalação manual também verifica sempre que um checksum é publicado' },

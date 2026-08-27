@@ -55,7 +55,7 @@ export default {
         title: '自动更新（v2.215）',
         content: '设置 › 更新：每日后台检查新版本，并可选启用无人值守安装。',
         items: [
-          { label: '通道', text: '"稳定版"仅跟随正式发布；"候选发布版"还提供预发布版本（RC）' },
+          { label: "通道", text: "“稳定版”仅跟随正式发布；“候选发布版”额外仅接受 rcN 版本——绝不包含 alpha/beta" },
           { label: '通知', text: '发现新版本时触发 system.update_available Webhook/邮件事件，每个版本仅一次' },
           { label: '自动安装', text: '默认关闭。启用后，UCM 会在选定的时间下载、验证并安装更新，然后重启——仅限 DEB/RPM 安装' },
           { label: '校验和', text: '无人值守安装要求发布版提供已公布的 SHA256 用于验证；手动安装在有校验和公布时也会进行验证' },

@@ -55,7 +55,7 @@ export default {
         title: 'Automatische Updates (v2.215)',
         content: 'Einstellungen › Updates: eine tägliche Hintergrundprüfung auf neue Versionen und eine optionale unbeaufsichtigte Installation.',
         items: [
-          { label: 'Kanal', text: 'Stabil folgt nur Releases; Release-Kandidaten bietet zusätzlich Vorabversionen (RC) an' },
+          { label: "Kanal", text: "Stabil folgt nur finalen Releases; Release-Kandidaten nimmt zusätzlich nur rcN-Versionen an — Alpha/Beta niemals" },
           { label: 'Benachrichtigung', text: 'Eine neu verfügbare Version löst das Webhook-/E-Mail-Ereignis system.update_available aus, einmal pro Version' },
           { label: 'Auto-Installation', text: 'Standardmäßig aus. Wenn aktiviert, lädt UCM das Update zur gewählten Stunde herunter, verifiziert und installiert es und startet dann neu — nur DEB/RPM-Installationen' },
           { label: 'Prüfsumme', text: 'Eine unbeaufsichtigte Installation erfordert die veröffentlichte SHA256 des Releases zur Verifizierung; eine manuelle Installation verifiziert ebenfalls, wann immer eine Prüfsumme veröffentlicht ist' },

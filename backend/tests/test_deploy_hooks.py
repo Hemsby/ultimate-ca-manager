@@ -177,7 +177,8 @@ class TestBindings:
         assert binding['target_name'] == target['name']
         listed = assert_success(auth_client.get(f"{BASE}/bindings?certificate_id={cert['id']}"))
         assert len(listed) == 1
-        assert listed[0]['last_delivery'] is None
+        # attaching queues the initial push (F-07) — it shows as last delivery
+        assert listed[0]['last_delivery']['event_type'] == 'initial'
 
     def test_requires_absolute_path(self, auth_client, create_cert):
         target = _create_target(auth_client)
@@ -394,6 +395,107 @@ class TestFileResolution:
             files = DeployService.resolve_files(binding, c)
             content = files[0][1].decode()
             assert content.count('BEGIN CERTIFICATE') >= 2
+
+
+class TestReviewFindings:
+    """Fixes from the 2.215 code review (F-07/F-08/F-10/F-11)."""
+
+    def test_binding_creation_queues_initial_push(self, app, auth_client, create_cert):
+        """F-07: attaching an issued certificate queues the first deployment."""
+        target = _create_target(auth_client)
+        cert = create_cert()
+        binding = _create_binding(auth_client, target['id'], cert['id'])
+        listed = assert_success(
+            auth_client.get(f"{BASE}/deliveries?binding_id={binding['id']}"))
+        assert [d for d in listed
+                if d['event_type'] == 'initial' and d['status'] == 'pending']
+
+    def test_no_initial_push_for_disabled_target(self, app, auth_client, create_cert):
+        target = _create_target(auth_client, enabled=False)
+        assert_success(patch_json(auth_client, f"{BASE}/targets/{target['id']}",
+                                  {'enabled': False}))
+        cert = create_cert()
+        binding = _create_binding(auth_client, target['id'], cert['id'])
+        listed = assert_success(
+            auth_client.get(f"{BASE}/deliveries?binding_id={binding['id']}"))
+        assert listed == []
+
+    def test_colliding_paths_rejected_on_create(self, auth_client, create_cert):
+        """F-08: identical destination paths silently overwrite each other."""
+        target = _create_target(auth_client)
+        cert = create_cert()
+        r = post_json(auth_client, f'{BASE}/bindings', {
+            'target_id': target['id'], 'certificate_id': cert['id'],
+            'cert_path': '/etc/ssl/same.pem', 'key_path': '/etc/ssl/same.pem'})
+        assert_error(r, 400)
+        assert 'distinct' in get_json(r)['message']
+
+    def test_patch_collision_with_stored_path_rejected(self, auth_client, create_cert):
+        target = _create_target(auth_client)
+        cert = create_cert()
+        binding = _create_binding(auth_client, target['id'], cert['id'])
+        # cert_path is stored as /etc/ssl/ucm/cert.pem — a partial PATCH
+        # moving fullchain onto it must be refused
+        r = patch_json(auth_client, f"{BASE}/bindings/{binding['id']}",
+                       {'fullchain_path': '/etc/ssl/ucm/cert.pem'})
+        assert_error(r, 400)
+
+    def _admin_scoped_key(self, app, permissions, name):
+        """API key owned by an admin, scoped to the given deploy permissions."""
+        import hashlib
+        import secrets
+        from models import User, db
+        from models.api_key import APIKey
+        with app.app_context():
+            admin = User.query.filter_by(username='admin').first()
+            raw_key = f'ucm_ak_{secrets.token_urlsafe(32)}'
+            db.session.add(APIKey(
+                user_id=admin.id,
+                key_hash=hashlib.sha256(raw_key.encode()).hexdigest(),
+                key_prefix=raw_key[:12],
+                name=name,
+                permissions=json.dumps(permissions),
+            ))
+            db.session.commit()
+        return raw_key
+
+    def test_write_scope_cannot_delete(self, app, auth_client, create_cert):
+        """F-10: DELETE requires delete:deploy — a write:deploy key must not
+        be able to remove targets and their delivery history."""
+        target = _create_target(auth_client)
+        write_key = self._admin_scoped_key(
+            app, ['read:deploy', 'write:deploy'], 'deploy-write-only')
+        delete_key = self._admin_scoped_key(
+            app, ['read:deploy', 'delete:deploy'], 'deploy-delete-only')
+        client = app.test_client()
+
+        r = client.patch(f"{BASE}/targets/{target['id']}",
+                         data=json.dumps({'reload_command': 'true'}),
+                         content_type='application/json',
+                         headers={'X-API-Key': write_key})
+        assert r.status_code == 200, r.data[:300]
+        r = client.delete(f"{BASE}/targets/{target['id']}",
+                          headers={'X-API-Key': write_key})
+        assert r.status_code == 403, r.data[:300]
+        r = client.delete(f"{BASE}/targets/{target['id']}",
+                          headers={'X-API-Key': delete_key})
+        assert r.status_code == 200, r.data[:300]
+
+    def test_migration_creates_foreign_keys(self):
+        """F-11: an upgraded schema must carry the model's FKs, not just a
+        fresh db.create_all() one."""
+        import sqlite3
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            'm081', 'migrations/081_deploy_hooks.py')
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        conn = sqlite3.connect(':memory:')
+        m.upgrade(conn)
+        fks = conn.execute('PRAGMA foreign_key_list(deploy_bindings)').fetchall()
+        referenced = {(row[2], row[3]) for row in fks}  # (table, from_column)
+        assert ('deploy_targets', 'target_id') in referenced
+        assert ('certificates', 'certificate_id') in referenced
 
 
 class TestCertDeleteCleanup:

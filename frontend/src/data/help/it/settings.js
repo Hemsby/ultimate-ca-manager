@@ -55,7 +55,7 @@ export default {
         title: 'Aggiornamenti automatici (v2.215)',
         content: 'Impostazioni › Aggiornamenti: un controllo giornaliero in background delle nuove versioni e un\'installazione non presidiata opzionale.',
         items: [
-          { label: 'Canale', text: 'Versioni stabili segue solo i rilasci; Release candidate propone anche le pre-release (RC)' },
+          { label: "Canale", text: "Versioni stabili segue solo i rilasci finali; Release candidate accetta in più soltanto le versioni rcN — mai alpha/beta" },
           { label: 'Notifica', text: 'Una nuova versione disponibile attiva l\'evento webhook/email system.update_available, una volta per versione' },
           { label: 'Installazione automatica', text: 'Disattivata per impostazione predefinita. Se abilitata, UCM scarica, verifica e installa l\'aggiornamento all\'ora scelta, poi si riavvia — solo installazioni DEB/RPM' },
           { label: 'Checksum', text: 'Un\'installazione non presidiata richiede lo SHA256 pubblicato del rilascio per la verifica; anche un\'installazione manuale verifica ogni volta che un checksum è pubblicato' },

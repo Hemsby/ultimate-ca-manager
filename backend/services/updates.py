@@ -107,15 +107,20 @@ def invalidate_update_cache():
     _releases_cache['ts'] = 0
 
 
-def check_for_updates(include_prereleases=False, include_dev=False, force=False):
+def check_for_updates(include_prereleases=False, include_dev=False, force=False,
+                      channel=None):
     """
     Check GitHub for available updates
-    
+
     Args:
         include_prereleases: Include alpha, beta, rc versions
         include_dev: Include dev versions (implies include_prereleases)
         force: Bypass cache
-    
+        channel: Strict release channel ('stable' | 'rc') used by the
+            automatic check. Overrides include_prereleases: 'stable' accepts
+            final releases only, 'rc' accepts final releases plus rcN
+            prereleases — alpha/beta/dev tags never qualify for either.
+
     Returns dict with:
         - update_available: bool
         - current_version: str
@@ -165,12 +170,17 @@ def check_for_updates(include_prereleases=False, include_dev=False, force=False)
             if release.get('draft'):
                 continue
             if release.get('prerelease'):
-                if not include_prereleases:
-                    continue
                 tag = release.get('tag_name', '').lstrip('v')
                 suffix = tag.split('-', 1)[1] if '-' in tag else ''
-                if suffix.startswith('dev'):
-                    if not include_dev:
+                if channel is not None:
+                    # Strict channels: 'stable' takes no prerelease at all;
+                    # 'rc' takes rcN only — alpha/beta/dev never qualify.
+                    if channel != 'rc' or not suffix.startswith('rc'):
+                        continue
+                else:
+                    if not include_prereleases:
+                        continue
+                    if suffix.startswith('dev') and not include_dev:
                         continue
             candidates.append(release)
         
@@ -389,18 +399,41 @@ def _cfg_get(key, default=None):
     return row.value if row and row.value is not None else default
 
 
-def _cfg_set(key, value):
+def _cfg_stage(key, value):
+    """Stage a SystemConfig write on the session without committing."""
     from models import db, SystemConfig
     row = SystemConfig.query.filter_by(key=key).first()
     if row:
         row.value = str(value)
     else:
         db.session.add(SystemConfig(key=key, value=str(value)))
+
+
+def _cfg_set(key, value):
+    """Persist one setting. Returns True on commit, False on failure —
+    callers guarding critical markers (attempted-version) must check it."""
+    from models import db
+    _cfg_stage(key, value)
     try:
         db.session.commit()
+        return True
     except Exception as e:
         db.session.rollback()
         logger.warning(f"Failed to persist {key}: {e}")
+        return False
+
+
+def _cfg_set_many(values):
+    """Persist several settings in ONE transaction. Raises on commit failure
+    so API callers can report an error instead of a partial success."""
+    from models import db
+    for key, value in values.items():
+        _cfg_stage(key, value)
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def get_update_settings():
@@ -454,8 +487,11 @@ def _auto_install(result):
             success=False,
         )
 
-    # Mark before acting so a crash mid-install is not retried nightly
-    _cfg_set(_ATTEMPTED_VERSION_KEY, latest)
+    # Mark before acting so a crash mid-install is not retried nightly.
+    # If the marker cannot be persisted, do NOT install: an unattended
+    # install without its anti-repeat marker could loop every night.
+    if not _cfg_set(_ATTEMPTED_VERSION_KEY, latest):
+        return refuse('could not persist the attempted-version marker')
 
     if not result.get('checksum_url'):
         return refuse('release publishes no SHA256 checksum')
@@ -473,13 +509,23 @@ def _auto_install(result):
     except Exception as e:
         return refuse(str(e))
 
+    # Write the install trigger FIRST — audit and webhook must never claim an
+    # install that was not even initiated (review F-05). The watcher performs
+    # the actual dpkg/rpm install after this process restarts, so the audit
+    # wording stays 'triggered', not 'installed'.
+    try:
+        install_update(package_path)
+    except Exception as e:
+        return refuse(f'install trigger failed ({e})')
+
     AuditService.log_action(
         action='settings_update', resource_type='system', resource_id='ucm',
         resource_name='UCM Auto-Update',
         details=(
             f"Unattended update from {result['current_version']} to {latest} "
-            f"(SHA256 verified), installing at "
-            f"{datetime.now().strftime('%H:%M')}"
+            f"(SHA256 verified): install triggered at "
+            f"{datetime.now().strftime('%H:%M')} — performed by the update "
+            f"watcher on restart"
         ),
         success=True,
     )
@@ -489,8 +535,6 @@ def _auto_install(result):
         'current_version': result['current_version'],
         'latest_version': latest,
     }, actor='scheduler')
-
-    install_update(package_path)
     logger.info(f"Auto-update to {latest} triggered")
 
 
@@ -515,7 +559,7 @@ def scheduled_update_check():
         if (now - last_check) < 20 * 3600 and not in_install_window:
             return
 
-        result = check_for_updates(include_prereleases=settings['channel'] == 'rc')
+        result = check_for_updates(channel=settings['channel'])
         _cfg_set(_LAST_CHECK_TS_KEY, str(int(now)))
 
         if result.get('error'):

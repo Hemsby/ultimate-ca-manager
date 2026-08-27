@@ -128,6 +128,20 @@ _REASON_MAP = {
 }
 
 
+class OCSPSigningUnavailable(ValueError):
+    """No usable signing identity for this CA (no key, no delegated responder).
+
+    Mapped to an RFC 6960 'unauthorized' OCSPResponse rather than
+    internalError: the responder cannot sign for this CA at all."""
+
+
+_CERT_STATUS_MAP = {
+    'good': ocsp.OCSPCertStatus.GOOD,
+    'revoked': ocsp.OCSPCertStatus.REVOKED,
+    'unknown': ocsp.OCSPCertStatus.UNKNOWN,
+}
+
+
 class OCSPService:
     """Service for OCSP operations"""
     
@@ -222,6 +236,25 @@ class OCSPService:
                         and extension['extn_id'].dotted != _NONCE_OID):
                     unsupported_critical = True
         return nonce, unsupported_critical
+
+    def _resolve_signing(self, ca: CA, ca_cert: x509.Certificate):
+        """Pick the OCSP signing identity: delegated responder first, else CA key.
+
+        Trying the responder first matters for key-less/offline CAs (#302): a
+        certificate-only import or a file-exported offline CA has no usable CA
+        key, but a delegated responder whose own key stays online can still
+        sign. Returns (signing_cert, signing_key, use_delegated); raises
+        OCSPSigningUnavailable when neither is usable.
+        """
+        responder_cert, responder_key = self._get_delegated_responder(ca)
+        if responder_cert is not None and responder_key is not None:
+            return responder_cert, responder_key, True
+        try:
+            return ca_cert, self._load_ca_key(ca), False
+        except ValueError as e:
+            raise OCSPSigningUnavailable(
+                f"CA {ca.descr} has no usable signing key and no delegated responder: {e}"
+            )
 
     def _load_ca_key(self, ca: CA):
         """Load CA private key, supporting both local and HSM storage"""
@@ -537,11 +570,8 @@ class OCSPService:
             ca_cert = x509.load_pem_x509_certificate(
                 base64.b64decode(ca.crt), self.backend
             )
-            ca_key = self._load_ca_key(ca)
-            responder_cert, responder_key = self._get_delegated_responder(ca)
-            use_delegated = responder_cert is not None and responder_key is not None
-            signing_cert = responder_cert if use_delegated else ca_cert
-            signing_key = responder_key if use_delegated else ca_key
+            # Signing identity: delegated responder first, else CA key
+            signing_cert, signing_key, use_delegated = self._resolve_signing(ca, ca_cert)
 
             this_update = utc_now().replace(microsecond=0)
             next_update = this_update + timedelta(
@@ -610,6 +640,15 @@ class OCSPService:
                 len(single_responses),
             )
             return response.dump(), tuple(statuses)
+        except OCSPSigningUnavailable as e:
+            logger.warning(f"OCSP multi-response unauthorized: {e}")
+            error_response = ocsp.OCSPResponseBuilder.build_unsuccessful(
+                ocsp.OCSPResponseStatus.UNAUTHORIZED
+            )
+            return (
+                error_response.public_bytes(serialization.Encoding.DER),
+                ('unauthorized',),
+            )
         except Exception as e:
             logger.error(
                 f"Failed to generate multi-certificate OCSP response: {e}",
@@ -661,59 +700,17 @@ class OCSPService:
             # Load CA certificate
             ca_crt_pem = base64.b64decode(ca.crt).decode('utf-8')
             ca_cert = x509.load_pem_x509_certificate(ca_crt_pem.encode(), self.backend)
-            
-            # Load CA private key (with decryption and HSM check)
-            ca_key = self._load_ca_key(ca)
-            
-            # Check for delegated OCSP responder (RFC 5019/6960)
-            responder_cert, responder_key = self._get_delegated_responder(ca)
-            use_delegated = responder_cert is not None and responder_key is not None
-            
-            signing_cert = responder_cert if use_delegated else ca_cert
-            signing_key = responder_key if use_delegated else ca_key
-            
-            # Find certificate in database. RFC 6960 sends the serial as an
-            # ASN.1 INTEGER; UCM stores serials as the decimal string form
-            # (Certificate.serial_number) while the OCSP cache uses the
-            # lowercase hex form. Query all known string variants at once.
+
+            # Signing identity: delegated responder first, else CA key
+            signing_cert, signing_key, use_delegated = self._resolve_signing(ca, ca_cert)
+
             cert_serial_hex = format(cert_serial, 'x')
-            variants = serial_variants(cert_serial)
-            certificate = Certificate.query.filter(
-                Certificate.caref == ca.refid,
-                Certificate.serial_number.in_(variants),
-            ).first()
-            
-            # Determine certificate status
-            if not certificate:
-                # Fallback: check persistent revocation table for deleted certs
-                rs = RevokedSerial.query.filter(
-                    RevokedSerial.caref == ca.refid,
-                    RevokedSerial.serial_number.in_(variants),
-                ).first()
-                if rs:
-                    status = ocsp.OCSPCertStatus.REVOKED
-                    cert_status = 'revoked'
-                    revocation_time = rs.revoked_at or utc_now()
-                    revocation_reason = _REASON_MAP.get(
-                        rs.revoke_reason, x509.ReasonFlags.unspecified
-                    )
-                else:
-                    status = ocsp.OCSPCertStatus.UNKNOWN
-                    cert_status = 'unknown'
-                    revocation_time = None
-                    revocation_reason = None
-            elif certificate.revoked:
-                status = ocsp.OCSPCertStatus.REVOKED
-                cert_status = 'revoked'
-                revocation_time = certificate.revoked_at or utc_now()
-                revocation_reason = _REASON_MAP.get(
-                    certificate.revoke_reason, x509.ReasonFlags.unspecified
-                )
-            else:
-                status = ocsp.OCSPCertStatus.GOOD
-                cert_status = 'good'
-                revocation_time = None
-                revocation_reason = None
+
+            # Single source of truth for revocation status — shared with the
+            # multi-CertID path, includes external CRLs for key-less CAs (#302)
+            certificate, cert_status, revocation_time, revocation_reason = \
+                self._status_for_serial(ca, cert_serial)
+            status = _CERT_STATUS_MAP[cert_status]
             
             # Build OCSP response
             this_update = utc_now()
@@ -845,7 +842,13 @@ class OCSPService:
             
             logger.info(f"Generated OCSP response for serial {cert_serial_hex}: {cert_status}")
             return response_der, cert_status
-            
+
+        except OCSPSigningUnavailable as e:
+            logger.warning(f"OCSP response unauthorized: {e}")
+            error_response = ocsp.OCSPResponseBuilder.build_unsuccessful(
+                ocsp.OCSPResponseStatus.UNAUTHORIZED
+            )
+            return error_response.public_bytes(serialization.Encoding.DER), 'unauthorized'
         except Exception as e:
             logger.error(f"Failed to generate OCSP response: {e}", exc_info=True)
             error_response = ocsp.OCSPResponseBuilder.build_unsuccessful(

@@ -164,11 +164,18 @@ class ExternalCRLMixin:
         )
         db.session.add(crl_metadata)
 
+        # Drop the CA's cached OCSP responses in the same transaction: a
+        # pre-generated 'good' answer must not outlive a CRL that revokes the
+        # serial (RFC 6960 freshness — same rule as revocation elsewhere).
+        from models import OCSPResponse
+        purged = OCSPResponse.query.filter_by(ca_id=ca.id).delete(synchronize_session=False)
+
         from services.audit_service import AuditService
         AuditService.log_ca(
             'install_external_crl', ca,
             f"Installed externally-signed CRL #{stored_number} for CA {ca.descr} "
-            f"({entries} entries, nextUpdate {next_update.isoformat()})",
+            f"({entries} entries, nextUpdate {next_update.isoformat()}, "
+            f"{purged} cached OCSP response(s) invalidated)",
             username=username,
         )
 

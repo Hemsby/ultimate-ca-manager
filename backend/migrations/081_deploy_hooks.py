@@ -40,8 +40,8 @@ _SQLITE_TABLES = {
     'deploy_bindings': """
         CREATE TABLE deploy_bindings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            target_id INTEGER NOT NULL,
-            certificate_id INTEGER NOT NULL,
+            target_id INTEGER NOT NULL REFERENCES deploy_targets (id),
+            certificate_id INTEGER NOT NULL REFERENCES certificates (id),
             cert_path VARCHAR(512),
             key_path VARCHAR(512),
             fullchain_path VARCHAR(512),
@@ -119,8 +119,8 @@ def _upgrade_pg(conn):
         conn.execute(text("""
             CREATE TABLE deploy_bindings (
                 id SERIAL PRIMARY KEY,
-                target_id INTEGER NOT NULL,
-                certificate_id INTEGER NOT NULL,
+                target_id INTEGER NOT NULL REFERENCES deploy_targets (id),
+                certificate_id INTEGER NOT NULL REFERENCES certificates (id),
                 cert_path VARCHAR(512),
                 key_path VARCHAR(512),
                 fullchain_path VARCHAR(512),

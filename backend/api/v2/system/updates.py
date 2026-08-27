@@ -127,7 +127,7 @@ def update_update_settings():
     """Update the update automation settings (#301)"""
     from services.updates import (
         UPDATE_CHANNEL_KEY, AUTO_UPDATE_ENABLED_KEY, AUTO_UPDATE_HOUR_KEY,
-        _cfg_set, get_update_settings as read_settings,
+        _cfg_set_many, get_update_settings as read_settings,
     )
 
     data = request.json or {}
@@ -145,12 +145,20 @@ def update_update_settings():
             "Auto-update is not available in Docker. Pull the new image instead.", 400
         )
 
+    # All fields in one transaction: a commit failure must yield an error,
+    # never a partially saved config with a success audit (review F-06)
+    changes = {}
     if 'channel' in data:
-        _cfg_set(UPDATE_CHANNEL_KEY, data['channel'])
+        changes[UPDATE_CHANNEL_KEY] = data['channel']
     if 'hour' in data:
-        _cfg_set(AUTO_UPDATE_HOUR_KEY, str(data['hour']))
+        changes[AUTO_UPDATE_HOUR_KEY] = str(data['hour'])
     if 'auto_install' in data:
-        _cfg_set(AUTO_UPDATE_ENABLED_KEY, 'true' if data['auto_install'] else 'false')
+        changes[AUTO_UPDATE_ENABLED_KEY] = 'true' if data['auto_install'] else 'false'
+    try:
+        _cfg_set_many(changes)
+    except Exception as e:
+        logger.error(f"Failed to persist update settings: {e}")
+        return error_response("Failed to save update settings", 500)
 
     AuditService.log_action(
         action='settings_update', resource_type='system', resource_id='ucm',

@@ -55,7 +55,7 @@ export default {
         title: "Mises à jour automatiques (v2.215)",
         content: "Paramètres › Mises à jour : vérification quotidienne en arrière-plan des nouvelles versions, et installation sans surveillance optionnelle.",
         items: [
-          { label: "Canal", text: "« Versions stables » ne suit que les releases ; « Versions candidates » propose aussi les préversions (RC)" },
+          { label: "Canal", text: "« Versions stables » ne suit que les releases finales ; « Versions candidates » n'accepte en plus que les versions rcN — jamais les alpha/bêta" },
           { label: "Notification", text: "Une version nouvellement disponible déclenche l'événement webhook/e-mail system.update_available, une fois par version" },
           { label: "Installation auto", text: "Désactivée par défaut. Une fois activée, UCM télécharge, vérifie et installe la mise à jour à l'heure choisie, puis redémarre — installations DEB/RPM uniquement" },
           { label: "Somme de contrôle", text: "Une installation sans surveillance exige le SHA256 publié de la release pour vérification ; une installation manuelle vérifie aussi dès qu'une somme de contrôle est publiée" },

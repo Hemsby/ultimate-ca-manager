@@ -55,7 +55,7 @@ export default {
         title: 'Actualizaciones automáticas (v2.215)',
         content: 'Ajustes › Actualizaciones: una comprobación diaria en segundo plano de nuevas versiones y una instalación desatendida opcional.',
         items: [
-          { label: 'Canal', text: 'Stable sigue solo las versiones publicadas; Release candidates ofrece también las versiones preliminares (RC)' },
+          { label: "Canal", text: "Stable sigue solo las versiones finales; Release candidates acepta además únicamente versiones rcN — nunca alfa/beta" },
           { label: 'Notificación', text: 'Una versión recién disponible dispara el evento webhook/correo system.update_available, una vez por versión' },
           { label: 'Instalación automática', text: 'Desactivada por defecto. Cuando está activada, UCM descarga, verifica e instala la actualización a la hora elegida y luego se reinicia — solo instalaciones DEB/RPM' },
           { label: 'Suma de comprobación', text: 'Una instalación desatendida requiere el SHA256 publicado de la versión para la verificación; una instalación manual también verifica siempre que se publique una suma de comprobación' },

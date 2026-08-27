@@ -530,6 +530,87 @@ class TestIssuerHashLookup:
             assert isinstance(parsed.hash_algorithm, hashes.SHA224)
 
 
+class TestKeylessCASigning:
+    """A key-less/offline CA must still answer OCSP through its delegated
+    responder, and answer 'unauthorized' (not internalError) without one."""
+
+    def _keyless_with_responder(self, create_ca, create_cert, monkeypatch, cn):
+        ca = create_ca(cn=cn)
+        target = create_cert(cn=f'{cn.lower().replace(" ", "-")}-t.example.com',
+                             ca_id=ca['id'])
+        responder_record = create_cert(
+            cn=f'{cn.lower().replace(" ", "-")}-r.example.com', ca_id=ca['id'])
+        ca_obj = _ca_model(ca)
+        ca_cert = _load_x509(ca_obj)
+        ca_key = OCSPService()._load_ca_key(ca_obj)
+        responder_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        responder_cert = _delegated_certificate(ca_cert, ca_key, responder_key)
+        _configure_delegated_responder(
+            ca_obj, _cert_model(responder_record), responder_cert, responder_key)
+        monkeypatch.setattr(
+            'security.encryption.decrypt_private_key', lambda value: value)
+        # Wipe the CA key AFTER issuing the responder — simulates a
+        # file-exported offline CA / certificate-only import.
+        ca_obj.prv = None
+        ca_obj.ocsp_enabled = True
+        db.session.commit()
+        return ca_obj, ca_cert, target, responder_cert
+
+    def test_single_response_signed_by_delegated_responder(
+        self, app, create_ca, create_cert, monkeypatch
+    ):
+        with app.app_context():
+            ca_obj, _, target, responder_cert = self._keyless_with_responder(
+                create_ca, create_cert, monkeypatch, 'Keyless Single CA')
+            serial = int(_cert_model(target).serial_number, 16)
+
+            der, status = OCSPService().generate_response(ca_obj, serial)
+
+            assert status == 'good'
+            resp = ocsp.load_der_ocsp_response(der)
+            assert resp.response_status == ocsp.OCSPResponseStatus.SUCCESSFUL
+            assert resp.certificates  # responder cert embedded for verification
+            assert resp.certificates[0].fingerprint(hashes.SHA256()) == (
+                responder_cert.fingerprint(hashes.SHA256())
+            )
+
+    def test_multi_response_signed_by_delegated_responder(
+        self, app, client, create_ca, create_cert, monkeypatch
+    ):
+        with app.app_context():
+            ca_obj, ca_cert, target, _ = self._keyless_with_responder(
+                create_ca, create_cert, monkeypatch, 'Keyless Multi CA')
+            target_cert = _load_x509(_cert_model(target))
+            id_a = _cert_id(target_cert, ca_cert, hashes.SHA1())
+            id_b = _cert_id(target_cert, ca_cert, hashes.SHA256())
+            request_der = _build_asn1_request([id_a, id_b])
+
+            response = client.post(
+                '/ocsp', data=request_der, content_type=OCSP_REQUEST_TYPE)
+
+            assert response.status_code == 200
+            parsed = ocsp.load_der_ocsp_response(response.data)
+            assert parsed.response_status == ocsp.OCSPResponseStatus.SUCCESSFUL
+            assert all(item.certificate_status == ocsp.OCSPCertStatus.GOOD
+                       for item in parsed.responses)
+
+    def test_keyless_without_responder_is_unauthorized(
+        self, app, create_ca, create_cert
+    ):
+        with app.app_context():
+            ca = create_ca(cn='Keyless Unauthorized CA')
+            target = create_cert(cn='keyless-unauth.example.com', ca_id=ca['id'])
+            ca_obj = _ca_model(ca)
+            serial = int(_cert_model(target).serial_number, 16)
+            ca_obj.prv = None
+            db.session.commit()
+
+            der, status = OCSPService().generate_response(ca_obj, serial)
+            assert status == 'unauthorized'
+            resp = ocsp.load_der_ocsp_response(der)
+            assert resp.response_status == ocsp.OCSPResponseStatus.UNAUTHORIZED
+
+
 class TestCleanup:
     def test_cleanup_runs(self, app):
         with app.app_context():

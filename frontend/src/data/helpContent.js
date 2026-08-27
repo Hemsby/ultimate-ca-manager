@@ -883,7 +883,7 @@ export const helpContent = {
         title: 'Automatic updates (v2.215)',
         content: 'Settings › Updates: a daily background check for new versions, and an optional unattended install.',
         items: [
-          { label: 'Channel', text: 'Stable follows releases only; Release candidates also offers prereleases (RC)' },
+          { label: 'Channel', text: 'Stable follows final releases only; Release candidates additionally accepts rcN versions only — alpha/beta never qualify' },
           { label: 'Notification', text: 'A newly available version fires the system.update_available webhook/email event, once per version' },
           { label: 'Auto-install', text: 'Off by default. When enabled, UCM downloads, verifies and installs the update at the chosen hour, then restarts — DEB/RPM installs only' },
           { label: 'Checksum', text: "An unattended install requires the release's published SHA256 to verify; a manual install also verifies whenever a checksum is published" },

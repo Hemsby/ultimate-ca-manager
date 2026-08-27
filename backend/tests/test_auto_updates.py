@@ -104,6 +104,57 @@ class TestCheckForUpdatesChecksumUrl:
         assert result['checksum_url'] == 'http://x/ucm_99.0_all.deb.sha256'
 
 
+def _release(tag, prerelease=False):
+    return {
+        'tag_name': tag, 'draft': False, 'prerelease': prerelease, 'body': '',
+        'assets': [
+            {'name': f'ucm_{tag.lstrip("v")}_all.deb',
+             'browser_download_url': f'http://x/ucm_{tag.lstrip("v")}_all.deb'},
+        ],
+    }
+
+
+class TestChannelFilter:
+    """Strict channels (review F-04): 'rc' must never pick alpha/beta/dev."""
+
+    def _seed(self, monkeypatch, releases):
+        import time as _time
+        monkeypatch.setitem(updates._releases_cache, 'data', releases)
+        monkeypatch.setitem(updates._releases_cache, 'ts', _time.time())
+        monkeypatch.setattr(updates.os.path, 'exists',
+                            lambda p: p == '/usr/bin/dpkg')
+
+    def test_stable_channel_ignores_all_prereleases(self, monkeypatch):
+        self._seed(monkeypatch, [
+            _release('v99.3-beta1', prerelease=True),
+            _release('v99.2-rc1', prerelease=True),
+            _release('v99.1-alpha1', prerelease=True),
+            _release('v99.0'),
+        ])
+        result = updates.check_for_updates(channel='stable')
+        assert result['latest_version'] == '99.0'
+
+    def test_rc_channel_takes_rc_but_never_beta_alpha_dev(self, monkeypatch):
+        self._seed(monkeypatch, [
+            _release('v99.4-dev1', prerelease=True),
+            _release('v99.3-beta1', prerelease=True),
+            _release('v99.2-alpha2', prerelease=True),
+            _release('v99.1-rc1', prerelease=True),
+            _release('v99.0'),
+        ])
+        result = updates.check_for_updates(channel='rc')
+        # a newer beta/alpha/dev must NOT shadow the rc candidate
+        assert result['latest_version'] == '99.1-rc1'
+
+    def test_rc_channel_still_takes_newer_stable(self, monkeypatch):
+        self._seed(monkeypatch, [
+            _release('v99.2'),
+            _release('v99.1-rc9', prerelease=True),
+        ])
+        result = updates.check_for_updates(channel='rc')
+        assert result['latest_version'] == '99.2'
+
+
 class TestScheduledTask:
     def _base_result(self, **over):
         result = {
@@ -165,6 +216,46 @@ class TestScheduledTask:
             # second tick in the same window: one attempt per version only
             updates.scheduled_update_check()
         assert calls == [('download', 'e' * 64), ('install', '/tmp/p.deb')]
+
+    def test_trigger_failure_emits_no_installed_event(
+            self, app, clean_update_config, monkeypatch):
+        """Review F-05: a failed install trigger must not audit/emit 'installed'."""
+        from datetime import datetime
+        import services.webhook_service as wh
+        events = []
+        monkeypatch.setattr(updates, 'check_for_updates',
+                            lambda **k: self._base_result())
+        monkeypatch.setattr(updates, 'fetch_expected_sha256',
+                            lambda url, name: 'e' * 64)
+        monkeypatch.setattr(updates, 'download_update',
+                            lambda *a, **k: '/tmp/p.deb')
+        def _boom(path):
+            raise Exception('trigger write failed')
+        monkeypatch.setattr(updates, 'install_update', _boom)
+        monkeypatch.setattr(wh, 'emit_update_installed',
+                            lambda *a, **k: events.append('installed'))
+        self._enable_auto(app, datetime.now().hour)
+        with app.app_context():
+            updates.scheduled_update_check()
+        assert events == []
+
+    def test_no_install_when_attempt_marker_not_persisted(
+            self, app, clean_update_config, monkeypatch):
+        """Review F-06: without the anti-repeat marker, do not install."""
+        from datetime import datetime
+        calls = []
+        monkeypatch.setattr(updates, 'check_for_updates',
+                            lambda **k: self._base_result())
+        monkeypatch.setattr(updates, 'download_update',
+                            lambda *a, **k: calls.append('download'))
+        monkeypatch.setattr(updates, 'install_update',
+                            lambda p: calls.append('install'))
+        self._enable_auto(app, datetime.now().hour)
+        # settings are in place — now make every further persist fail
+        monkeypatch.setattr(updates, '_cfg_set', lambda k, v: False)
+        with app.app_context():
+            updates.scheduled_update_check()
+        assert calls == []
 
     def test_refuses_install_without_checksum(self, app, clean_update_config, monkeypatch):
         from datetime import datetime

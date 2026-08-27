@@ -100,7 +100,7 @@ def update_target(target_id):
 
 
 @bp.route('/api/v2/deploy/targets/<int:target_id>', methods=['DELETE'])
-@require_auth(['write:deploy'])
+@require_auth(['delete:deploy'])
 def delete_target(target_id):
     target = db.session.get(DeployTarget, target_id)
     if not target:
@@ -198,6 +198,8 @@ def create_binding():
 
     try:
         fields = DeployService.validate_binding_paths(data)
+        DeployService.ensure_distinct_paths(
+            fields.get('cert_path'), fields.get('key_path'), fields.get('fullchain_path'))
     except ValueError as e:
         return error_response(str(e), 400)
     if not any(fields.get(f) for f in ('cert_path', 'key_path', 'fullchain_path')):
@@ -217,16 +219,20 @@ def create_binding():
         **fields,
     )
     db.session.add(binding)
+    db.session.flush()
+    # First push queued right away (drained by the scheduler with retries) —
+    # the issued event can never match a binding created after issuance.
+    DeployService.enqueue_initial_push(binding, actor=_actor())
     AuditService.log_action(
         action='deploy_binding_create', resource_type='deploy_target',
         resource_id=str(target.id), resource_name=target.name,
         details=(f"Bound certificate {certificate.descr or certificate.refid} "
-                 f"to {target.name}"),
+                 f"to {target.name}; initial deployment queued"),
         success=True)
     ok, err = safe_commit(logger, 'Failed to create deploy binding')
     if not ok:
         return err
-    return created_response(data=binding.to_dict(), message='Deploy binding created')
+    return created_response(data=binding.to_dict(), message='Deploy binding created — initial deployment queued')
 
 
 @bp.route('/api/v2/deploy/bindings/<int:binding_id>', methods=['PATCH'])
@@ -245,6 +251,14 @@ def update_binding(binding_id):
     if not any((binding.cert_path, binding.key_path, binding.fullchain_path)):
         db.session.rollback()
         return error_response('At least one destination path is required', 400)
+    try:
+        # Collision check on the FINAL state (a partial PATCH can collide
+        # with a path that was already stored)
+        DeployService.ensure_distinct_paths(
+            binding.cert_path, binding.key_path, binding.fullchain_path)
+    except ValueError as e:
+        db.session.rollback()
+        return error_response(str(e), 400)
     if binding.key_path and binding.certificate and not binding.certificate.prv:
         db.session.rollback()
         return error_response(
@@ -257,7 +271,7 @@ def update_binding(binding_id):
 
 
 @bp.route('/api/v2/deploy/bindings/<int:binding_id>', methods=['DELETE'])
-@require_auth(['write:deploy'])
+@require_auth(['delete:deploy'])
 def delete_binding(binding_id):
     binding = db.session.get(DeployBinding, binding_id)
     if not binding:

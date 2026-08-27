@@ -99,6 +99,22 @@ export default function DeploySection() {
     }
   }
 
+  const handleResetHostKey = async () => {
+    if (!editing) return
+    const confirmed = await showConfirm(t('deploy.resetHostKeyConfirm', { name: editing.name }), {
+      title: t('deploy.resetHostKey'), variant: 'danger', confirmText: t('deploy.resetHostKey'),
+    })
+    if (!confirmed) return
+    try {
+      await deployService.updateTarget(editing.id, { reset_host_key: true })
+      showSuccess(t('deploy.hostKeyReset'))
+      setFormOpen(false)
+      await load()
+    } catch (err) {
+      showError(err?.message || t('deploy.saveFailed'))
+    }
+  }
+
   const handleDelete = async (target) => {
     const confirmed = await showConfirm(t('deploy.deleteConfirm', { name: target.name }), {
       title: t('deploy.deleteTarget'), variant: 'danger', confirmText: t('common.delete'),
@@ -250,13 +266,22 @@ export default function DeploySection() {
               {t('common.enabled')}
             </label>
           )}
-          <div className="flex justify-end gap-2 pt-3 border-t border-border">
-            <Button type="button" variant="secondary" onClick={() => setFormOpen(false)} disabled={saving}>
-              {t('common.cancel')}
-            </Button>
-            <Button type="submit" variant="primary" loading={saving}>
-              {editing ? t('common.save') : t('common.create')}
-            </Button>
+          <div className="flex items-center justify-between gap-2 pt-3 border-t border-border">
+            <div>
+              {editing?.host_key_pinned && (
+                <Button type="button" size="sm" variant="danger" onClick={handleResetHostKey} disabled={saving}>
+                  {t('deploy.resetHostKey')}
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" onClick={() => setFormOpen(false)} disabled={saving}>
+                {t('common.cancel')}
+              </Button>
+              <Button type="submit" variant="primary" loading={saving}>
+                {editing ? t('common.save') : t('common.create')}
+              </Button>
+            </div>
           </div>
         </form>
       </Modal>
