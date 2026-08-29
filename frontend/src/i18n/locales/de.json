@@ -928,7 +928,7 @@
       "digestAutoHint": "Verwendet {{digest}} für den gewählten Schlüssel",
       "certificateProfile": "Zertifikatsprofil (RFC 5280)",
       "certificateProfileHelp": "Root-CAs: keyCertSign + cRLSign. Ausstellende CAs: digitalSignature und optional serverAuth.",
-      "ekuServerAuth": "Extended Key Usage: TLS Web Server Authentication (serverAuth)"
+      "ekuServerAuth": "Erweiterte Schlüsselverwendung: TLS-Webserver-Authentifizierung (serverAuth)"
     },
     "detail": {
       "hsmBacked": "HSM-gesichert",
@@ -1125,17 +1125,17 @@
     "subtitle": "{{count}} Zertifikatvorlagen",
     "validityDays": "{{count}} Tage",
     "validityDays_one": "{{count}} Tag",
-    "showAllTemplates": "Show all {{count}} templates",
-    "showPinnedOnly": "Show pinned only",
-    "pinToCA": "Pin to CA",
-    "unpinFromCA": "Unpin from CA",
+    "showAllTemplates": "Alle {{count}} Vorlagen anzeigen",
+    "showPinnedOnly": "Nur angeheftete anzeigen",
+    "pinToCA": "An CA anheften",
+    "unpinFromCA": "Von CA lösen",
     "pinned": "Pinned",
-    "noPinnedTemplates": "No pinned templates for this CA",
-    "managePins": "Manage CA Pins",
-    "pinSuccess": "Template pinned to CA",
-    "unpinSuccess": "Template unpinned from CA",
-    "selectCA": "Select a Certificate Authority",
-    "pinnedCount": "{{count}} of {{total}} templates pinned"
+    "noPinnedTemplates": "Keine angehefteten Vorlagen für diese CA",
+    "managePins": "CA-Anheftungen verwalten",
+    "pinSuccess": "Vorlage an CA angeheftet",
+    "unpinSuccess": "Vorlage von CA gelöst",
+    "selectCA": "Zertifizierungsstelle auswählen",
+    "pinnedCount": "{{count}} von {{total}} Vorlagen angeheftet"
   },
   "users": {
     "createUser": "Benutzer erstellen",
@@ -1908,15 +1908,15 @@
   },
   "trustStore": {
     "caTrust": "CA-Vertrauen",
-    "caTrustDesc": "Trusted for issuing certificatees",
+    "caTrustDesc": "Vertrauenswürdig für die Ausstellung von Zertifikaten",
     "tlsTrust": "TLS-Vertrauen",
     "tlsTrustDesc": "Vertrauenswürdig für TLS/SSL-Verbindungen",
-    "codeSigningDesc": "Trusted for coof signing",
+    "codeSigningDesc": "Vertrauenswürdig für Code-Signierung",
     "emailTrustDesc": "Vertrauenswürdig für S/MIME",
     "clientAuth": "Clientauthentifizierung",
     "clientAuthDesc": "Vertrauenswürdig für Client-Authentifizierung",
-    "syncedCerts": "Synced {{count}} certificatees",
-    "syncFailed": "Faithed to sync from system",
+    "syncedCerts": "{{count}} Zertifikate synchronisiert",
+    "syncFailed": "Synchronisierung vom System fehlgeschlagen",
     "aboutTrustStoreDesc": "Der Trust Store enthält vertrauenswürdige Zertifikate.",
     "add": "Hinzufügen",
     "addCertificate": "Zertifikat hinzufügen",
@@ -2148,9 +2148,9 @@
     "cleanedUpLogs": "{{count}} alte Logs bereinigt",
     "cleanupFailed": "Bereinigung fehlgeschlagen",
     "verifyIntegrity": "Verify Integrity",
-    "integrityVerified": "Audit log integrity verified ({{count}} entries checked)",
-    "integrityFailed": "Audit log integrity check failed ({{errors}} errors found)",
-    "integrityError": "Failed to verify audit log integrity"
+    "integrityVerified": "Integrität des Audit-Protokolls bestätigt ({{count}} Einträge geprüft)",
+    "integrityFailed": "Integritätsprüfung des Audit-Protokolls fehlgeschlagen ({{errors}} Fehler gefunden)",
+    "integrityError": "Integrität des Audit-Protokolls konnte nicht überprüft werden"
   },
   "settings": {
     "appearanceSubtitle": "Passen Sie Darstellung und Sprache von UCM an",
@@ -2174,27 +2174,27 @@
     "installUpdateConfirm": "Update v{{version}} installieren?\n\nDer Dienst wird neu gestartet und Sie müssen sich möglicherweise erneut anmelden.",
     "prerelease": "Vorabversion",
     "viewReleaseNotes": "Versionshinweise anzeigen",
-    "includePreReleaseVersions": "Include pre-release versions",
+    "includePreReleaseVersions": "Vorabversionen einschließen",
     "current": "Aktuell",
     "edition": "Edition",
-    "passwordMinLength": "Password must be at theast 12 characters",
-    "confirmDeleteBackup": "Dandhande backup \"{{filename}}\"?",
-    "deleteBackup": "Dandhande Backup",
+    "passwordMinLength": "Das Passwort muss mindestens 12 Zeichen lang sein",
+    "confirmDeleteBackup": "Backup \"{{filename}}\" löschen?",
+    "deleteBackup": "Backup löschen",
     "selectBackupFile": "Sicherungsdatei auswählen (verschlüsselte .ucmbkp-Datei)",
-    "backupRestored": "Backup risored successfully: {{users}} users, {{cas}} CAs, {{certs}} certificatees",
-    "integrityErrors": "Integrity check foad {{count}} errors",
-    "resetDbWarning": "⚠️ WARNING: This will DELETE ALL DATA and resand the database to initial state. Are yor absolutely one?",
+    "backupRestored": "Backup erfolgreich wiederhergestellt: {{users}} Benutzer, {{cas}} CAs, {{certs}} Zertifikate",
+    "integrityErrors": "Integritätsprüfung hat {{count}} Fehler gefunden",
+    "resetDbWarning": "⚠️ WARNUNG: Dadurch werden ALLE DATEN GELÖSCHT und die Datenbank auf den Ausgangszustand zurückgesetzt. Sind Sie absolut sicher?",
     "resetDatabase": "Datenbank zurücksetzen",
-    "typeYesToConfirm": "Type YES to confirm database resand:",
+    "typeYesToConfirm": "Geben Sie YES ein, um das Zurücksetzen der Datenbank zu bestätigen:",
     "finalConfirmation": "Finale Bestätigung",
-    "resetDbCancelled": "Database resand cancelthed",
+    "resetDbCancelled": "Zurücksetzen der Datenbank abgebrochen",
     "selectCertificate": "Zertifikat auswählen",
-    "applyHttpsCertConfirm": "Apply sandhected certificatee as HTTPS certificatee? This will risart the server.",
-    "applyImportedCertConfirm": "Apply this imported certificatee as HTTPS certificatee? This will risart the server.",
-    "applyCertificate": "Apply Certificatee",
-    "applyAndRestart": "Apply & Risart",
-    "regenerateCertConfirm": "Regenerate HTTPS certificatee? This will risart the server.",
-    "regenerateAndRestart": "Regenerate & Risart",
+    "applyHttpsCertConfirm": "Ausgewähltes Zertifikat als HTTPS-Zertifikat anwenden? Der Server wird dadurch neu gestartet.",
+    "applyImportedCertConfirm": "Dieses importierte Zertifikat als HTTPS-Zertifikat anwenden? Der Server wird dadurch neu gestartet.",
+    "applyCertificate": "Zertifikat anwenden",
+    "applyAndRestart": "Anwenden & neu starten",
+    "regenerateCertConfirm": "HTTPS-Zertifikat neu generieren? Der Server wird dadurch neu gestartet.",
+    "regenerateAndRestart": "Neu generieren & neu starten",
     "apiRateLimit": "API-Ratenlimit (Anfragen/Minute)",
     "applyCustomCert": "Benutzerdefiniertes Zertifikat anwenden",
     "applyCustomCertificateDesc": "Laden Sie Ihr eigenes Zertifikat und Ihren privaten Schlüssel hoch (PEM-Format).",
@@ -2241,7 +2241,7 @@
     "backupPassword": "Sicherungspasswort",
     "backupSubtitle": "Datensicherungs- und Wiederherstellungsoptionen",
     "baseUrl": "Basis-URL",
-    "baseUrlHelper": "Canonical HTTPS URL for the admin GUI and API. Non-matching hostnames and IPs redirect here.",
+    "baseUrlHelper": "Kanonische HTTPS-URL für Admin-GUI und API. Nicht übereinstimmende Hostnamen und IPs werden hierhin umgeleitet.",
     "protocolBaseUrl": "Protokoll-Basis-URL",
     "protocolBaseUrlHelper": "Basis-URL für CDP/OCSP-Endpunkte. Auf http:// setzen, um TLS-Überprüfungsschleifen zu vermeiden. Leer lassen für Haupt-URL.",
     "baseUrlPlaceholder": "https://ucm.beispiel.com",
@@ -2404,10 +2404,10 @@
     "encryptionCheckLostKeys": "Ich verstehe, dass ohne diese Schlüsseldatei alle privaten Schlüssel dauerhaft verloren sind",
     "typeToConfirm": "Geben Sie {{word}} zur Bestätigung ein",
     "disableEncryptionConfirm": "Private Schlüssel werden entschlüsselt und unverschlüsselt gespeichert. Sind Sie sicher?",
-    "anomalyDetection": "Anomaly Detection",
+    "anomalyDetection": "Anomalieerkennung",
     "noAnomalies": "No anomalies detected",
-    "noAnomaliesDesc": "No suspicious activity in the last 24 hours",
-    "unknownAnomaly": "Unknown anomaly",
+    "noAnomaliesDesc": "Keine verdächtigen Aktivitäten in den letzten 24 Stunden",
+    "unknownAnomaly": "Unbekannte Anomalie",
     "selectCertOrKeyFile": "Zertifikat- oder Schlüsseldatei auswählen (PEM-Format)",
     "sendTestEmail": "Test-E-Mail senden",
     "sessionDuration": "Sitzungsdauer (Stunden)",
@@ -2415,11 +2415,11 @@
     "sessionTimeout": "Sitzungs-Timeout",
     "sessionTimezone": "Sitzung & Zeitzone",
     "serviceStatus": "Service Status",
-    "restartService": "Restart UCM",
-    "restartConfirmMessage": "The service will restart and you will need to log in again. Are you sure?",
-    "restartNow": "Restart Now",
-    "restartInitiated": "Service restart initiated. Please wait and refresh the page.",
-    "restartFailed": "Failed to restart the service.",
+    "restartService": "UCM neu starten",
+    "restartConfirmMessage": "Der Dienst wird neu gestartet und Sie müssen sich erneut anmelden. Sind Sie sicher?",
+    "restartNow": "Jetzt neu starten",
+    "restartInitiated": "Neustart des Dienstes eingeleitet. Bitte warten Sie und aktualisieren Sie die Seite.",
+    "restartFailed": "Der Dienst konnte nicht neu gestartet werden.",
     "restarting": "Restarting...",
     "uptime": "Uptime",
     "memory": "Memory",
@@ -2463,20 +2463,20 @@
     "testRecipient": "Testempfänger",
     "testRecipientRequired": "Geben Sie eine Empfänger-E-Mail-Adresse für den Test ein",
     "testEmail": "Test-E-Mail",
-    "expiryAlerts": "Expiry Alerts",
-    "enableExpiryAlerts": "Enable certificate expiry email alerts",
-    "alertDays": "Alert Days Before Expiry",
-    "alertDaysHelp": "Select how many days before expiry to send alerts",
-    "alertRecipients": "Alert Recipients",
+    "expiryAlerts": "Ablaufbenachrichtigungen",
+    "enableExpiryAlerts": "E-Mail-Benachrichtigungen bei Zertifikatsablauf aktivieren",
+    "alertDays": "Benachrichtigung (Tage vor Ablauf)",
+    "alertDaysHelp": "Wählen Sie, wie viele Tage vor Ablauf Benachrichtigungen gesendet werden",
+    "alertRecipients": "Benachrichtigungsempfänger",
     "tagsInputHelp": "Adresse eingeben und Enter drücken zum Hinzufügen",
     "alertRecipientsPlaceholder": "admin@example.com",
     "smtpRequiredForAlerts": "Konfigurieren und testen Sie zuerst einen SMTP-Server, bevor Sie E-Mail-Benachrichtigungen aktivieren.",
-    "includeRevoked": "Include revoked certificates",
-    "checkNow": "Check Now",
+    "includeRevoked": "Widerrufene Zertifikate einschließen",
+    "checkNow": "Jetzt prüfen",
     "checkFailed": "Fehler bei der Suche nach Updates",
     "updateInitiated": "Update auf v{{version}} gestartet...",
     "installFailed": "Update-Installation fehlgeschlagen",
-    "expiryCheckResult": "Check complete: {{count}} alert(s) sent",
+    "expiryCheckResult": "Prüfung abgeschlossen: {{count}} Benachrichtigung(en) gesendet",
     "theme": "Design",
     "timezone": "Zeitzone",
     "showTime": "Uhrzeit in Datumsangaben anzeigen",
@@ -2521,18 +2521,18 @@
       "integrations": "Integrationen",
       "automation": "Automatisierung"
     },
-    "remoteSyslog": "Remote Syslog",
-    "remoteSyslogDesc": "Forward audit log events to a remote syslog server for centralized logging and SIEM integration.",
-    "enableSyslog": "Enable remote syslog forwarding",
-    "syslogHost": "Syslog Server",
+    "remoteSyslog": "Remote-Syslog",
+    "remoteSyslogDesc": "Audit-Protokollereignisse an einen entfernten Syslog-Server weiterleiten, für zentrale Protokollierung und SIEM-Integration.",
+    "enableSyslog": "Remote-Syslog-Weiterleitung aktivieren",
+    "syslogHost": "Syslog-Server",
     "syslogPort": "Port",
     "syslogProtocol": "Protocol",
-    "syslogTls": "Enable TLS encryption (TCP only)",
-    "syslogTest": "Test Connection",
-    "syslogSaved": "Syslog configuration saved",
-    "syslogSaveFailed": "Failed to save syslog configuration",
-    "syslogTestSuccess": "Test message sent successfully",
-    "syslogTestFailed": "Failed to send test message",
+    "syslogTls": "TLS-Verschlüsselung aktivieren (nur TCP)",
+    "syslogTest": "Verbindung testen",
+    "syslogSaved": "Syslog-Konfiguration gespeichert",
+    "syslogSaveFailed": "Syslog-Konfiguration konnte nicht gespeichert werden",
+    "syslogTestSuccess": "Testnachricht erfolgreich gesendet",
+    "syslogTestFailed": "Testnachricht konnte nicht gesendet werden",
     "syslogCategories": "Weiterzuleitende Ereignistypen",
     "syslogCategoriesHelp": "Wählen Sie, welche Ereignistypen an Ihren Syslog-Server gesendet werden.",
     "syslogCatCertificates": "Zertifikate",
@@ -2659,7 +2659,7 @@
     "smtpOauthSetup_microsoft_title": "Outlook.com (persönlich) — einmalige Azure-Konfiguration",
     "smtpOauthSetup_microsoft_steps": "Mobile Mail-Apps (iOS Mail, Thunderbird, etc.) verwenden von Microsoft veröffentlichte Client-IDs, die sie nicht gemeinsam nutzen können. Da UCM selbst gehostet ist, erstellen Sie Ihre eigene — kostenlos und dauert 5 Minuten:\n\n1. Melden Sie sich mit einem beliebigen Microsoft-Konto beim Azure Portal an (kostenlos, kein Abonnement erforderlich).\n2. App registrations → New registration → wählen Sie 'Personal Microsoft accounts only'.\n3. Fügen Sie den unten angezeigten Redirect-URI hinzu (Web-Plattform).\n4. Certificates & secrets → New client secret → kopieren Sie den Wert.\n5. API permissions → fügen Sie 'SMTP.Send' und 'offline_access' hinzu (Microsoft Graph, delegiert).\n6. Kopieren Sie die Application (client) ID und den geheimen Wert in die Felder unten.",
     "smtpOauthSetup_microsoft365_title": "Microsoft 365 einrichten (Arbeit / Schule)",
-    "smtpOauthSetup_microsoft365_steps": "1. Melden Sie sich als Tenant-Administrator beim Azure Portal an.\n2. App registrations → New registration → wählen Sie 'Accounts in this organizational directory only' (oder multitenant).\n3. Fügen Sie die unten angezeigte Umleitungs-URI (Web-Plattform) hinzu.\n4. Certificates & secrets → New client secret → kopieren Sie den Value.\n5. API permissions → add 'SMTP.Send' und 'offline_access' (Microsoft Graph, delegated) → Grant admin consent.\n6. Kopieren Sie die Application (client) ID, den secret Value und Ihre Tenant ID (Directory ID) in die folgenden Felder.",
+    "smtpOauthSetup_microsoft365_steps": "1. Melden Sie sich als Tenant-Administrator beim Azure Portal an.\n2. App registrations → New registration → wählen Sie 'Accounts in this organizational directory only' (oder mandantenübergreifend).\n3. Fügen Sie den unten angezeigten Redirect-URI hinzu (Web-Plattform).\n4. Certificates & secrets → New client secret → kopieren Sie den Wert.\n5. API permissions → fügen Sie 'SMTP.Send' und 'offline_access' hinzu (Microsoft Graph, delegiert) → Grant admin consent.\n6. Kopieren Sie die Application (client) ID, den geheimen Wert und Ihre Tenant ID (Directory ID) in die Felder unten.",
     "autoRenewal": "Automatische Erneuerung",
     "autoRenewalDescription": "Zertifikate vor Ablauf automatisch erneuern",
     "autoRenewalEnabled": "Automatische Erneuerung aktivieren",
@@ -2703,21 +2703,21 @@
     "acmePublicTlsCertId": "Öffentliche ACME-TLS-Zertifikat-ID",
     "acmePublicTlsCertIdHelper": "Zertifikat-ID für den ACME-Vhost (z. B. Wildcard-SAN *.ucm.example.com; nur Metadaten — auf dem Reverse Proxy deployen).",
     "publicEndpoints": {
-      "title": "Public endpoints",
-      "subtitle": "Effective URLs after save — admin redirect, CORS, PKI protocol HTTP, and ACME directory.",
+      "title": "Öffentliche Endpunkte",
+      "subtitle": "Effektive URLs nach dem Speichern: Admin-Umleitung, CORS, PKI-Protokoll-HTTP und ACME-Verzeichnis.",
       "detectFromBrowser": "Use current browser URL",
-      "runPreflight": "Check DNS & TLS",
+      "runPreflight": "DNS & TLS prüfen",
       "refresh": "Refresh",
-      "loadFailed": "Could not load effective endpoints",
+      "loadFailed": "Effektive Endpunkte konnten nicht geladen werden",
       "preflightDone": "Preflight checks completed",
-      "preflightFailed": "Preflight checks failed",
-      "detected": "Admin URL filled from browser",
-      "fqdnEnvLocked": "FQDN is set in ucm.env — keep base URL aligned with FQDN= or hostname.",
-      "wrongHost": "You are on {{host}} but admin URL is {{admin}} — save settings and use the canonical URL.",
+      "preflightFailed": "Preflight-Prüfungen fehlgeschlagen",
+      "detected": "Admin-URL aus dem Browser übernommen",
+      "fqdnEnvLocked": "FQDN ist in ucm.env gesetzt: Basis-URL an FQDN= oder den Hostnamen angleichen.",
+      "wrongHost": "Sie sind auf {{host}}, die Admin-URL ist jedoch {{admin}}: Einstellungen speichern und die kanonische URL verwenden.",
       "adminCanonical": "Admin (canonical)",
-      "adminCanonicalDesc": "GUI, API, CORS, and redirect target for IP/alias hostnames",
+      "adminCanonicalDesc": "GUI, API, CORS und Umleitungsziel für IP-/Alias-Hostnamen",
       "protocolEffective": "PKI protocol (effective)",
-      "protocolEffectiveDesc": "CDP / OCSP / AIA base URL embedded in certificates",
+      "protocolEffectiveDesc": "In Zertifikate eingebettete CDP-/OCSP-/AIA-Basis-URL",
       "acmeDirectory": "ACME directory",
       "acmeProxy": "ACME proxy",
       "splitTopology": "Split admin / ACME topology active",
@@ -2921,8 +2921,8 @@
     "subtitle_other": "{{count}} Rollen",
     "subtitle": "{{count}} benutzerdefinierte Rollen",
     "customRole": "Benutzerdefinierte Rolle",
-    "noCustomRole": "None (base role only)",
-    "userCount": "{{count}} users",
+    "noCustomRole": "Keine (nur Basisrolle)",
+    "userCount": "{{count}} Benutzer",
     "allResources": "Alle Ressourcen",
     "noPermissions": "Keine Berechtigungen",
     "fullAccess": "Vollzugriff",
@@ -2932,9 +2932,9 @@
     "noDescription": "Keine Beschreibung",
     "roleDetails": "Rollendetails",
     "permissions": {
-      "readSsh": "View SSH CAs & certificates",
-      "writeSsh": "Create & manage SSH CAs & certificates",
-      "deleteSsh": "Delete SSH CAs & certificates",
+      "readSsh": "SSH-CAs und Zertifikate anzeigen",
+      "writeSsh": "SSH-CAs und Zertifikate erstellen und verwalten",
+      "deleteSsh": "SSH-CAs und Zertifikate löschen",
       "read:ssh": "SSH-CAs und Zertifikate anzeigen",
       "write:ssh": "SSH-Zertifikate erstellen und signieren",
       "delete:ssh": "SSH-CAs und Zertifikate löschen"
@@ -3434,29 +3434,29 @@
       "systemUpdateFailed": "Update fehlgeschlagen"
     },
     "title": "Webhooks",
-    "subtitle": "Send HTTP notifications when certificate events occur",
+    "subtitle": "HTTP-Benachrichtigungen bei Zertifikatsereignissen senden",
     "helpTitle": "Webhook Notifications",
-    "helpDescription": "Configure HTTP endpoints to receive real-time notifications when certificates are issued, revoked, renewed, or about to expire.",
-    "addWebhook": "Add Webhook",
-    "editWebhook": "Edit Webhook",
+    "helpDescription": "Konfigurieren Sie HTTP-Endpunkte, um Echtzeit-Benachrichtigungen zu erhalten, wenn Zertifikate ausgestellt, widerrufen oder erneuert werden oder bald ablaufen.",
+    "addWebhook": "Webhook hinzufügen",
+    "editWebhook": "Webhook bearbeiten",
     "noWebhooks": "No webhooks configured",
-    "noWebhooksDescription": "Add webhook endpoints to receive notifications about certificate events",
+    "noWebhooksDescription": "Fügen Sie Webhook-Endpunkte hinzu, um Benachrichtigungen über Zertifikatsereignisse zu erhalten",
     "configuredWebhooks": "Configured Webhooks",
     "namePlaceholder": "e.g., Slack Notification",
     "events": "Events",
-    "caFilter": "CA Filter (optional)",
-    "caFilterPlaceholder": "Filter by CA ref ID (leave empty for all)",
-    "enableOnCreate": "Enable webhook immediately",
+    "caFilter": "CA-Filter (optional)",
+    "caFilterPlaceholder": "Nach CA-Ref-ID filtern (leer lassen für alle)",
+    "enableOnCreate": "Webhook sofort aktivieren",
     "createSuccess": "Webhook created",
     "updateSuccess": "Webhook updated",
-    "deleteSuccess": "Webhook deleted",
-    "saveFailed": "Failed to save webhook",
-    "deleteFailed": "Failed to delete webhook",
-    "deleteConfirm": "Delete webhook \"{{name}}\"? This cannot be undone.",
+    "deleteSuccess": "Webhook gelöscht",
+    "saveFailed": "Webhook konnte nicht gespeichert werden",
+    "deleteFailed": "Webhook konnte nicht gelöscht werden",
+    "deleteConfirm": "Webhook \"{{name}}\" löschen? Dies kann nicht rückgängig gemacht werden.",
     "toggleSuccess": "Webhook {{action}}",
-    "toggleFailed": "Failed to toggle webhook",
-    "testSuccess": "Test event sent successfully",
-    "testFailed": "Failed to send test event",
+    "toggleFailed": "Webhook konnte nicht umgeschaltet werden",
+    "testSuccess": "Testereignis erfolgreich gesendet",
+    "testFailed": "Testereignis konnte nicht gesendet werden",
     "auth": {
       "title": "Authentication",
       "type": {
@@ -3472,10 +3472,10 @@
       "token": {
         "label": "Token",
         "placeholder": "Enter token value",
-        "set": "Token set — leave blank to keep, or clear to remove",
+        "set": "Token gesetzt: leer lassen zum Beibehalten oder löschen zum Entfernen",
         "clear": "Clear token",
-        "show": "Show token",
-        "hide": "Hide token"
+        "show": "Token anzeigen",
+        "hide": "Token ausblenden"
       },
       "username": {
         "label": "Username"
@@ -3485,10 +3485,10 @@
         "placeholder": "X-API-Key"
       },
       "custom": {
-        "helper": "Include the auth scheme in the value, e.g. `auth-key YOUR_TOKEN`"
+        "helper": "Geben Sie das Auth-Schema im Wert mit an, z. B. `auth-key YOUR_TOKEN`"
       },
       "apiKey": {
-        "authorizationWarning": "\"Authorization\" is reserved for Bearer/Basic. Use the Custom Header type instead to set Authorization directly."
+        "authorizationWarning": "\"Authorization\" ist für Bearer/Basic reserviert. Verwenden Sie stattdessen den Typ Custom Header, um Authorization direkt zu setzen."
       },
       "preview": {
         "title": "Outgoing header preview",
@@ -3496,11 +3496,11 @@
         "hide": "Hide"
       },
       "errors": {
-        "tokenRequired": "Token is required for this auth type",
-        "usernameRequired": "Username is required for Basic Auth",
-        "headerNameRequired": "Header name is required",
-        "authorizationBlocked": "\"Authorization\" cannot be used as the header name for API Key — use Custom Header type instead",
-        "tokenTooLong": "Token exceeds maximum length of 8192 bytes"
+        "tokenRequired": "Für diesen Auth-Typ ist ein Token erforderlich",
+        "usernameRequired": "Für Basic Auth ist ein Benutzername erforderlich",
+        "headerNameRequired": "Header-Name ist erforderlich",
+        "authorizationBlocked": "\"Authorization\" kann nicht als Header-Name für API Key verwendet werden: verwenden Sie stattdessen den Typ Custom Header",
+        "tokenTooLong": "Token überschreitet die maximale Länge von 8192 Bytes"
       }
     },
     "deliveries": {
@@ -3625,7 +3625,7 @@
         "template": "Möchten Sie diese Vorlage wirklich löschen?",
         "truststore": "Dieses Zertifikat aus dem Trust Store entfernen?",
         "user": "Möchten Sie diesen Benutzer wirklich löschen?",
-        "sshCa": "Are you sure you want to delete this SSH CA? This action cannot be undone."
+        "sshCa": "Möchten Sie diese SSH-CA wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden."
       },
       "hsm": {
         "deleteKey": "Schlüssel \"{{name}}\" zerstören? Dies kann nicht rückgängig gemacht werden.",
@@ -3659,8 +3659,8 @@
         "role": "Rolle konnte nicht erstellt werden",
         "template": "Vorlage konnte nicht erstellt werden",
         "user": "Benutzer konnte nicht erstellt werden",
-        "sshCa": "Failed to create SSH CA",
-        "sshCertificate": "Failed to issue SSH certificate"
+        "sshCa": "SSH-CA konnte nicht erstellt werden",
+        "sshCertificate": "SSH-Zertifikat konnte nicht ausgestellt werden"
       },
       "database": {
         "exportFailed": "Datenbank konnte nicht exportiert werden",
@@ -3682,8 +3682,8 @@
         "template": "Vorlage konnte nicht gelöscht werden",
         "truststore": "Zertifikat konnte nicht aus dem Trust Store entfernt werden",
         "user": "Benutzer konnte nicht gelöscht werden",
-        "sshCa": "Failed to delete SSH CA",
-        "sshCertificate": "Failed to delete SSH certificate"
+        "sshCa": "SSH-CA konnte nicht gelöscht werden",
+        "sshCertificate": "SSH-Zertifikat konnte nicht gelöscht werden"
       },
       "duplicateFailed": {
         "generic": "Duplizieren fehlgeschlagen",
@@ -3732,8 +3732,8 @@
         "users": "Benutzer konnten nicht geladen werden",
         "est": "EST-Daten konnten nicht geladen werden",
         "tsa": "TSA-Konfiguration konnte nicht geladen werden",
-        "sshCas": "Failed to load SSH CAs",
-        "sshCertificates": "Failed to load SSH certificates"
+        "sshCas": "SSH-CAs konnten nicht geladen werden",
+        "sshCertificates": "SSH-Zertifikate konnten nicht geladen werden"
       },
       "revokeFailed": {
         "certificate": "Zertifikat konnte nicht widerrufen werden"
@@ -3755,7 +3755,7 @@
         "settings": "Einstellungen konnten nicht gespeichert werden",
         "template": "Vorlage konnte nicht aktualisiert werden",
         "user": "Benutzer konnte nicht aktualisiert werden",
-        "sshCa": "Failed to update SSH CA"
+        "sshCa": "SSH-CA konnte nicht aktualisiert werden"
       },
       "validation": {
         "requiredField": "Dieses Feld ist erforderlich"
@@ -3781,7 +3781,7 @@
         "template": "Vorlage erfolgreich erstellt",
         "user": "Benutzer erfolgreich erstellt",
         "sshCa": "SSH CA created successfully",
-        "sshCertificate": "SSH certificate issued successfully",
+        "sshCertificate": "SSH-Zertifikat erfolgreich ausgestellt",
         "caOffline": "CA offline",
         "caRestored": "CA wieder online"
       },
@@ -3808,8 +3808,8 @@
         "template": "Vorlage erfolgreich gelöscht",
         "truststore": "Zertifikat aus dem Trust Store entfernt",
         "user": "Benutzer erfolgreich gelöscht",
-        "sshCa": "SSH CA deleted successfully",
-        "sshCertificate": "SSH certificate deleted successfully"
+        "sshCa": "SSH-CA erfolgreich gelöscht",
+        "sshCertificate": "SSH-Zertifikat erfolgreich gelöscht"
       },
       "duplicate": {
         "template": "Vorlage erfolgreich dupliziert"
@@ -3846,7 +3846,7 @@
         "signed": "CSR erfolgreich signiert",
         "twoFactorDisabled": "Zwei-Faktor-Authentifizierung deaktiviert",
         "twoFactorEnabled": "2FA erfolgreich aktiviert! Speichern Sie Ihre Backup-Codes.",
-        "sshCertificateRevoked": "SSH certificate revoked successfully"
+        "sshCertificateRevoked": "SSH-Zertifikat erfolgreich widerrufen"
       },
       "sso": {
         "connectionOk": "Verbindung erfolgreich"
@@ -4808,7 +4808,7 @@
       "principalsPlaceholder": "z.B. root,admin,deploy (kommagetrennt)"
     },
     "export": {
-      "filename": "ssh-certificate",
+      "filename": "ssh-zertifikat",
       "success": "Zertifikat erfolgreich exportiert"
     },
     "privateKeyWarning": "Speichern Sie diesen privaten Schlüssel jetzt — er kann später nicht wiederhergestellt werden",

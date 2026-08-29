@@ -159,7 +159,7 @@
     "proxyUpstreamUrl": "URL du répertoire upstream",
     "proxyUpstreamUrlHelper": "L'URL du répertoire du serveur ACME upstream. Par défaut, Let's Encrypt staging si vide.",
     "proxyUsage": "Utilisation avec certbot :",
-    "proxyUsageNote": "Prérequis : le domaine (ou un parent couvrant les sous-domaines) doit être configuré dans ACME Domains avec un fournisseur DNS. Le proxy ne gère que dns-01.\n\nChaque compte CA externe peut exposer un endpoint dédié : /acme/proxy/<slug>/directory (activez **Exposer via le proxy ACME** dans Comptes CA externes). Le chemin par défaut /acme/proxy/directory suit le compte sélectionné dans les réglages proxy.\n\nUCM crée et supprime automatiquement les enregistrements TXT via ce fournisseur. Les hooks --manual-auth-hook et --manual-cleanup-hook peuvent rester des no-op (/bin/true) : la validation DNS est assurée par le proxy.\n\nÉvitez deux demandes simultanées pour le même nom (Certbot + interface UCM) : le second TXT peut écraser le premier. Si le certificat HTTPS de l'UCM est auto-signé (lab), ajoutez --no-verify-ssl à Certbot.",
+    "proxyUsageNote": "Prérequis : le domaine (ou un parent couvrant les sous-domaines) doit être configuré dans Domaines ACME avec un fournisseur DNS. Le proxy ne prend en charge que dns-01.\n\nChaque compte CA externe peut exposer un point de terminaison dédié : /acme/proxy/<slug>/directory (activez **Exposer via le proxy ACME** dans Comptes CA externes). Le chemin par défaut /acme/proxy/directory suit le compte sélectionné dans les réglages du proxy.\n\nUCM crée et supprime automatiquement les enregistrements TXT via ce fournisseur. Les options --manual-auth-hook et --manual-cleanup-hook peuvent rester des no-op (/bin/true), car la validation DNS est assurée par le proxy.\n\nÉvitez deux demandes simultanées pour le même nom (Certbot + interface UCM) : le second enregistrement TXT peut écraser le premier. Si le certificat HTTPS d'UCM est auto-signé (lab), ajoutez --no-verify-ssl à Certbot.",
     "proxyRegistered": "Proxy enregistré",
     "registerAccount": "Enregistrer le compte",
     "aboutAcmeDesc": "ACME permet l'émission automatique de certificats.",
@@ -469,7 +469,7 @@
       "hmacKey": "Clé HMAC",
       "kidCopied": "kid copié",
       "hmacCopied": "Clé HMAC copiée",
-      "hmacFormat": "Encodage Base64URL (sans padding). À utiliser tel quel avec cert-manager, certbot --eab-hmac-key, lego, etc.",
+      "hmacFormat": "Encodage Base64URL (sans remplissage). À utiliser tel quel avec cert-manager, certbot --eab-hmac-key, lego, etc.",
       "secretTitle": "Identifiant EAB généré",
       "secretWarningTitle": "Sauvegardez la clé HMAC maintenant",
       "secretWarning": "C'est la seule fois où la clé HMAC sera affichée. Après fermeture de cette boîte de dialogue, elle ne pourra plus être récupérée.",
@@ -787,8 +787,8 @@
       "digestAuto": "Auto (aligné sur la clé)",
       "digestAutoHint": "Utilisera {{digest}} pour la clé sélectionnée",
       "certificateProfile": "Profil certificat (RFC 5280)",
-      "certificateProfileHelp": "Les CA racines utilisent keyCertSign + cRLSign par défaut. Les CA émettrices ajoutent digitalSignature et peuvent inclure TLS Web Server Authentication (serverAuth).",
-      "ekuServerAuth": "Extended Key Usage : TLS Web Server Authentication (serverAuth)"
+      "certificateProfileHelp": "Les CA racines utilisent keyCertSign + cRLSign par défaut. Les CA émettrices ajoutent digitalSignature et peuvent inclure l'authentification de serveur web TLS (serverAuth).",
+      "ekuServerAuth": "Utilisation étendue de la clé : authentification de serveur web TLS (serverAuth)"
     },
     "detail": {
       "hsmBacked": "Adossé HSM",
@@ -1545,8 +1545,8 @@
     "testOk": "Connexion et SFTP OK ({{fingerprint}})",
     "testFailed": "Échec du test de connexion",
     "failures": "{{count}} échec(s)",
-    "hostKeyPinned": "Host key épinglée : {{fingerprint}}",
-    "hostKeyNotPinned": "Host key pas encore épinglée — enregistrée à la première connexion",
+    "hostKeyPinned": "Clé d'hôte épinglée : {{fingerprint}}",
+    "hostKeyNotPinned": "Clé d'hôte pas encore épinglée : elle sera enregistrée à la première connexion",
     "resetHostKey": "Réinitialiser la clé d'hôte épinglée",
     "resetHostKeyConfirm": "Réinitialiser la clé d'hôte épinglée de « {{name}} » ? La prochaine connexion fera confiance à la clé présentée par l'hôte et l'épinglera (trust-on-first-use).",
     "hostKeyReset": "Clé d'hôte réinitialisée — elle sera ré-épinglée à la prochaine connexion",
@@ -2010,7 +2010,7 @@
       "importSuccess": "{{count}} éléments importés avec succès ({{skipped}} ignorés)",
       "noItemsSelected": "Veuillez sélectionner au moins un élément à importer",
       "ignoreCert": "Ignorer le certificat SSL (auto-signé)",
-      "sslWarning": "⚠ La vérification SSL est désactivée. Les connexions sont vulnérables aux attaques man-in-the-middle."
+      "sslWarning": "⚠ La vérification SSL est désactivée. Les connexions sont vulnérables aux attaques de l'homme du milieu (MITM)."
     },
     "export": {
       "allCertsTitle": "Exporter tous les certificats",
@@ -2191,9 +2191,9 @@
     "noDescription": "Aucune description",
     "roleDetails": "Détails du rôle",
     "permissions": {
-      "readSsh": "View SSH CAs & certificates",
-      "writeSsh": "Create & manage SSH CAs & certificates",
-      "deleteSsh": "Delete SSH CAs & certificates",
+      "readSsh": "Voir les CA et certificats SSH",
+      "writeSsh": "Créer et gérer les CA et certificats SSH",
+      "deleteSsh": "Supprimer les CA et certificats SSH",
       "read:ssh": "Voir les CA et certificats SSH",
       "write:ssh": "Créer et signer des certificats SSH",
       "delete:ssh": "Supprimer les CA et certificats SSH"
@@ -2801,11 +2801,11 @@
     "smtpOauthAutoSaveHint": "Les paramètres seront enregistrés avant l'ouverture de la fenêtre de consentement.",
     "smtpOauthTenantHintM365": "Utilisez « common » pour accepter toute organisation, ou collez votre tenant GUID pour un Azure AD spécifique.",
     "smtpOauthSetup_google_title": "Comment obtenir un Client ID et Secret Gmail",
-    "smtpOauthSetup_google_steps": "1. Ouvrez Google Cloud Console → APIs & Services → Credentials.\n2. Créez un nouveau projet (ou choisissez-en un) et activez le 'Gmail API'.\n3. Créez un OAuth 2.0 Client ID (type : Web application).\n4. Ajoutez l'URI de redirection affichée ci-dessous à la liste 'Authorized redirect URIs'.\n5. Copiez le Client ID et le Client Secret dans les champs ci-dessous.\n6. Ajoutez votre e-mail d'expédition en tant qu'utilisateur Test user sur l'écran de consentement OAuth.",
+    "smtpOauthSetup_google_steps": "1. Ouvrez Google Cloud Console → APIs & Services → Credentials.\n2. Créez un nouveau projet (ou choisissez-en un) et activez l'API 'Gmail API'.\n3. Créez un ID client OAuth 2.0 (type : Web application).\n4. Ajoutez l'URI de redirection affichée ci-dessous à la liste 'Authorized redirect URIs'.\n5. Copiez le Client ID et le Client Secret dans les champs ci-dessous.\n6. Ajoutez votre adresse e-mail d'expéditeur comme 'Test user' sur l'écran de consentement OAuth.",
     "smtpOauthSetup_microsoft_title": "Outlook.com (personnel) — configuration Azure unique",
-    "smtpOauthSetup_microsoft_steps": "Les applications de messagerie mobile (iOS Mail, Thunderbird, etc.) utilisent des IDs clients publiés par Microsoft qu'ils ne peuvent pas partager. Comme UCM est auto-hébergé, vous en créez un — c'est gratuit et prend 5 minutes :\n\n1. Connectez-vous à Azure Portal avec n'importe quel compte Microsoft (gratuit, aucun abonnement nécessaire).\n2. App registrations → New registration → choisissez 'Personal Microsoft accounts only'.\n3. Ajoutez l'URI de redirection indiqué ci-dessous (plateforme Web).\n4. Certificates & secrets → New client secret → copiez la valeur.\n5. API permissions → ajoutez 'SMTP.Send' et 'offline_access' (Microsoft Graph, délégué).\n6. Copiez l'Application (client) ID et la valeur du secret dans les champs ci-dessous.",
+    "smtpOauthSetup_microsoft_steps": "Les applications de messagerie mobiles (iOS Mail, Thunderbird, etc.) utilisent des ID client publiés par Microsoft qu'elles ne peuvent pas partager. Comme UCM est auto-hébergé, vous créez le vôtre : c'est gratuit et cela prend 5 minutes.\n\n1. Connectez-vous au portail Azure avec n'importe quel compte Microsoft (gratuit, aucun abonnement nécessaire).\n2. App registrations → New registration → choisissez 'Personal Microsoft accounts only'.\n3. Ajoutez l'URI de redirection affichée ci-dessous (plateforme Web).\n4. Certificates & secrets → New client secret → copiez la valeur (Value).\n5. API permissions → ajoutez 'SMTP.Send' et 'offline_access' (Microsoft Graph, délégué).\n6. Copiez l'Application (client) ID et la valeur du secret dans les champs ci-dessous.",
     "smtpOauthSetup_microsoft365_title": "Comment configurer Microsoft 365 (travail / école)",
-    "smtpOauthSetup_microsoft365_steps": "1. Connectez-vous au portail Azure en tant qu'administrateur de locataire.\n2. App registrations → New registration → choisissez « Accounts in this organizational directory only » (ou multitenant).\n3. Ajoutez l'URI de redirection affichée ci-dessous (plateforme Web).\n4. Certificates & secrets → New client secret → copiez la Value.\n5. API permissions → ajoutez 'SMTP.Send' et 'offline_access' (Microsoft Graph, delegated) → Grant admin consent.\n6. Copiez l'Application (client) ID, la secret Value et votre Tenant ID (Directory ID) dans les champs ci-dessous.",
+    "smtpOauthSetup_microsoft365_steps": "1. Connectez-vous au portail Azure en tant qu'administrateur du locataire.\n2. App registrations → New registration → choisissez 'Accounts in this organizational directory only' (ou multilocataire).\n3. Ajoutez l'URI de redirection affichée ci-dessous (plateforme Web).\n4. Certificates & secrets → New client secret → copiez la valeur (Value).\n5. API permissions → ajoutez 'SMTP.Send' et 'offline_access' (Microsoft Graph, délégué) → Grant admin consent.\n6. Copiez l'Application (client) ID, la valeur du secret et votre Tenant ID (Directory ID) dans les champs ci-dessous.",
     "autoRenewal": "Renouvellement automatique",
     "autoRenewalDescription": "Renouvelle automatiquement les certificats avant expiration",
     "autoRenewalEnabled": "Activer le renouvellement automatique",
@@ -2830,7 +2830,7 @@
     "autoRenewalSettingsFailed": "Échec de la mise à jour des paramètres de renouvellement",
     "metrics": {
       "title": "Métriques Prometheus",
-      "subtitle": "Endpoint /metrics optionnel pour la supervision",
+      "subtitle": "Point de terminaison /metrics à activer pour la supervision",
       "token": "Jeton de métriques",
       "tokenPlaceholder": "Saisissez ou générez un jeton bearer pour activer",
       "tokenRotatePlaceholder": "Saisissez un nouveau jeton pour le faire tourner (l'actuel est conservé)",
@@ -2839,8 +2839,8 @@
       "enable": "Activer",
       "rotate": "Renouveler",
       "disable": "Désactiver",
-      "enabled": "Endpoint de métriques activé",
-      "disabled": "Endpoint de métriques désactivé"
+      "enabled": "Point de terminaison de métriques activé",
+      "disabled": "Point de terminaison de métriques désactivé"
     },
     "acmePublicVhost": "vhost public ACME",
     "acmePublicVhostHelper": "Nom d'hôte concret dans les URL ACME (ex. acme.ucm.example.com — pas *.ucm.example.com). DNS et TLS opérationnels avant enregistrement ; les clients basculent immédiatement.",
@@ -2864,7 +2864,7 @@
       "adminCanonicalDesc": "GUI, API, CORS et cible de redirect IP/alias",
       "protocolEffective": "Protocoles PKI (effectif)",
       "protocolEffectiveDesc": "Base CDP / OCSP / AIA dans les certificats",
-      "acmeDirectory": "Directory ACME",
+      "acmeDirectory": "Répertoire ACME",
       "acmeProxy": "Proxy ACME",
       "splitTopology": "Topologie admin / ACME séparée active",
       "preflightResults": "Résultats des vérifications",
@@ -3035,7 +3035,7 @@
     "verifySsl": "Vérifier le certificat SSL",
     "caBundleLabel": "Certificat CA personnalisé (PEM)",
     "caBundleHelp": "Collez le certificat CA au format PEM si le fournisseur utilise un certificat privé ou auto-signé.",
-    "sslWarning": "⚠ La vérification SSL est désactivée. Les connexions sont vulnérables aux attaques man-in-the-middle.",
+    "sslWarning": "⚠ La vérification SSL est désactivée. Les connexions sont vulnérables aux attaques de l'homme du milieu (MITM).",
     "ldapTypes": {
       "openldap": "OpenLDAP",
       "activeDirectory": "Active Directory"
@@ -3093,7 +3093,7 @@
     "enrollAclBadge": "ACL",
     "enrollAclBadgeTooltip": "Inscription restreinte au groupe AD : {{group}}",
     "pinnedSubjectFields": "Champs de sujet épinglés",
-    "pinnedSubjectFieldsDescription": "Force ces champs organisationnels sur chaque certificat émis pour ce modèle via WSTEP, en remplaçant ce que la CSR du client ou la dérivation Active Directory fournit pour ce champ spécifique. Le Common Name et le Subject Alternative Name ne sont jamais affectés. Laissez un champ vide pour le garder dynamique, comme le comportement actuel.",
+    "pinnedSubjectFieldsDescription": "Force ces champs organisationnels sur chaque certificat émis pour ce modèle via WSTEP, en remplaçant ce que la CSR du client ou la dérivation Active Directory fournit pour ce champ spécifique. Le nom commun (CN) et les noms alternatifs du sujet (SAN) ne sont jamais affectés. Laissez un champ vide pour le garder dynamique, comme le comportement actuel.",
     "pinnedCountry": "Pays épinglé",
     "pinnedState": "État épinglé",
     "pinnedLocality": "Localité épinglée",
@@ -3475,10 +3475,10 @@
       "token": {
         "label": "Token",
         "placeholder": "Enter token value",
-        "set": "Token set — leave blank to keep, or clear to remove",
+        "set": "Token défini : laissez vide pour le conserver, ou effacez-le pour le supprimer",
         "clear": "Clear token",
-        "show": "Show token",
-        "hide": "Hide token"
+        "show": "Afficher le token",
+        "hide": "Masquer le token"
       },
       "username": {
         "label": "Username"
@@ -3488,10 +3488,10 @@
         "placeholder": "X-API-Key"
       },
       "custom": {
-        "helper": "Include the auth scheme in the value, e.g. `auth-key YOUR_TOKEN`"
+        "helper": "Incluez le schéma d'authentification dans la valeur, ex. `auth-key YOUR_TOKEN`"
       },
       "apiKey": {
-        "authorizationWarning": "\"Authorization\" is reserved for Bearer/Basic. Use the Custom Header type instead to set Authorization directly."
+        "authorizationWarning": "\"Authorization\" est réservé à Bearer/Basic. Utilisez plutôt le type En-tête personnalisé pour définir Authorization directement."
       },
       "preview": {
         "title": "Outgoing header preview",
@@ -3499,11 +3499,11 @@
         "hide": "Hide"
       },
       "errors": {
-        "tokenRequired": "Token is required for this auth type",
-        "usernameRequired": "Username is required for Basic Auth",
-        "headerNameRequired": "Header name is required",
-        "authorizationBlocked": "\"Authorization\" cannot be used as the header name for API Key — use Custom Header type instead",
-        "tokenTooLong": "Token exceeds maximum length of 8192 bytes"
+        "tokenRequired": "Le token est requis pour ce type d'authentification",
+        "usernameRequired": "Le nom d'utilisateur est requis pour l'authentification Basic",
+        "headerNameRequired": "Le nom d'en-tête est requis",
+        "authorizationBlocked": "\"Authorization\" ne peut pas servir de nom d'en-tête pour le type Clé API : utilisez plutôt le type En-tête personnalisé",
+        "tokenTooLong": "Le token dépasse la longueur maximale de 8192 octets"
       }
     },
     "deliveries": {
@@ -3818,8 +3818,8 @@
         "generic": "Échec du chargement des données",
         "est": "Échec du chargement des données EST",
         "tsa": "Échec du chargement de la configuration TSA",
-        "sshCas": "Failed to load SSH CAs",
-        "sshCertificates": "Failed to load SSH certificates"
+        "sshCas": "Échec du chargement des CA SSH",
+        "sshCertificates": "Échec du chargement des certificats SSH"
       },
       "createFailed": {
         "certificate": "Échec de la création du certificat",
@@ -3832,8 +3832,8 @@
         "provider": "Échec de l'enregistrement du fournisseur",
         "policy": "Échec de la création de la politique",
         "generic": "Échec de la création",
-        "sshCa": "Failed to create SSH CA",
-        "sshCertificate": "Failed to issue SSH certificate"
+        "sshCa": "Échec de la création de la CA SSH",
+        "sshCertificate": "Échec de l'émission du certificat SSH"
       },
       "updateFailed": {
         "certificate": "Échec de la mise à jour du certificat",
@@ -3845,7 +3845,7 @@
         "role": "Échec de la mise à jour du rôle",
         "policy": "Échec de la mise à jour de la politique",
         "generic": "Échec de la mise à jour",
-        "sshCa": "Failed to update SSH CA"
+        "sshCa": "Échec de la mise à jour de la CA SSH"
       },
       "deleteFailed": {
         "certificate": "Échec de la suppression du certificat",
@@ -3861,8 +3861,8 @@
         "policy": "Échec de la suppression de la politique",
         "key": "Échec de la destruction de la clé",
         "generic": "Échec de la suppression",
-        "sshCa": "Failed to delete SSH CA",
-        "sshCertificate": "Failed to delete SSH certificate"
+        "sshCa": "Échec de la suppression de la CA SSH",
+        "sshCertificate": "Échec de la suppression du certificat SSH"
       },
       "exportFailed": {
         "certificate": "Échec de l'exportation du certificat",
@@ -3927,7 +3927,7 @@
         "key": "Clé générée",
         "generic": "Créé avec succès",
         "sshCa": "SSH CA created successfully",
-        "sshCertificate": "SSH certificate issued successfully",
+        "sshCertificate": "Certificat SSH émis avec succès",
         "caOffline": "Autorité de certification hors ligne",
         "caRestored": "Autorité de certification restaurée à l'état en ligne"
       },
@@ -3958,8 +3958,8 @@
         "apiKey": "Clé API révoquée",
         "apiKeyPermanent": "Clé API supprimée",
         "generic": "Supprimé avec succès",
-        "sshCa": "SSH CA deleted successfully",
-        "sshCertificate": "SSH certificate deleted successfully"
+        "sshCa": "CA SSH supprimée avec succès",
+        "sshCertificate": "Certificat SSH supprimé avec succès"
       },
       "export": {
         "certificate": "Certificat exporté avec succès",
@@ -3986,7 +3986,7 @@
         "signed": "CSR signé avec succès",
         "twoFactorEnabled": "2FA activé avec succès ! Sauvegardez vos codes de secours.",
         "twoFactorDisabled": "Authentification à deux facteurs désactivée",
-        "sshCertificateRevoked": "SSH certificate revoked successfully"
+        "sshCertificateRevoked": "Certificat SSH révoqué avec succès"
       },
       "backup": {
         "created": "Sauvegarde créée et téléchargée avec succès",
@@ -4029,7 +4029,7 @@
         "template": "Êtes-vous sûr de vouloir supprimer ce modèle ?",
         "truststore": "Retirer ce certificat du magasin de confiance ?",
         "generic": "Êtes-vous sûr de vouloir supprimer cet élément ?",
-        "sshCa": "Are you sure you want to delete this SSH CA? This action cannot be undone."
+        "sshCa": "Êtes-vous sûr de vouloir supprimer cette CA SSH ? Cette action ne peut pas être annulée."
       },
       "rbac": {
         "deleteRole": "Supprimer le rôle \"{{name}}\" ? Les utilisateurs avec ce rôle seront définis sur 'viewer'.",
