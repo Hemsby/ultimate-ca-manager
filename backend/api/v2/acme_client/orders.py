@@ -346,6 +346,25 @@ def request_certificate():
         return error_response('Failed to create order', 500)
 
 
+def _client_driven_order_error(order):
+    """409 for actions UCM cannot perform on a proxy order.
+
+    A proxy order was placed by an external ACME client through UCM's ACME
+    proxy: that client answers the challenges, submits its own CSR on
+    finalize (the private key never enters UCM) and downloads the certificate.
+    UCM only mirrors the order for tracking, so verify/finalize/renew from the
+    UI have nothing to act on — finalize used to reach the SSRF guard with an
+    empty finalize URL ("URL has no hostname") (#306).
+    """
+    if not getattr(order, 'is_proxy_order', False):
+        return None
+    return error_response(
+        'This order was placed by an ACME client through the proxy: the client '
+        'answers the challenges, finalizes with its own key and downloads the '
+        'certificate, so UCM cannot drive it. Re-run the client and check its '
+        'logs if it stopped.', 409)
+
+
 @bp.route('/api/v2/acme/client/orders/<int:order_id>/verify', methods=['POST'])
 @require_auth(['write:acme'])
 def verify_challenges(order_id):
@@ -360,6 +379,10 @@ def verify_challenges(order_id):
     order = db.session.get(AcmeClientOrder, order_id)
     if not order:
         return error_response('Order not found', 404)
+
+    denied = _client_driven_order_error(order)
+    if denied:
+        return denied
 
     if order.status not in ['pending', 'processing', 'validating']:
         return error_response(f'Order cannot be verified (status: {order.status})', 400)
@@ -489,6 +512,10 @@ def finalize_order(order_id):
     if not order:
         return error_response('Order not found', 404)
 
+    denied = _client_driven_order_error(order)
+    if denied:
+        return denied
+
     if order.status == 'issued':
         return error_response('Order already issued', 400)
 
@@ -565,6 +592,10 @@ def renew_order(order_id):
     order = db.session.get(AcmeClientOrder, order_id)
     if not order:
         return error_response('Order not found', 404)
+
+    denied = _client_driven_order_error(order)
+    if denied:
+        return denied
 
     if order.status not in ('valid', 'issued'):
         return error_response('Only valid/issued orders can be renewed', 400)

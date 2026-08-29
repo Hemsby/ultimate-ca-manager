@@ -1333,6 +1333,7 @@
     "dnsNotReadyConfirmDesc": "DNS-01 TXT 记录尚未可见：{{domains}}。如果现在提交，CA 可能验证失败。是否强制验证？",
     "dnsNotReadyWarning": "验证已跳过 — 请为 {{domains}} 添加 TXT 记录，等待传播后再次验证。",
     "finalize": "完成",
+    "proxyOrderClientDriven": "由 ACME 客户端通过代理创建：由客户端响应质询、使用自己的密钥完成签发并下载证书。若客户端已停止，请重新运行。",
     "defaultEnvironment": "默认环境",
     "staging": "暂存",
     "production": "生产",

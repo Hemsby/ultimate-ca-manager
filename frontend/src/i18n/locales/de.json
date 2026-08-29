@@ -1333,6 +1333,7 @@
     "dnsNotReadyConfirmDesc": "Der DNS-01-TXT-Eintrag ist noch nicht sichtbar für: {{domains}}. Die CA kann die Validierung ablehnen, wenn jetzt übermittelt wird. Trotzdem erzwingen?",
     "dnsNotReadyWarning": "Verifizierung übersprungen — fügen Sie den TXT-Eintrag für {{domains}} hinzu, warten Sie auf die Verbreitung und verifizieren Sie erneut.",
     "finalize": "Abschließen",
+    "proxyOrderClientDriven": "Von einem ACME-Client über den Proxy angelegt: Der Client beantwortet die Challenges, schließt mit seinem eigenen Schlüssel ab und lädt das Zertifikat herunter. Starten Sie den Client erneut, falls er abgebrochen hat.",
     "defaultEnvironment": "Standard-Umgebung",
     "staging": "Staging",
     "production": "Produktion",

@@ -181,14 +181,17 @@ export default function LetsEncryptTab({
                         <span className="text-text-secondary">{formatDate(order.expires_at)}</span>
                       </div>
                     )}
+                    {order.is_proxy_order && (
+                      <p className="text-xs text-text-tertiary">{t('acme.proxyOrderClientDriven')}</p>
+                    )}
                     <div className="flex flex-wrap gap-2 pt-1">
-                      {(order.status === 'pending' || order.status === 'processing') && (
+                      {!order.is_proxy_order && (order.status === 'pending' || order.status === 'processing') && (
                         <Button type="button" variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onVerifyChallenge(order) }}>
                           <Play size={12} />
                           {t('acme.verifyChallenge')}
                         </Button>
                       )}
-                      {order.status === 'validating' && (
+                      {!order.is_proxy_order && order.status === 'validating' && (
                         <>
                           <Button type="button" variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onCheckOrderStatus(order) }}>
                             <MagnifyingGlass size={12} />
@@ -200,7 +203,7 @@ export default function LetsEncryptTab({
                           </Button>
                         </>
                       )}
-                      {order.status === 'ready' && (
+                      {!order.is_proxy_order && order.status === 'ready' && (
                         <Button type="button" variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onFinalizeOrder(order) }}>
                           <CheckCircle size={12} />
                           {t('acme.finalize')}
@@ -218,7 +221,7 @@ export default function LetsEncryptTab({
                           </Button>
                         </>
                       )}
-                      {(order.status === 'valid' || order.status === 'issued') && (
+                      {!order.is_proxy_order && (order.status === 'valid' || order.status === 'issued') && (
                         <Button type="button" variant="secondary" size="sm" onClick={(e) => { e.stopPropagation(); onRenewCertificate(order) }}>
                           <ArrowsClockwise size={12} />
                           {t('acme.renew')}

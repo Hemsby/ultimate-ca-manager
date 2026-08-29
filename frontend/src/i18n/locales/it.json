@@ -1333,6 +1333,7 @@
     "dnsNotReadyConfirmDesc": "Il record TXT DNS-01 non è ancora visibile per: {{domains}}. La CA potrebbe fallire la validazione se invii ora. Forzare la verifica?",
     "dnsNotReadyWarning": "Verifica saltata — aggiungi il record TXT per {{domains}}, attendi la propagazione, quindi verifica di nuovo.",
     "finalize": "Finalizza",
+    "proxyOrderClientDriven": "Creato da un client ACME tramite il proxy: è il client a rispondere alle challenge, finalizzare con la propria chiave e scaricare il certificato. Rieseguire il client se si è interrotto.",
     "defaultEnvironment": "Ambiente predefinito",
     "staging": "Staging",
     "production": "Produzione",

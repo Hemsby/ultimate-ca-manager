@@ -99,22 +99,27 @@ export default function OrderDetailPanel({ order, onDownloadCert, onViewCertific
               <Eye size={12} />
               {t('common.viewCertificate')}
             </Button>
-            <Button type="button" size="sm" variant="secondary" onClick={() => onRenewCertificate(order)}>
-              <ArrowsClockwise size={12} />
-              {t('acme.renewNow')}
-            </Button>
+            {!order.is_proxy_order && (
+              <Button type="button" size="sm" variant="secondary" onClick={() => onRenewCertificate(order)}>
+                <ArrowsClockwise size={12} />
+                {t('acme.renewNow')}
+              </Button>
+            )}
           </div>
         </CompactSection>
       )}
       
+      {order.is_proxy_order && (
+        <p className="text-xs text-text-tertiary pt-2">{t('acme.proxyOrderClientDriven')}</p>
+      )}
       <div className="flex flex-wrap gap-2 pt-2">
-        {order.status === 'pending' && (
+        {!order.is_proxy_order && order.status === 'pending' && (
           <Button type="button" size="sm" onClick={() => onVerifyChallenge(order)}>
             <Play size={12} />
             {t('acme.verifyChallenge')}
           </Button>
         )}
-        {order.status === 'processing' && (
+        {!order.is_proxy_order && order.status === 'processing' && (
           <Button type="button" size="sm" onClick={() => onFinalizeOrder(order)}>
             <CheckCircle size={12} />
             {t('acme.finalize')}
