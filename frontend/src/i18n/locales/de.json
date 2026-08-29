@@ -112,7 +112,7 @@
     "clientInfo": "Client-Informationen",
     "exportedFormat": "Exportiert als {{format}}",
     "viewAll": "Alle anzeigen",
-    "createCA": "Créer CA",
+    "createCA": "CA erstellen",
     "issueCert": "Zert. ausstellen",
     "signCSR": "CSR signieren",
     "change": "Ändern",
