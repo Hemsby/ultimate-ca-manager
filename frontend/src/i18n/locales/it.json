@@ -112,7 +112,7 @@
     "clientInfo": "Informazioni client",
     "exportedFormat": "Esportato come {{format}}",
     "viewAll": "Visualizza tutto",
-    "createCA": "Créer CA",
+    "createCA": "Crea CA",
     "issueCert": "Emetti cert.",
     "signCSR": "Firma CSR",
     "change": "Cambia",

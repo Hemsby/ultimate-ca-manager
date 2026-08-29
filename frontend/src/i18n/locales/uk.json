@@ -112,7 +112,7 @@
     "clientInfo": "Інформація про клієнта",
     "exportedFormat": "Експортовано як {{format}}",
     "viewAll": "Переглянути всі",
-    "createCA": "Créer CA",
+    "createCA": "Створити CA",
     "issueCert": "Вид. серт.",
     "signCSR": "Підписати CSR",
     "change": "Змінити",

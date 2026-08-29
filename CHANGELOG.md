@@ -10,6 +10,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 ## [Unreleased]
 
 ### Fixed
+- The "Create CA" quick action was labelled in French in the German UI (now "CA erstellen", contributed by @gladiac, #304); the same untranslated label is also fixed in Spanish, Italian, Japanese, Portuguese and Ukrainian
 - ACME proxy orders in the Let's Encrypt view no longer offer Verify / Finalize / Renew: those orders are driven by the external ACME client (it answers the challenges, finalizes with its own key and downloads the certificate), so finalizing from UCM could only fail, previously with a misleading "ACME outbound URL blocked: URL has no hostname". The API now answers 409 with an explanation and the UI shows a hint instead of the buttons (#306)
 - Migrating to PostgreSQL with a role that is not a superuser no longer fails with "Can't operate on closed transaction inside context manager" and 0 rows copied: the FK-check bypass (`session_replication_role`) is now attempted inside a savepoint, so a refused SET falls back to the topological insert order as intended instead of aborting the whole copy. The switch-without-migration bootstrap (which copies users to the new backend) had the same failure class and is fixed by the same change (#305)
 
