@@ -7,6 +7,11 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- Migrating to PostgreSQL with a role that is not a superuser no longer fails with "Can't operate on closed transaction inside context manager" and 0 rows copied: the FK-check bypass (`session_replication_role`) is now attempted inside a savepoint, so a refused SET falls back to the topological insert order as intended instead of aborting the whole copy. The switch-without-migration bootstrap (which copies users to the new backend) had the same failure class and is fixed by the same change (#305)
+
 ## [2.215] - 2026-08-28
 
 ### Added

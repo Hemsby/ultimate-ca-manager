@@ -591,17 +591,28 @@ def _sqlite_dbapi_connection(conn):
 def _try_disable_fks(conn, target_is_pg: bool) -> bool:
     """Disable FK checks for bulk load. Returns True if successful.
 
-    PostgreSQL: ``SET LOCAL session_replication_role`` requires SUPERUSER; a
-    non-superuser role fails and falls back to topological insert order.
-    ``SET LOCAL`` (not ``SET``) scopes to the current transaction, preventing
-    leakage into pooled connections after commit.
+    PostgreSQL: ``SET LOCAL session_replication_role`` requires SUPERUSER (or
+    an explicit ``GRANT SET ON PARAMETER`` on PG 15+); a non-superuser role
+    fails and falls back to topological insert order. ``SET LOCAL`` (not
+    ``SET``) scopes to the current transaction, preventing leakage into pooled
+    connections after commit.
+
+    The statement runs inside a SAVEPOINT: a refused SET puts the whole
+    transaction in the failed state (InFailedSqlTransaction, #126), and
+    rolling back the *connection* to clear it closes the context-managed
+    transaction opened by ``engine.begin()`` (SQLAlchemy 2.x then refuses
+    every later statement with "Can't operate on closed transaction inside
+    context manager", #305). Rolling back only the savepoint keeps the
+    enclosing bulk-load transaction usable. ``SET LOCAL`` issued inside a
+    released savepoint stays in effect until the transaction ends.
 
     SQLite: ``PRAGMA foreign_keys`` cannot be changed inside an active
     transaction — call this before opening the data-load transaction.
     """
     try:
         if target_is_pg:
-            conn.execute(text("SET LOCAL session_replication_role = 'replica'"))
+            with conn.begin_nested():
+                conn.execute(text("SET LOCAL session_replication_role = 'replica'"))
             return True
 
         dbapi_conn = _sqlite_dbapi_connection(conn)

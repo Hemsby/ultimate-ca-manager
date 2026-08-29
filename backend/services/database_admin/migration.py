@@ -302,28 +302,10 @@ def migrate_data(target_url: str) -> Tuple[bool, str, dict]:
             # Disable FK checks during bulk load to avoid ordering issues.
             # Falls back gracefully if the PG user is not a superuser
             # (session_replication_role is superuser-only) — in that case we
-            # rely on the topological order computed above.
-            #
-            # CRITICAL: if SET session_replication_role fails, psycopg2 marks
-            # the connection as "in failed transaction". We MUST rollback to
-            # clear that state, otherwise every subsequent statement in this
-            # transaction block gets InFailedSqlTransaction (issue #126).
-            try:
-                if target_is_pg:
-                    dst.execute(text("SET session_replication_role = 'replica'"))
-                    fk_disabled = True
-                else:
-                    dst.execute(text("PRAGMA foreign_keys = OFF"))
-                    fk_disabled = True
-            except Exception as e:
-                logger.warning(
-                    f"Could not disable FK checks ({_short_err(str(e))}); "
-                    "falling back to topological insert order."
-                )
-                # Clear the failed-transaction state so the rest of this
-                # transaction block can proceed normally.
-                dst.rollback()
-                fk_disabled = False
+            # rely on the topological order computed above. The helper
+            # isolates the SET in a savepoint: a refusal must not roll back
+            # (and thereby close) this context-managed transaction (#126, #305).
+            fk_disabled = _try_disable_fks(dst, target_is_pg)
 
             for table_name in src_table_names:
                 if table_name.startswith("_") and table_name != "_migrations":

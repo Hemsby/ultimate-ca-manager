@@ -131,6 +131,93 @@ def test_migrate_full_roundtrip_sqlite_to_sqlite(populated_app, sqlite_target):
 
 
 # ---------------------------------------------------------------------------
+# FK-disable fallback for non-superuser PostgreSQL roles (#126, #305)
+# ---------------------------------------------------------------------------
+
+def test_disable_fks_refusal_keeps_bulk_load_transaction_usable(sqlite_target):
+    """A refused ``SET LOCAL session_replication_role`` must only roll back its
+    savepoint: the enclosing ``engine.begin()`` transaction stays open and the
+    rows loaded afterwards are committed (#305 regression: the connection was
+    rolled back instead, closing the context-managed transaction, and every
+    later INSERT raised "Can't operate on closed transaction").
+
+    SQLite rejects the PostgreSQL SET syntax, which reproduces the refusal
+    without needing a PostgreSQL server."""
+    eng = create_engine(sqlite_target)
+    with eng.begin() as conn:
+        conn.execute(text("CREATE TABLE t (x INTEGER)"))
+    with eng.begin() as conn:
+        # First statement of the block, exactly as in migrate_data()
+        assert svc._try_disable_fks(conn, target_is_pg=True) is False
+        conn.execute(text("INSERT INTO t (x) VALUES (1)"))
+        conn.execute(text("INSERT INTO t (x) VALUES (2)"))
+    with eng.connect() as conn:
+        assert conn.execute(text("SELECT COUNT(*) FROM t")).scalar() == 2
+    eng.dispose()
+
+
+_PG_URL = os.environ.get('UCM_TEST_PG_URL')
+
+
+@pytest.fixture
+def pg_target():
+    """Empty PostgreSQL target (schema reset before and after), opt-in via
+    UCM_TEST_PG_URL. The role should NOT be superuser so that the
+    session_replication_role refusal path is exercised."""
+    if not _PG_URL:
+        pytest.skip('UCM_TEST_PG_URL not set')
+    eng = create_engine(_PG_URL)
+
+    def _reset():
+        with eng.begin() as c:
+            c.execute(text('DROP SCHEMA public CASCADE'))
+            c.execute(text('CREATE SCHEMA public'))
+
+    _reset()
+    yield _PG_URL
+    _reset()
+    eng.dispose()
+
+
+def test_migrate_sqlite_to_pg_non_superuser_falls_back_to_topological_order(
+        populated_app, pg_target):
+    """#305: the whole migration failed ('Can't operate on closed transaction
+    inside context manager', 0 rows migrated) as soon as the PostgreSQL role
+    could not disable FK checks."""
+    with populated_app.app_context():
+        ok, msg, stats = svc.migrate_data(pg_target)
+
+    assert ok, msg
+    assert stats['errors'] == []
+    assert stats['rows_migrated'] >= 1
+
+    eng = create_engine(pg_target)
+    with eng.connect() as c:
+        assert c.execute(text('SELECT COUNT(*) FROM users')).scalar() >= 1
+    # The _migrations table is created on the target outside the metadata
+    # (test app sources carry no applied-migration rows to copy).
+    assert '_migrations' in inspect(eng).get_table_names()
+    eng.dispose()
+
+
+def test_bootstrap_to_pg_non_superuser_copies_users(populated_app, pg_target):
+    """Same failure class on the switch-without-migration path: a refused
+    FK-disable poisoned the per-table transaction and every table was skipped,
+    leaving the target without any user (admin lockout)."""
+    with populated_app.app_context():
+        ok, msg, stats = svc.bootstrap_auth_to_target(pg_target)
+
+    assert ok, msg
+    assert stats['rows_copied'] >= 1
+    assert not [s for s in stats['skipped'] if 'users' in s], stats['skipped']
+
+    eng = create_engine(pg_target)
+    with eng.connect() as c:
+        assert c.execute(text('SELECT COUNT(*) FROM users')).scalar() >= 1
+    eng.dispose()
+
+
+# ---------------------------------------------------------------------------
 # Pure helpers (no DB)
 # ---------------------------------------------------------------------------
 
