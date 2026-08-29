@@ -7,7 +7,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
-## [Unreleased]
+## [2.216] - 2026-08-29
 
 ### Fixed
 - **Translation cleanup across the 8 non-English locales** (about 1,100 strings): a February locale sync had left whole sections in English (template pinning, public endpoints, webhooks, remote syslog, expiry alerts, trust store, service restart, audit integrity, SSH CA messages), 15 strings garbled by a broken word substitution in six locales ("Trusted for issuing certificatees", "Password must be at theast 12 characters", "Dandhande backup", "resand the database"), and roughly a hundred half-translated Spanish strings ("Error to eliminar CA", "Waiting for seguridad clave"). Every affected string was retranslated from the English reference; placeholders and technical terms are unchanged
