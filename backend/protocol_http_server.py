@@ -68,13 +68,15 @@ def start_http_protocol_server(flask_app, port=None):
 
     try:
         from gevent.pywsgi import WSGIServer
+        from listen_address import get_bind_host
+        host = get_bind_host()
         server = WSGIServer(
-            ('0.0.0.0', port),
+            (host, port),
             ProtocolOnlyMiddleware(flask_app),
             log=None,
         )
         server.start()
-        logger.info("HTTP protocol server (CDP/OCSP) started on port %d", port)
+        logger.info("HTTP protocol server (CDP/OCSP) started on %s port %d", host, port)
         return server
     except OSError as e:
         logger.error("Cannot start HTTP protocol server on port %d: %s", port, e)

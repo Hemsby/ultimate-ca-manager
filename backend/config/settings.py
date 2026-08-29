@@ -120,7 +120,7 @@ class Config:
     DEBUG = os.getenv("DEBUG", "false").lower() == "true"
     
     # Server - HTTPS mandatory
-    HOST = os.getenv("HOST", "0.0.0.0")
+    HOST = os.getenv("HOST", "0.0.0.0")  # listen address; gunicorn honors it via listen_address.get_bind_host()
     HTTPS_PORT = int(os.getenv("HTTPS_PORT", "8443"))
     HTTP_REDIRECT = os.getenv("HTTP_REDIRECT", "true").lower() == "true"
     HTTP_PROTOCOL_PORT = int(os.getenv("HTTP_PROTOCOL_PORT", "8080"))  # 8080 = default

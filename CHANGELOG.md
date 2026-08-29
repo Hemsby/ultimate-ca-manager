@@ -7,6 +7,11 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
+## [Unreleased]
+
+### Added
+- The listen address is now configurable: `HOST` in `ucm.env` (or the container environment) is honored by the HTTPS server and the HTTP protocol port, not only by the development server. `HOST=::` listens on IPv6 and IPv4 at once (dual-stack); the default stays `0.0.0.0`. IPv4 clients reaching a dual-stack listener are normalized from `::ffff:a.b.c.d` to plain IPv4 before trusted-proxy, rate-limit and audit handling, so existing `UCM_TRUSTED_PROXIES` values keep matching
+
 ## [2.216] - 2026-08-29
 
 ### Fixed

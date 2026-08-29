@@ -15,8 +15,10 @@ base_path = os.getenv('UCM_BASE_PATH', '/opt/ucm')
 data_path = os.getenv('DATA_DIR', f'{base_path}/data')
 is_docker = os.path.exists('/.dockerenv') or os.getenv('UCM_DOCKER') == '1'
 
-# Server socket
-bind = f"0.0.0.0:{os.getenv('HTTPS_PORT', '8443')}"
+# Server socket — HOST selects the listen address (0.0.0.0 by default,
+# :: for IPv6 + IPv4 dual-stack), see listen_address.py
+from listen_address import format_bind, get_bind_host
+bind = format_bind(get_bind_host(), os.getenv('HTTPS_PORT', '8443'))
 backlog = 2048
 
 # Worker processes — single worker required for WebSocket broadcast across tabs

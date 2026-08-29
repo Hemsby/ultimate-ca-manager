@@ -21,7 +21,7 @@ UCM stores data in:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `UCM_SECRET_KEY` | (generated) | Session signing key |
-| `UCM_HOST` | `0.0.0.0` | Bind address |
+| `HOST` | `0.0.0.0` | Listen address for HTTPS and the HTTP protocol port; `::` = IPv6 + IPv4 (dual-stack) |
 | `UCM_PORT` | `8443` | HTTPS port |
 | `UCM_DATA_DIR` | `/opt/ucm/data` | Data storage |
 | `UCM_LOG_LEVEL` | `INFO` | Logging verbosity |

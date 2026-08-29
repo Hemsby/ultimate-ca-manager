@@ -1005,7 +1005,14 @@ def create_app(config_name=None):
             return _json_error(400, 'Invalid parameter value')
         app.logger.error("Unhandled exception on %s: %s", request.path, e, exc_info=True)
         return _json_error(500, 'Internal server error')
-    
+
+    # Outermost WSGI layer (after ProxyFix and Socket.IO): with HOST=::
+    # (dual-stack) IPv4 peers arrive as ::ffff:a.b.c.d — normalize
+    # REMOTE_ADDR before anything (ProxyFix's original-peer record,
+    # trusted-proxy / loopback / LAN checks, audit) reads it.
+    from listen_address import PeerAddressNormalizer
+    app.wsgi_app = PeerAddressNormalizer(app.wsgi_app)
+
     return app
 
 
