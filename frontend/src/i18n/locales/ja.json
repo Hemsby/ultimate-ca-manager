@@ -1635,6 +1635,8 @@
     "registrationFailed": "登録に失敗しました",
     "profiles": "証明書プロファイル",
     "profilesDesc": "ACME ディレクトリで公開される名前付き発行ポリシーです。クライアントは注文時に選択できます。空にすると公開されません。",
+    "defaultDigest": "既定の署名ダイジェスト",
+    "defaultDigestDesc": "証明書プロファイルを選択しない注文に使用されます。プロファイルは独自のダイジェストを保持します",
     "profileName": "名前",
     "profileValidity": "有効期間（日）",
     "profileDigest": "ダイジェスト",

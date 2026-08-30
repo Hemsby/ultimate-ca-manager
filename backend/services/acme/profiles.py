@@ -27,6 +27,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 CONFIG_KEY = 'acme_profiles'
+DEFAULT_DIGEST_KEY = 'acme_default_digest'  # server-wide fallback digest (#303)
 
 # Issuance defaults applied when a profile omits them (and when no profile is
 # selected at all) — these mirror UCM's historical ACME behaviour.
@@ -37,6 +38,20 @@ _MAX_NAME_LEN = 64
 _ALLOWED_DIGESTS = ('sha256', 'sha384', 'sha512')
 # Same hard cap as every other issuance path (see the validity-cap rule).
 _MAX_VALIDITY_DAYS = 3650
+
+
+def get_default_digest():
+    """Server-wide signing digest for orders without a profile (#303).
+
+    Stored in SystemConfig ``acme_default_digest``; anything absent or
+    invalid falls back to the historical sha256. Profiles that omit their
+    own ``digest`` inherit this value too.
+    """
+    from models import SystemConfig
+
+    row = SystemConfig.query.filter_by(key=DEFAULT_DIGEST_KEY).first()
+    value = (row.value or '').strip().lower() if row and row.value else ''
+    return value if value in _ALLOWED_DIGESTS else DEFAULT_DIGEST
 
 
 def _raw_config():
@@ -78,9 +93,9 @@ def _sanitize(name, spec):
     if validity > _MAX_VALIDITY_DAYS:
         validity = _MAX_VALIDITY_DAYS
 
-    digest = spec.get('digest', DEFAULT_DIGEST)
+    digest = spec.get('digest', None)
     if not isinstance(digest, str) or digest.lower() not in _ALLOWED_DIGESTS:
-        digest = DEFAULT_DIGEST
+        digest = get_default_digest()
 
     return {
         'description': description,
@@ -170,7 +185,7 @@ def issuance_params(name):
     """
     profile = get_profiles().get(name) if name else None
     if not profile:
-        return {'validity_days': DEFAULT_VALIDITY_DAYS, 'digest': DEFAULT_DIGEST}
+        return {'validity_days': DEFAULT_VALIDITY_DAYS, 'digest': get_default_digest()}
     return {
         'validity_days': profile['validity_days'],
         'digest': profile['digest'],

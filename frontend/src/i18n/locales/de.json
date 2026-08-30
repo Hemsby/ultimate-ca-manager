@@ -1635,6 +1635,8 @@
     "registrationFailed": "Registrierung fehlgeschlagen",
     "profiles": "Zertifikatsprofile",
     "profilesDesc": "Benannte Ausstellungsrichtlinien, die im ACME-Verzeichnis angekündigt werden. Clients können bei einer Bestellung eines auswählen; leer lassen, um keines anzukündigen.",
+    "defaultDigest": "Standard-Signatur-Digest",
+    "defaultDigestDesc": "Für Bestellungen ohne Zertifikatsprofil; Profile behalten ihren eigenen Digest",
     "profileName": "Name",
     "profileValidity": "Gültigkeit (Tage)",
     "profileDigest": "Hash",

@@ -178,3 +178,80 @@ class TestNewOrderProfileSelection:
             order = AcmeOrder.query.filter_by(order_id=order_id).first()
             assert order.profile is None
             assert acme_profiles.issuance_params(order.profile)['validity_days'] == 90
+
+
+class TestDefaultDigest:
+    """Server-wide fallback digest for no-profile orders (#303)."""
+
+    def _set(self, app, value):
+        with app.app_context():
+            row = SystemConfig.query.filter_by(
+                key=acme_profiles.DEFAULT_DIGEST_KEY).first()
+            if not row:
+                row = SystemConfig(key=acme_profiles.DEFAULT_DIGEST_KEY, value='')
+                db.session.add(row)
+            row.value = value
+            db.session.commit()
+
+    def _clear(self, app):
+        with app.app_context():
+            SystemConfig.query.filter_by(
+                key=acme_profiles.DEFAULT_DIGEST_KEY).delete()
+            db.session.commit()
+
+    def test_unset_defaults_to_sha256(self, app):
+        self._clear(app)
+        with app.app_context():
+            assert acme_profiles.get_default_digest() == 'sha256'
+            assert acme_profiles.issuance_params(None)['digest'] == 'sha256'
+
+    def test_no_profile_orders_follow_the_setting(self, app):
+        try:
+            self._set(app, 'sha384')
+            with app.app_context():
+                assert acme_profiles.issuance_params(None)['digest'] == 'sha384'
+                assert acme_profiles.issuance_params('gone')['digest'] == 'sha384'
+        finally:
+            self._clear(app)
+
+    def test_profile_without_digest_inherits_the_setting(self, app):
+        try:
+            self._set(app, 'sha512')
+            with app.app_context():
+                row = SystemConfig.query.filter_by(
+                    key=acme_profiles.CONFIG_KEY).first()
+                if not row:
+                    row = SystemConfig(key=acme_profiles.CONFIG_KEY, value='')
+                    db.session.add(row)
+                row.value = json.dumps({
+                    'nodigest': {'validity_days': 30},
+                    'explicit': {'validity_days': 30, 'digest': 'sha256'},
+                })
+                db.session.commit()
+                assert acme_profiles.issuance_params('nodigest')['digest'] == 'sha512'
+                assert acme_profiles.issuance_params('explicit')['digest'] == 'sha256'
+                SystemConfig.query.filter_by(key=acme_profiles.CONFIG_KEY).delete()
+                db.session.commit()
+        finally:
+            self._clear(app)
+
+    def test_invalid_stored_value_falls_back(self, app):
+        try:
+            self._set(app, 'md5')
+            with app.app_context():
+                assert acme_profiles.get_default_digest() == 'sha256'
+        finally:
+            self._clear(app)
+
+    def test_settings_api_roundtrip(self, auth_client, app):
+        try:
+            r = auth_client.patch('/api/v2/acme/settings',
+                                  json={'default_digest': 'sha384'})
+            assert r.status_code == 200
+            r = auth_client.get('/api/v2/acme/settings')
+            assert r.get_json()['data']['default_digest'] == 'sha384'
+            r = auth_client.patch('/api/v2/acme/settings',
+                                  json={'default_digest': 'md5'})
+            assert r.status_code == 400
+        finally:
+            self._clear(app)

@@ -1635,6 +1635,8 @@
     "registrationFailed": "Registrazione non riuscita",
     "profiles": "Profili di certificato",
     "profilesDesc": "Politiche di emissione denominate annunciate nella directory ACME. I client possono sceglierne una al momento dell'ordine; lasciare vuoto per non annunciarne alcuna.",
+    "defaultDigest": "Digest di firma predefinito",
+    "defaultDigestDesc": "Usato per gli ordini senza profilo di certificato; i profili mantengono il proprio digest",
     "profileName": "Nome",
     "profileValidity": "Validità (giorni)",
     "profileDigest": "Digest",

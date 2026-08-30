@@ -150,6 +150,8 @@ def get_acme_settings():
         # ACME Profiles Extension (draft-ietf-acme-profiles). Returned
         # normalised (defaults filled in) so the UI shows what clients get.
         'profiles': acme_profiles.get_profiles(),
+        # Fallback signing digest for orders without a profile (#303)
+        'default_digest': acme_profiles.get_default_digest(),
         # dns-persist-01 (draft-ietf-acme-dns-persist) — opt-in persistent
         # TXT validation, issuer domains derive from the CAA identifiers
         # (or the public ACME hostname when unset)
@@ -234,6 +236,21 @@ def update_acme_settings():
             })
         else:
             tos_cfg.value = json.dumps({'title': '', 'body': ''})
+
+    # Fallback signing digest for no-profile orders (#303)
+    if 'default_digest' in data:
+        digest = data.get('default_digest')
+        if not isinstance(digest, str) or digest.lower() not in ('sha256', 'sha384', 'sha512'):
+            return error_response('default_digest must be sha256, sha384 or sha512', 400)
+        digest_cfg = SystemConfig.query.filter_by(
+            key=acme_profiles.DEFAULT_DIGEST_KEY).first()
+        if not digest_cfg:
+            digest_cfg = SystemConfig(
+                key=acme_profiles.DEFAULT_DIGEST_KEY,
+                description='Default ACME signing digest for orders without a profile',
+            )
+            db.session.add(digest_cfg)
+        digest_cfg.value = digest.lower()
 
     # Update certificate profiles (draft-ietf-acme-profiles)
     if 'profiles' in data:

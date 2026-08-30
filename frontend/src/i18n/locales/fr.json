@@ -536,6 +536,8 @@
     "registrationFailed": "Échec de l'enregistrement",
     "profiles": "Profils de certificat",
     "profilesDesc": "Politiques d'émission nommées annoncées dans l'annuaire ACME. Les clients peuvent en choisir une lors d'une commande ; laisser vide pour n'en annoncer aucune.",
+    "defaultDigest": "Digest de signature par défaut",
+    "defaultDigestDesc": "Utilisé pour les commandes sans profil de certificat ; les profils gardent leur propre digest",
     "profileName": "Nom",
     "profileValidity": "Validité (jours)",
     "profileDigest": "Empreinte",

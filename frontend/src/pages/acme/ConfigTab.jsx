@@ -127,6 +127,18 @@ export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConf
             onChange={(profiles) => updateSetting('profiles', profiles)}
             disabled={!canWrite}
           />
+          <Select
+            label={t('acme.defaultDigest')}
+            value={acmeSettings.default_digest || 'sha256'}
+            onChange={(val) => updateSetting('default_digest', val)}
+            disabled={!canWrite}
+            options={[
+              { value: 'sha256', label: 'SHA-256' },
+              { value: 'sha384', label: 'SHA-384' },
+              { value: 'sha512', label: 'SHA-512' },
+            ]}
+          />
+          <p className="text-xs text-text-tertiary">{t('acme.defaultDigestDesc')}</p>
         </div>
       </CompactSection>
 

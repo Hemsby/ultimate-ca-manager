@@ -1635,6 +1635,8 @@
     "registrationFailed": "注册失败",
     "profiles": "证书配置文件",
     "profilesDesc": "在 ACME 目录中公布的命名签发策略。客户端下单时可选择其一；留空则不公布任何配置文件。",
+    "defaultDigest": "默认签名摘要",
+    "defaultDigestDesc": "用于未选择证书配置文件的订单；配置文件保留自己的摘要",
     "profileName": "名称",
     "profileValidity": "有效期（天）",
     "profileDigest": "摘要",
