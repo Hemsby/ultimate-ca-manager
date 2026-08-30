@@ -80,14 +80,41 @@ class TSAService:
             return False
 
     @staticmethod
+    def _accept_ca_signer_or_raise() -> None:
+        """Compatibility path for signing timestamps with a CA's own certificate.
+
+        UCM has always signed with the configured CA certificate, which is not
+        an RFC 3161 §2.3 dedicated signer: a root usually carries no EKU, and a
+        constrained sub-CA carries an EKU that does not list timeStamping (#309).
+        Both are accepted with a warning unless the operator opted into the
+        strict tsa_require_dedicated_cert mode.
+        """
+        if TSAService._require_dedicated_tsa_cert():
+            raise TSAConfigurationError(
+                'TSA is configured to sign with a CA certificate, but '
+                'tsa_require_dedicated_cert is enabled. Issue a dedicated '
+                'end-entity TSA certificate with a critical, exclusive '
+                'timeStamping EKU (RFC 3161 §2.3).'
+            )
+        logger.warning(
+            'TSA is signing with a CA certificate that is not a dedicated '
+            'timeStamping signer. The /tsa endpoint is unauthenticated, so this '
+            'makes the CA private key an anonymous signing oracle over '
+            'caller-supplied content. Issue a dedicated TSA certificate with a '
+            'critical, exclusive timeStamping EKU (RFC 3161 §2.3) and set '
+            'tsa_require_dedicated_cert=true to enforce it.'
+        )
+
+    @staticmethod
     def validate_certificate(tsa_cert: x509.Certificate) -> None:
         """Validate the TSA signer. A dedicated end-entity TSA certificate
         (RFC 3161 §2.3: critical, exclusive timeStamping EKU) is the
         recommended setup, but UCM historically signs with the configured
-        CA's own certificate — which carries no EKU at all. Refusing that
-        broke every pre-2.200 deployment, so a CA certificate stays
-        accepted (with a warning), and only an end-entity certificate
-        lacking the timeStamping EKU is refused."""
+        CA's own certificate. A root carries no EKU; a constrained sub-CA
+        carries an EKU without timeStamping (#309). Refusing either broke
+        existing deployments, so a CA certificate stays accepted (with a
+        warning), and only an end-entity certificate lacking the
+        timeStamping EKU is refused."""
         try:
             bc = tsa_cert.extensions.get_extension_for_oid(
                 ExtensionOID.BASIC_CONSTRAINTS
@@ -102,21 +129,7 @@ class TSAService:
             )
         except x509.ExtensionNotFound:
             if is_ca:
-                if TSAService._require_dedicated_tsa_cert():
-                    raise TSAConfigurationError(
-                        'TSA is configured to sign with a CA certificate, but '
-                        'tsa_require_dedicated_cert is enabled. Issue a dedicated '
-                        'end-entity TSA certificate with a critical, exclusive '
-                        'timeStamping EKU (RFC 3161 §2.3).'
-                    )
-                logger.warning(
-                    'TSA is signing with a CA certificate (no timeStamping EKU). '
-                    'The /tsa endpoint is unauthenticated, so this makes the CA '
-                    'private key an anonymous signing oracle over caller-supplied '
-                    'content. Issue a dedicated TSA certificate with a critical, '
-                    'exclusive timeStamping EKU (RFC 3161 §2.3) and set '
-                    'tsa_require_dedicated_cert=true to enforce it.'
-                )
+                TSAService._accept_ca_signer_or_raise()
                 return
             raise TSAConfigurationError(
                 'TSA certificate is missing the timeStamping EKU'
@@ -124,6 +137,12 @@ class TSAService:
 
         eku_oids = set(eku_extension.value)
         if ExtendedKeyUsageOID.TIME_STAMPING not in eku_oids:
+            # A constrained sub-CA carries an EKU that does not list
+            # timeStamping; treat it like any other CA signer (#309). An
+            # end-entity certificate without timeStamping is still refused.
+            if is_ca:
+                TSAService._accept_ca_signer_or_raise()
+                return
             raise TSAConfigurationError(
                 'TSA certificate does not include the timeStamping EKU'
             )
