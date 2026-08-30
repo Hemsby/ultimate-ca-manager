@@ -9,6 +9,10 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+### Fixed
+- ACME proxy: several downstream accounts can now order the same domain. The upstream CA reuses one authorization across them (the proxy signs upstream with a single account), and the proxy resolved it to the first account's order, so every other account was refused with 403 "Authorization does not belong to this account". Shared authorizations now resolve to the requesting account's order, the dns-01 automation for a shared challenge fires once instead of once per account, and the cross-account protections are unchanged (#307, contributed by @Hemsby)
+- TSA: timestamp requests no longer fail with 503 "TSA certificate does not include the timeStamping EKU" when the signing CA is a constrained sub-CA whose certificate carries an EKU without timeStamping. It is accepted with a warning like a CA certificate without any EKU; a dedicated end-entity signer lacking the EKU is still refused, and `tsa_require_dedicated_cert` still enforces the strict mode (#309, contributed by @Hemsby)
+
 ### Added
 - The listen address is now configurable: `HOST` in `ucm.env` (or the container environment) is honored by the HTTPS server and the HTTP protocol port, not only by the development server. `HOST=::` listens on IPv6 and IPv4 at once (dual-stack); the default stays `0.0.0.0`. IPv4 clients reaching a dual-stack listener are normalized from `::ffff:a.b.c.d` to plain IPv4 before trusted-proxy, rate-limit and audit handling, so existing `UCM_TRUSTED_PROXIES` values keep matching
 
