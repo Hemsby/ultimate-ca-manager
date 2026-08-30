@@ -1,6 +1,7 @@
 """
 Email Service for sending notifications via SMTP
 """
+import re
 import smtplib
 import logging
 from email.mime.text import MIMEText
@@ -100,6 +101,18 @@ class EmailService:
                     pass
     
     @staticmethod
+    def _is_valid_address(addr: str) -> bool:
+        """Cheap mailbox shape check (#303): something@domain.tld.
+
+        Deliberately loose (no full RFC 5322): the goal is only to skip
+        obviously undeliverable values ("tag only" account contacts, typos)
+        at SEND time instead of bouncing. Nothing is validated at input time.
+        """
+        if not addr or len(addr) > 320:
+            return False
+        return re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', addr) is not None
+
+    @staticmethod
     def send_email(
         recipients: List[str],
         subject: str,
@@ -132,6 +145,18 @@ class EmailService:
         recipients = [r for r in (_sanitize_header_value(r) for r in recipients) if r]
         if not recipients:
             return False, "No recipients specified"
+
+        # Skip invalid addresses at send time instead of letting them bounce
+        # (#303). Input-side entry stays unrestricted on purpose.
+        invalid = [r for r in recipients if not EmailService._is_valid_address(r)]
+        if invalid:
+            logger.info(
+                "Skipping %d invalid email recipient(s) for %s notification: %s",
+                len(invalid), notification_type, ', '.join(invalid),
+            )
+            recipients = [r for r in recipients if r not in invalid]
+        if not recipients:
+            return False, "No valid recipient address"
 
         subject = _sanitize_header_value(subject)
 
