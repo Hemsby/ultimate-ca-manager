@@ -10,18 +10,29 @@ from utils.response import success_response, error_response
 from utils.datetime_utils import utc_isoformat
 
 from . import bp, logger, resolve_acme_account
+from services.audit_service import AuditService
 
 
 @bp.route('/api/v2/acme/orders', methods=['GET'])
 @require_auth(['read:acme'])
 def list_acme_orders():
-    """List ACME orders"""
+    """List local ACME server orders (paginated since #303)."""
     status = request.args.get('status')
+    domain = (request.args.get('domain') or '').strip()
+    try:
+        page = max(1, int(request.args.get('page', 1)))
+        per_page = min(200, max(1, int(request.args.get('per_page', 50))))
+    except (TypeError, ValueError):
+        page, per_page = 1, 50
     query = AcmeOrder.query
     if status:
         query = query.filter_by(status=status)
+    if domain:
+        query = query.filter(AcmeOrder.identifiers.contains(domain))
 
-    orders = query.order_by(AcmeOrder.created_at.desc()).limit(50).all()
+    total = query.count()
+    orders = (query.order_by(AcmeOrder.created_at.desc())
+              .offset((page - 1) * per_page).limit(per_page).all())
 
     data = []
     for order in orders:
@@ -47,10 +58,65 @@ def list_acme_orders():
             'status': order.status.capitalize(),
             'expires': order.expires.strftime('%Y-%m-%d'),
             'method': method,
+            'certificate_id': order.certificate_id,
             'created_at': utc_isoformat(order.created_at)
         })
 
-    return success_response(data=data)
+    return success_response(data={
+        'items': data,
+        'meta': {'page': page, 'per_page': per_page, 'total': total},
+    })
+
+
+@bp.route('/api/v2/acme/orders/<int:order_pk>', methods=['DELETE'])
+@require_auth(['delete:acme'])
+def delete_acme_order(order_pk):
+    """Delete one local ACME server order with its authorizations and
+    challenges (#303). The linked certificate, if any, is not touched."""
+    from models.acme_models import AcmeAuthorization, AcmeChallenge
+
+    order = db.session.get(AcmeOrder, order_pk)
+    if not order:
+        return error_response('Order not found', 404)
+    try:
+        for authz in list(order.authorizations):
+            AcmeChallenge.query.filter_by(
+                authorization_id=authz.authorization_id
+            ).delete(synchronize_session=False)
+            db.session.delete(authz)
+        db.session.delete(order)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Failed to delete ACME order {order_pk}: {e}")
+        return error_response('Failed to delete order', 500)
+
+    AuditService.log_action(
+        action='acme_order_delete', resource_type='acme_order',
+        resource_id=str(order_pk), resource_name=order.order_id,
+        details='Local ACME order deleted', success=True,
+    )
+    return success_response(message='Order deleted')
+
+
+@bp.route('/api/v2/acme/orders/purge', methods=['POST'])
+@require_auth(['delete:acme'])
+def purge_acme_orders():
+    """Run the expired-order purge now (#303)."""
+    from services.acme.order_purge import purge_expired_orders
+
+    try:
+        stats = purge_expired_orders()
+    except Exception:
+        return error_response('Purge failed', 500)
+    AuditService.log_action(
+        action='acme_order_purge', resource_type='acme_order', resource_id='*',
+        resource_name='Expired local ACME orders',
+        details=f"Purged {stats['orders']} orders, "
+                f"{stats['authorizations']} authorizations, "
+                f"{stats['challenges']} challenges", success=True,
+    )
+    return success_response(data=stats, message='Purge complete')
 
 
 @bp.route('/api/v2/acme/accounts/<string:account_id>/orders', methods=['GET'])

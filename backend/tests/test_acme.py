@@ -276,21 +276,22 @@ class TestAcmeServerAccounts:
 class TestAcmeServerOrders:
     """GET /api/v2/acme/orders, /accounts/<id>/orders, /accounts/<id>/challenges"""
 
-    def test_list_orders_returns_list(self, auth_client):
+    def test_list_orders_returns_items_and_meta(self, auth_client):
         r = auth_client.get('/api/v2/acme/orders')
         data = assert_success(r)
-        assert isinstance(data, list)
+        assert isinstance(data['items'], list)
+        assert set(data['meta']) == {'page', 'per_page', 'total'}
 
     def test_list_orders_with_status_filter(self, auth_client):
         r = auth_client.get('/api/v2/acme/orders?status=pending')
         data = assert_success(r)
-        assert isinstance(data, list)
+        assert isinstance(data['items'], list)
 
     def test_list_orders_invalid_status_returns_empty(self, auth_client):
         r = auth_client.get('/api/v2/acme/orders?status=nonexistent')
         data = assert_success(r)
-        assert isinstance(data, list)
-        assert len(data) == 0
+        assert data['items'] == []
+        assert data['meta']['total'] == 0
 
     def test_account_orders_not_found(self, auth_client):
         r = auth_client.get('/api/v2/acme/accounts/999999/orders')

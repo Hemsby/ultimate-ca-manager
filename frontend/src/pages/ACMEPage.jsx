@@ -21,6 +21,7 @@ import ConfigTab from './acme/ConfigTab'
 import DnsProvidersTab from './acme/DnsProvidersTab'
 import DomainsTab from './acme/DomainsTab'
 import LocalDomainsTab from './acme/LocalDomainsTab'
+import LocalOrdersTab from './acme/LocalOrdersTab'
 import AccountsTab from './acme/AccountsTab'
 import EabTab from './acme/EabTab'
 import HistoryTab from './acme/HistoryTab'
@@ -907,6 +908,7 @@ export default function ACMEPage() {
     { id: 'domains', label: t('acme.domains'), icon: GlobeHemisphereWest, count: acmeDomains.length },
     { id: 'config', label: t('acme.server'), icon: Gear },
     { id: 'localdomains', label: t('acme.localDomains'), icon: GlobeHemisphereWest, count: localDomains.length },
+    { id: 'localorders', label: t('acme.localOrders'), icon: ClockCounterClockwise },
     { id: 'accounts', label: t('acme.accounts'), icon: Key, count: accounts.length },
     { id: 'eab', label: t('acme.eab.tab'), icon: LockKey },
     { id: 'history', label: t('common.history'), icon: ClockCounterClockwise, count: history.length }
@@ -1201,7 +1203,11 @@ export default function ACMEPage() {
             canWrite={canWrite('acme')}
           />
         )}
-        {activeTab === 'localdomains' && (
+        {activeTab === 'localorders' && (
+        <LocalOrdersTab />
+      )}
+
+      {activeTab === 'localdomains' && (
           <LocalDomainsTab
             localDomains={localDomains}
             cas={cas}

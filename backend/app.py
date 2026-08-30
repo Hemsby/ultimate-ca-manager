@@ -537,6 +537,18 @@ def create_app(config_name=None):
             description="Auto-regenerate expiring CRLs"
         )
         
+        # Purge expired local ACME server orders (#303) — every 6 hours
+        try:
+            from services.acme.order_purge import scheduled_purge
+            scheduler.register_task(
+                name="acme_order_purge",
+                func=scheduled_purge,
+                interval=21600,
+                description="Purge expired local ACME orders, authorizations and challenges"
+            )
+        except ImportError:
+            pass
+
         # Register audit log cleanup task (runs daily)
         try:
             from services.retention_service import scheduled_audit_cleanup
