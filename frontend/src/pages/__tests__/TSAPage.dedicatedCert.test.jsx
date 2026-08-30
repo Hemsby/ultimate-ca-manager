@@ -63,10 +63,34 @@ vi.mock('../../services/tsa.service', () => ({
         ca_refid: 'ca-tsa-probe',
         policy_oid: '1.2.3.4.1',
         require_dedicated_cert: false,
+        // A usable dedicated signer is saved, so the strict-mode toggle is
+        // operable (it is gated on one being present, #312).
+        signer_cert_refid: 'cert-tsa-signer',
+        signer: {
+          configured: true,
+          usable: true,
+          refid: 'cert-tsa-signer',
+          subject: 'CN=UCM Timestamp Signer',
+          not_after: '2027-01-01T00:00:00+00:00',
+          chain_len: 2,
+          chain_to_root: true,
+        },
       },
     }),
     updateConfig: vi.fn().mockResolvedValue({ data: {} }),
     getStats: vi.fn().mockResolvedValue({ data: { total_requests: 0 } }),
+    getSignerCandidates: vi.fn().mockResolvedValue({
+      data: [
+        {
+          refid: 'cert-tsa-signer',
+          descr: 'UCM Timestamp Signer',
+          subject_cn: 'UCM Timestamp Signer',
+          serial_number: '42',
+          valid_to: '2027-01-01T00:00:00+00:00',
+          eku_critical_exclusive: true,
+        },
+      ],
+    }),
   },
 }))
 

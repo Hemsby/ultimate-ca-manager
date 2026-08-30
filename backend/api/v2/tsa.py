@@ -6,8 +6,9 @@ TSA Management Routes v2.0
 from flask import Blueprint, request
 from auth.unified import require_auth
 from utils.response import success_response, error_response
-from models import db, SystemConfig, CA, AuditLog
+from models import db, SystemConfig, CA, Certificate, AuditLog
 from services.audit_service import AuditService
+from services.tsa_service import describe_configured_signer
 import logging
 import re
 
@@ -17,6 +18,97 @@ bp = Blueprint('tsa_v2', __name__)
 
 _POLICY_OID_RE = re.compile(r'^[0-2](?:\.(?:0|[1-9]\d*)){1,}$')
 _MAX_POLICY_OID_LENGTH = 255
+
+# RFC 5280 §4.2.1.12 id-kp-timeStamping
+_TIME_STAMPING_OID = '1.3.6.1.5.5.7.3.8'
+
+# Protocol-enrolled certificates keep their private key on the client, and
+# AD CS-proxied certificates are issued by an external CA: UCM cannot sign
+# with any of them, so they are never offered as a dedicated TSA signer.
+_NON_LOCAL_KEY_SOURCES = {'acme', 'letsencrypt', 'scep', 'est', 'msca'}
+
+
+def _signer_candidate_view(cert):
+    """Shape a Certificate as a dedicated-signer candidate, or None if unusable.
+
+    Only certificates whose private key UCM holds and can decrypt, that carry
+    the timeStamping EKU, and that are not revoked / expired are offered.
+    """
+    if cert.revoked or cert.archived:
+        return None
+    if (cert.private_key_location or 'stored') != 'stored' or not cert.has_private_key:
+        return None
+    if (cert.source or 'manual') in _NON_LOCAL_KEY_SOURCES:
+        return None
+
+    try:
+        import base64
+        from cryptography import x509
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.x509.oid import ExtensionOID
+        from utils.datetime_utils import utc_now
+
+        parsed = x509.load_pem_x509_certificate(
+            base64.b64decode(cert.crt), default_backend()
+        )
+        try:
+            eku = parsed.extensions.get_extension_for_oid(ExtensionOID.EXTENDED_KEY_USAGE)
+        except x509.ExtensionNotFound:
+            return None
+        eku_oids = {oid.dotted_string for oid in eku.value}
+        if _TIME_STAMPING_OID not in eku_oids:
+            return None
+
+        now = utc_now()
+        if cert.valid_to and cert.valid_to <= now:
+            return None
+        if cert.valid_from and cert.valid_from > now:
+            return None
+
+        critical_exclusive = bool(eku.critical) and eku_oids == {_TIME_STAMPING_OID}
+    except Exception:
+        return None
+
+    return {
+        'refid': cert.refid,
+        'descr': cert.descr,
+        'subject': cert.subject,
+        'subject_cn': cert.subject_cn or cert.common_name,
+        'serial_number': cert.serial_number,
+        'key_type': cert.key_type,
+        'valid_to': cert.valid_to.isoformat() if cert.valid_to else None,
+        'ca_name': cert.ca.descr if cert.ca else None,
+        'eku_critical_exclusive': critical_exclusive,
+    }
+
+
+def _validate_signer_refid(refid):
+    """Return (error_message, None) or (None, cert). Empty refid is invalid here."""
+    cert = Certificate.query.filter_by(refid=refid).first()
+    if cert is None or not cert.crt:
+        return 'signer_cert_refid does not match a known certificate', None
+    view = _signer_candidate_view(cert)
+    if view is None:
+        return (
+            'The selected certificate cannot be a TSA signer: it must be a '
+            'non-revoked, unexpired certificate whose private key UCM holds '
+            'and that carries the timeStamping EKU', None
+        )
+    # "Can decrypt" is the operative requirement — actually try it.
+    try:
+        import base64
+        from cryptography.hazmat.backends import default_backend
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+        try:
+            from security.encryption import decrypt_private_key
+            prv_pem = decrypt_private_key(cert.prv)
+        except ImportError:
+            prv_pem = cert.prv
+        load_pem_private_key(base64.b64decode(prv_pem), password=None,
+                             backend=default_backend())
+    except Exception:
+        return 'The selected certificate private key cannot be decrypted by UCM', None
+    return None, cert
 
 
 def normalize_policy_oid(value):
@@ -73,6 +165,11 @@ def get_tsa_config():
         # editing the database row directly.
         'require_dedicated_cert':
             get_config('tsa_require_dedicated_cert', 'false') == 'true',
+        # Dedicated end-entity signer (#312). Empty string = the historical
+        # CA-certificate signer. `signer` describes the configured certificate
+        # (subject / serial / notAfter / chain status / usability).
+        'signer_cert_refid': get_config('tsa_signer_cert_refid', ''),
+        'signer': describe_configured_signer(),
     })
 
 
@@ -87,6 +184,15 @@ def update_tsa_config():
         policy_oid = normalize_policy_oid(data['policy_oid'])
         if policy_oid is None:
             return error_response('policy_oid must be a valid OID', 400)
+
+    if 'signer_cert_refid' in data:
+        raw = data['signer_cert_refid']
+        refid = raw.strip() if isinstance(raw, str) else ''
+        if refid:
+            err, _cert = _validate_signer_refid(refid)
+            if err:
+                return error_response(err, 400)
+        set_config('tsa_signer_cert_refid', refid)
 
     if 'enabled' in data:
         set_config('tsa_enabled', 'true' if data['enabled'] else 'false')
@@ -119,6 +225,26 @@ def update_tsa_config():
     )
 
     return success_response(message='TSA configuration saved')
+
+
+@bp.route('/api/v2/tsa/signer-candidates', methods=['GET'])
+@require_auth(['read:settings'])
+def list_signer_candidates():
+    """Certificates eligible to be the dedicated TSA signer (#312).
+
+    A candidate is a non-revoked, non-archived, unexpired certificate whose
+    private key UCM holds locally and that carries the timeStamping EKU.
+    """
+    rows = (
+        Certificate.query
+        .filter(Certificate.crt.isnot(None), Certificate.prv.isnot(None))
+        .filter(Certificate.revoked.isnot(True))
+        .filter(Certificate.archived.isnot(True))
+        .all()
+    )
+    candidates = [v for v in (_signer_candidate_view(c) for c in rows) if v]
+    candidates.sort(key=lambda v: (v['subject_cn'] or v['descr'] or '').lower())
+    return success_response(data=candidates)
 
 
 @bp.route('/api/v2/tsa/stats', methods=['GET'])
