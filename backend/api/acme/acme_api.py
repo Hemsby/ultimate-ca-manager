@@ -1431,9 +1431,14 @@ def authorization_info(authorization_id: str):
 
     service.expire_authorization_if_needed(auth)
 
-    # Build challenges list
+    # Build challenges list. On a valid authorization only the validated
+    # challenge(s) are exposed (RFC 8555 §7.1.6; legacy rows may still carry
+    # pending siblings created before deprovisioning existed) (#303).
+    listed = auth.challenges
+    if auth.status == 'valid':
+        listed = [c for c in listed if c.status == 'valid']
     challenges = []
-    for challenge in auth.challenges:
+    for challenge in listed:
         challenges.append(_challenge_wire_dict(challenge, service, auth_account))
     
     response_data = {

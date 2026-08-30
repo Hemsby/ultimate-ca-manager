@@ -1290,3 +1290,72 @@ class TestKeyChangeConflict:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+class TestSiblingChallengeDeprovisioning:
+    """RFC 8555 §7.1.6 (#303): once an authorization is valid, the unused
+    sibling challenges are deprovisioned and no longer exposed."""
+
+    def test_validation_deletes_pending_siblings(self, app, acme_account):
+        with app.app_context():
+            service = AcmeService(base_url='http://localhost')
+            order = service.create_order(
+                acme_account['account_id'],
+                [{'type': 'dns', 'value': 'siblings.example.com'}],
+            )
+            authz = order.authorizations.first()
+            all_challenges = list(authz.challenges)
+            assert len(all_challenges) >= 2, 'need siblings for this test'
+            winner = all_challenges[0]
+            winner.status = 'valid'
+            db.session.commit()
+
+            service._update_authorization_status(authz)
+            db.session.commit()
+
+            remaining = list(authz.challenges)
+            assert authz.status == 'valid'
+            assert [c.status for c in remaining] == ['valid']
+            assert remaining[0].challenge_id == winner.challenge_id
+
+    def test_valid_authz_read_hides_legacy_pending_siblings(
+        self, client, app, acme_account
+    ):
+        # Rows created before deprovisioning existed: authz valid with a
+        # pending sibling still stored — the wire response must not list it.
+        with app.app_context():
+            authz = AcmeAuthorization(
+                order_id=None,
+                account_id=acme_account['account_id'],
+                identifier=json.dumps({'type': 'dns', 'value': 'legacy.example.com'}),
+                status='valid',
+            )
+            db.session.add(authz)
+            db.session.flush()
+            db.session.add(AcmeChallenge(
+                authorization_id=authz.authorization_id,
+                type='dns-01', status='valid',
+            ))
+            db.session.add(AcmeChallenge(
+                authorization_id=authz.authorization_id,
+                type='http-01', status='pending',
+            ))
+            db.session.commit()
+            authz_id = authz.authorization_id
+
+        path = f'/acme/authz/{authz_id}'
+        jws = _build_jws(
+            f'http://localhost{path}',
+            None,
+            acme_account['key'],
+            kid=f'http://localhost/acme/acct/{acme_account["account_id"]}',
+            nonce=_nonce(client),
+        )
+        response = client.post(
+            path, data=json.dumps(jws), content_type='application/jose+json',
+        )
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload['status'] == 'valid'
+        assert [c['status'] for c in payload['challenges']] == ['valid']
+        assert [c['type'] for c in payload['challenges']] == ['dns-01']

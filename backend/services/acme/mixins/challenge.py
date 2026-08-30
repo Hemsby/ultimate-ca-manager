@@ -634,7 +634,15 @@ class ChallengeMixin:
         
         if valid_challenges:
             auth.status = "valid"
-            
+
+            # RFC 8555 §7.1.6: once the authorization is valid the unused
+            # sibling challenges SHOULD be deprovisioned — Let's Encrypt
+            # drops them entirely. Delete them so pollers and the authz
+            # listing only ever see the validated challenge(s) (#303).
+            for sibling in list(auth.challenges):
+                if sibling.status in ("pending", "processing"):
+                    db.session.delete(sibling)
+
             # Standalone pre-authorizations have no parent order.
             order = auth.order
             if order is None:
