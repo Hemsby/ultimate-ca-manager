@@ -25,7 +25,8 @@ def _failure_info_native(resp_der):
     return _status_info(resp_der)['fail_info'].native
 
 
-def _self_signed_tsa(include_eku=True, eku_critical=True, basic_constraints_ca=False):
+def _self_signed_tsa(include_eku=True, eku_critical=True, basic_constraints_ca=False,
+                     eku_oids=None):
     """Build a self-signed cert + key, optionally with a valid TSA EKU."""
     from cryptography import x509
     from cryptography.x509.oid import NameOID
@@ -43,7 +44,9 @@ def _self_signed_tsa(include_eku=True, eku_critical=True, basic_constraints_ca=F
                .not_valid_after(datetime.now(timezone.utc) + timedelta(days=365)))
     if include_eku:
         builder = builder.add_extension(
-            x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.TIME_STAMPING]),
+            x509.ExtendedKeyUsage(
+                eku_oids or [x509.oid.ExtendedKeyUsageOID.TIME_STAMPING]
+            ),
             critical=eku_critical,
         )
     if basic_constraints_ca:
@@ -235,6 +238,48 @@ class TestTsaCertificateValidation:
 
         cert, key = _self_signed_tsa(include_eku=False, basic_constraints_ca=True)
         assert TSAService(cert, key).tsa_cert is cert
+
+    def test_ca_certificate_with_non_timestamping_eku_is_accepted(self):
+        # #309: a constrained sub-CA carries an EKU that does not list
+        # timeStamping. It is still the configured CA's own certificate, so
+        # signing with it stays allowed (with a warning).
+        from cryptography.x509.oid import ExtendedKeyUsageOID
+        from services.tsa_service import TSAService
+
+        cert, key = _self_signed_tsa(
+            include_eku=True, basic_constraints_ca=True,
+            eku_oids=[ExtendedKeyUsageOID.SERVER_AUTH,
+                      ExtendedKeyUsageOID.CLIENT_AUTH],
+        )
+        assert TSAService(cert, key).tsa_cert is cert
+
+    def test_end_entity_with_non_timestamping_eku_is_rejected(self):
+        # An end-entity cert lacking timeStamping is not a valid TSA signer.
+        from cryptography.x509.oid import ExtendedKeyUsageOID
+        from services.tsa_service import TSAConfigurationError, TSAService
+
+        cert, key = _self_signed_tsa(
+            include_eku=True, basic_constraints_ca=False,
+            eku_oids=[ExtendedKeyUsageOID.SERVER_AUTH],
+        )
+        with pytest.raises(TSAConfigurationError, match='timeStamping'):
+            TSAService(cert, key)
+
+    def test_ca_with_non_timestamping_eku_refused_when_dedicated_required(
+        self, monkeypatch,
+    ):
+        from cryptography.x509.oid import ExtendedKeyUsageOID
+        from services.tsa_service import TSAConfigurationError, TSAService
+
+        monkeypatch.setattr(
+            TSAService, '_require_dedicated_tsa_cert', staticmethod(lambda: True),
+        )
+        cert, key = _self_signed_tsa(
+            include_eku=True, basic_constraints_ca=True,
+            eku_oids=[ExtendedKeyUsageOID.SERVER_AUTH],
+        )
+        with pytest.raises(TSAConfigurationError, match='dedicated'):
+            TSAService(cert, key)
 
 
 class TestTsaManagementApi:
