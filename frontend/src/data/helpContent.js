@@ -888,6 +888,7 @@ export const helpContent = {
           { label: 'Auto-install', text: 'Off by default. When enabled, UCM downloads, verifies and installs the update at the chosen hour, then restarts — DEB/RPM installs only' },
           { label: 'Checksum', text: "An unattended install requires the release's published SHA256 to verify; a manual install also verifies whenever a checksum is published" },
           { label: 'Docker', text: 'Containers cannot update themselves — the check and notification still work; pull the new image to update' },
+          { label: 'Post-update popup', text: 'Optional (v2.217): shows the release notes once after an update is installed, per user. Off by default' },
         ]
       },
       {

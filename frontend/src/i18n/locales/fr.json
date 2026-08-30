@@ -2620,6 +2620,8 @@
     "autoUpdateHour": "Fenêtre d'installation",
     "autoUpdateDockerHint": "Indisponible sous Docker — récupérez la nouvelle image à la place",
     "autoUpdateSaved": "Paramètres de mise à jour enregistrés",
+    "updatePopupEnable": "Afficher les notes de version après une mise à jour",
+    "updatePopupEnableDesc": "Chaque utilisateur voit une fois une fenêtre de nouveautés après l'installation d'une nouvelle version",
     "autoUpdateSaveFailed": "Échec de l'enregistrement des paramètres de mise à jour",
     "updatesTitle": "Mises à jour logicielles",
     "updatesSubtitle": "Vérifier et installer les mises à jour de UCM",
@@ -4929,5 +4931,10 @@
       "recovered": "Récupérée",
       "cancelled": "Annulée"
     }
+  },
+  "updatePopup": {
+    "title": "Nouveautés d'UCM {{version}}",
+    "installedOn": "Installée le {{date}}",
+    "noNotes": "Impossible de charger les notes de version. Consultez le journal des modifications dans Paramètres › Mises à jour."
   }
 }

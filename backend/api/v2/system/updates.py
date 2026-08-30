@@ -154,7 +154,8 @@ def update_update_settings():
     """Update the update automation settings (#301)"""
     from services.updates import (
         UPDATE_CHANNEL_KEY, AUTO_UPDATE_ENABLED_KEY, AUTO_UPDATE_HOUR_KEY,
-        _cfg_set_many, get_update_settings as read_settings,
+        UPDATE_POPUP_ENABLED_KEY, _cfg_set_many,
+        get_update_settings as read_settings,
     )
 
     data = request.json or {}
@@ -167,6 +168,8 @@ def update_update_settings():
             return error_response("hour must be an integer between 0 and 23", 400)
     if 'auto_install' in data and not isinstance(data['auto_install'], bool):
         return error_response("auto_install must be a boolean", 400)
+    if 'popup_enabled' in data and not isinstance(data['popup_enabled'], bool):
+        return error_response("popup_enabled must be a boolean", 400)
     if data.get('auto_install') and os.getenv('UCM_DOCKER') == '1':
         return error_response(
             "Auto-update is not available in Docker. Pull the new image instead.", 400
@@ -181,6 +184,8 @@ def update_update_settings():
         changes[AUTO_UPDATE_HOUR_KEY] = str(data['hour'])
     if 'auto_install' in data:
         changes[AUTO_UPDATE_ENABLED_KEY] = 'true' if data['auto_install'] else 'false'
+    if 'popup_enabled' in data:
+        changes[UPDATE_POPUP_ENABLED_KEY] = 'true' if data['popup_enabled'] else 'false'
     try:
         _cfg_set_many(changes)
     except Exception as e:
@@ -196,6 +201,41 @@ def update_update_settings():
     result = read_settings()
     result['can_auto_update'] = os.getenv('UCM_DOCKER') != '1'
     return success_response(data=result, message='Update settings saved')
+
+
+@bp.route('/api/v2/system/updates/whatsnew', methods=['GET'])
+@require_auth()
+def whats_new():
+    """Payload for the optional post-update popup (#308).
+
+    Any authenticated user may ask; with the popup disabled the answer is a
+    fast {'enabled': False} with no external call. Release notes for the
+    running version come from the cached GitHub release lookup and degrade
+    to an empty string on hosts without egress.
+    """
+    from services.updates import (
+        get_current_version, get_installed_at,
+        get_update_settings as read_settings,
+    )
+
+    if not read_settings().get('popup_enabled'):
+        return success_response(data={'enabled': False})
+
+    data = {
+        'enabled': True,
+        'version': get_current_version(),
+        'installed_at': get_installed_at(),
+        'release_notes': '',
+        'published_at': None,
+    }
+    try:
+        from services.updates import check_for_updates
+        result = check_for_updates() or {}
+        data['release_notes'] = result.get('current_release_notes') or ''
+        data['published_at'] = result.get('current_published_at')
+    except Exception as e:
+        logger.warning(f"whatsnew: release notes unavailable: {e}")
+    return success_response(data=data)
 
 
 @bp.route('/api/v2/system/updates/version', methods=['GET'])

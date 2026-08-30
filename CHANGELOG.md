@@ -14,6 +14,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 - TSA: timestamp requests no longer fail with 503 "TSA certificate does not include the timeStamping EKU" when the signing CA is a constrained sub-CA whose certificate carries an EKU without timeStamping. It is accepted with a warning like a CA certificate without any EKU; a dedicated end-entity signer lacking the EKU is still refused, and `tsa_require_dedicated_cert` still enforces the strict mode (#309, contributed by @Hemsby)
 
 ### Added
+- Optional what's new window after an update: enable "Show release notes after an update" in Settings > Updates (off by default) and every user gets a one-time popup with the installed version, the install date and the release notes the next time a new version is running. Dismissal is per user and follows the account across browsers (#308)
 - The listen address is now configurable: `HOST` in `ucm.env` (or the container environment) is honored by the HTTPS server and the HTTP protocol port, not only by the development server. `HOST=::` listens on IPv6 and IPv4 at once (dual-stack); the default stays `0.0.0.0`. IPv4 clients reaching a dual-stack listener are normalized from `::ffff:a.b.c.d` to plain IPv4 before trusted-proxy, rate-limit and audit handling, so existing `UCM_TRUSTED_PROXIES` values keep matching
 
 ## [2.216] - 2026-08-29

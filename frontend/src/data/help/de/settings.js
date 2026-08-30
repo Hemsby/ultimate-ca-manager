@@ -60,6 +60,7 @@ export default {
           { label: 'Auto-Installation', text: 'Standardmäßig aus. Wenn aktiviert, lädt UCM das Update zur gewählten Stunde herunter, verifiziert und installiert es und startet dann neu — nur DEB/RPM-Installationen' },
           { label: 'Prüfsumme', text: 'Eine unbeaufsichtigte Installation erfordert die veröffentlichte SHA256 des Releases zur Verifizierung; eine manuelle Installation verifiziert ebenfalls, wann immer eine Prüfsumme veröffentlicht ist' },
           { label: 'Docker', text: 'Container können sich nicht selbst aktualisieren — Prüfung und Benachrichtigung funktionieren weiterhin; ziehen Sie das neue Image, um zu aktualisieren' },
+          { label: 'Popup nach Update', text: 'Optional (v2.217): zeigt die Versionshinweise nach einer installierten Aktualisierung einmal pro Benutzer an. Standardmäßig aus' },
         ]
       },
       {

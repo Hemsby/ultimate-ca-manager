@@ -17,6 +17,7 @@ import { Sidebar, navGroups, resolveActivePageId } from './Sidebar'
 import { CommandPalette, useKeyboardShortcuts } from './CommandPalette'
 import { WebSocketIndicator } from './WebSocketIndicator'
 import { FloatingHelpPanel } from './ui/FloatingHelpPanel'
+import { UpdatePopup } from './UpdatePopup'
 import { StatusFooter } from './ui/StatusFooter'
 import { TooltipComponent } from './Tooltip'
 import { cn } from '../lib/utils'
@@ -534,6 +535,9 @@ export function AppShell() {
         onClose={() => setHelpModalOpen(false)}
         pageKey={helpPageKey}
       />
+
+      {/* Optional what's-new window after an update (#308) */}
+      <UpdatePopup />
     </div>
     </div>
   )

@@ -2500,6 +2500,8 @@
     "autoUpdateHour": "Install window",
     "autoUpdateDockerHint": "Not available in Docker — pull the new image instead",
     "autoUpdateSaved": "Update settings saved",
+    "updatePopupEnable": "Show release notes after an update",
+    "updatePopupEnableDesc": "Each user sees a what's new window once after a new version is installed",
     "autoUpdateSaveFailed": "Failed to save update settings",
     "updatesTitle": "Software Updates",
     "emailFormat": "Email format",
@@ -4929,5 +4931,10 @@
       "recovered": "Recovered",
       "cancelled": "Cancelled"
     }
+  },
+  "updatePopup": {
+    "title": "What's new in UCM {{version}}",
+    "installedOn": "Installed on {{date}}",
+    "noNotes": "Release notes could not be loaded. See the changelog in Settings › Updates."
   }
 }

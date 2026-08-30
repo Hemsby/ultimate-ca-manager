@@ -31,6 +31,8 @@ _PREF_VALIDATORS = {
     'date_format': lambda v: isinstance(v, str) and 1 <= len(v) <= 30,
     'show_time': lambda v: isinstance(v, bool),
     'timezone': lambda v: isinstance(v, str) and 1 <= len(v) <= 64,
+    # Last version acknowledged in the post-update popup (#308)
+    'update_popup_seen_version': lambda v: isinstance(v, str) and 1 <= len(v) <= 32,
 }
 
 

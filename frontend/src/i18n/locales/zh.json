@@ -2499,6 +2499,8 @@
     "autoUpdateHour": "安装时段",
     "autoUpdateDockerHint": "Docker环境不可用——请改为拉取新镜像",
     "autoUpdateSaved": "更新设置已保存",
+    "updatePopupEnable": "更新后显示版本说明",
+    "updatePopupEnableDesc": "安装新版本后，每位用户会看到一次新功能窗口",
     "autoUpdateSaveFailed": "保存更新设置失败",
     "updatesTitle": "软件更新",
     "emailFormat": "邮件格式",
@@ -4926,5 +4928,10 @@
       "recovered": "已恢复",
       "cancelled": "已取消"
     }
+  },
+  "updatePopup": {
+    "title": "UCM {{version}} 新功能",
+    "installedOn": "安装于 {{date}}",
+    "noNotes": "无法加载版本说明。请在设置 › 更新中查看更新日志。"
   }
 }

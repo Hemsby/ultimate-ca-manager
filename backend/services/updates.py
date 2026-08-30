@@ -47,6 +47,26 @@ def get_current_version():
     return Config.APP_VERSION
 
 
+def get_installed_at():
+    """Best-effort install time of the running version (#308).
+
+    The VERSION file at the install root is rewritten by every install path
+    (package upgrade, unattended update, manual deploy), so its mtime is a
+    dependable "installed at" even for updates UCM did not perform itself.
+    """
+    try:
+        from config.settings import BASE_DIR
+        version_path = BASE_DIR / 'VERSION'
+        if version_path.exists():
+            from datetime import datetime, timezone
+            return datetime.fromtimestamp(
+                version_path.stat().st_mtime, tz=timezone.utc
+            ).isoformat()
+    except Exception as e:
+        logger.debug(f"Could not read VERSION mtime: {e}")
+    return None
+
+
 def parse_version(version_str):
     """Parse version string to tuple for comparison.
     
@@ -547,6 +567,7 @@ def get_update_history():
 UPDATE_CHANNEL_KEY = 'update_check_channel'          # 'stable' | 'rc'
 AUTO_UPDATE_ENABLED_KEY = 'auto_update_enabled'      # 'true' | 'false' (default off)
 AUTO_UPDATE_HOUR_KEY = 'auto_update_hour'            # local hour 0-23 (default 3)
+UPDATE_POPUP_ENABLED_KEY = 'update_popup_enabled'    # 'true' | 'false' (default off, #308)
 _LAST_CHECK_TS_KEY = 'update_last_check_ts'
 _NOTIFIED_VERSION_KEY = 'update_notified_version'
 _ATTEMPTED_VERSION_KEY = 'auto_update_attempted_version'
@@ -608,6 +629,7 @@ def get_update_settings():
         'channel': 'rc' if _cfg_get(UPDATE_CHANNEL_KEY, 'stable') == 'rc' else 'stable',
         'auto_install': _cfg_get(AUTO_UPDATE_ENABLED_KEY, 'false') == 'true',
         'hour': hour if 0 <= hour <= 23 else 3,
+        'popup_enabled': _cfg_get(UPDATE_POPUP_ENABLED_KEY, 'false') == 'true',
     }
 
 

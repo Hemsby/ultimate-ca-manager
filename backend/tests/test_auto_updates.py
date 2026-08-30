@@ -529,3 +529,72 @@ class TestUpdateSettingsApi:
 
     def test_requires_admin(self, client, clean_update_config):
         assert client.get(self.URL).status_code in (401, 403)
+
+
+class TestUpdatePopup:
+    """Post-update popup (#308): settings toggle, whatsnew payload,
+    per-user acknowledgement preference."""
+
+    def test_settings_roundtrip_popup_enabled(self, auth_client, clean_update_config):
+        r = auth_client.patch('/api/v2/system/updates/settings',
+                              json={'popup_enabled': True})
+        assert r.status_code == 200
+        assert r.get_json()['data']['popup_enabled'] is True
+        r = auth_client.get('/api/v2/system/updates/settings')
+        assert r.get_json()['data']['popup_enabled'] is True
+        r = auth_client.patch('/api/v2/system/updates/settings',
+                              json={'popup_enabled': False})
+        assert r.get_json()['data']['popup_enabled'] is False
+
+    def test_settings_popup_enabled_must_be_bool(self, auth_client, clean_update_config):
+        r = auth_client.patch('/api/v2/system/updates/settings',
+                              json={'popup_enabled': 'yes'})
+        assert r.status_code == 400
+
+    def test_whatsnew_disabled_is_fast_and_empty(self, auth_client, clean_update_config,
+                                                 monkeypatch):
+        def _boom(*_a, **_k):
+            raise AssertionError('must not call GitHub when disabled')
+        monkeypatch.setattr(updates, 'check_for_updates', _boom)
+        r = auth_client.get('/api/v2/system/updates/whatsnew')
+        assert r.status_code == 200
+        assert r.get_json()['data'] == {'enabled': False}
+
+    def test_whatsnew_enabled_payload(self, auth_client, clean_update_config,
+                                      monkeypatch):
+        auth_client.patch('/api/v2/system/updates/settings',
+                          json={'popup_enabled': True})
+        monkeypatch.setattr(updates, 'check_for_updates', lambda *a, **k: {
+            'current_release_notes': '## Fixed\n- something',
+            'current_published_at': '2026-08-30T00:00:00Z',
+        })
+        r = auth_client.get('/api/v2/system/updates/whatsnew')
+        assert r.status_code == 200
+        data = r.get_json()['data']
+        assert data['enabled'] is True
+        assert data['version'] == updates.get_current_version()
+        assert data['release_notes'].startswith('## Fixed')
+        assert data['published_at'] == '2026-08-30T00:00:00Z'
+
+    def test_whatsnew_degrades_without_release_notes(self, auth_client,
+                                                     clean_update_config, monkeypatch):
+        auth_client.patch('/api/v2/system/updates/settings',
+                          json={'popup_enabled': True})
+        def _fail(*_a, **_k):
+            raise RuntimeError('no egress')
+        monkeypatch.setattr(updates, 'check_for_updates', _fail)
+        r = auth_client.get('/api/v2/system/updates/whatsnew')
+        assert r.status_code == 200
+        data = r.get_json()['data']
+        assert data['enabled'] is True and data['release_notes'] == ''
+
+    def test_seen_version_preference_roundtrip(self, auth_client):
+        r = auth_client.put('/api/v2/account/preferences',
+                            json={'update_popup_seen_version': '2.217'})
+        assert r.status_code == 200
+        assert r.get_json()['data'].get('update_popup_seen_version') == '2.217'
+        # invalid values are dropped, not stored
+        r = auth_client.put('/api/v2/account/preferences',
+                            json={'update_popup_seen_version': 'x' * 40})
+        assert r.status_code == 200
+        assert 'update_popup_seen_version' not in r.get_json()['data']

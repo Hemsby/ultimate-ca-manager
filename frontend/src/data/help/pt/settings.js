@@ -60,6 +60,7 @@ export default {
           { label: 'Instalação automática', text: 'Desativada por padrão. Quando ativada, o UCM baixa, verifica e instala a atualização na hora escolhida e depois reinicia — apenas instalações DEB/RPM' },
           { label: 'Checksum', text: 'Uma instalação não assistida exige o SHA256 publicado da release para verificação; uma instalação manual também verifica sempre que um checksum é publicado' },
           { label: 'Docker', text: 'Os containers não podem se atualizar sozinhos — a verificação e a notificação continuam funcionando; faça pull da nova imagem para atualizar' },
+          { label: 'Popup pós-atualização', text: 'Opcional (v2.217): mostra uma vez as notas da versão após a instalação de uma atualização, por utilizador. Desativado por predefinição' },
         ]
       },
       {

@@ -2499,6 +2499,8 @@
     "autoUpdateHour": "Ventana de instalación",
     "autoUpdateDockerHint": "No disponible en Docker — descargue la nueva imagen en su lugar",
     "autoUpdateSaved": "Configuración de actualizaciones guardada",
+    "updatePopupEnable": "Mostrar las notas de la versión tras una actualización",
+    "updatePopupEnableDesc": "Cada usuario ve una vez una ventana de novedades tras instalarse una nueva versión",
     "autoUpdateSaveFailed": "Error al guardar la configuración de actualizaciones",
     "updatesTitle": "Actualizaciones de software",
     "emailFormat": "Formato de email",
@@ -4926,5 +4928,10 @@
       "recovered": "Recuperada",
       "cancelled": "Cancelada"
     }
+  },
+  "updatePopup": {
+    "title": "Novedades de UCM {{version}}",
+    "installedOn": "Instalada el {{date}}",
+    "noNotes": "No se pudieron cargar las notas de la versión. Consulte el registro de cambios en Configuración › Actualizaciones."
   }
 }

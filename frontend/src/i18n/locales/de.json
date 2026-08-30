@@ -2499,6 +2499,8 @@
     "autoUpdateHour": "Installationsfenster",
     "autoUpdateDockerHint": "Unter Docker nicht verfügbar — ziehen Sie stattdessen das neue Image",
     "autoUpdateSaved": "Update-Einstellungen gespeichert",
+    "updatePopupEnable": "Versionshinweise nach einer Aktualisierung anzeigen",
+    "updatePopupEnableDesc": "Jeder Benutzer sieht nach der Installation einer neuen Version einmal ein Neuigkeiten-Fenster",
     "autoUpdateSaveFailed": "Update-Einstellungen konnten nicht gespeichert werden",
     "updatesTitle": "Software-Updates",
     "emailFormat": "E-Mail-Format",
@@ -4926,5 +4928,10 @@
       "recovered": "Wiederhergestellt",
       "cancelled": "Abgebrochen"
     }
+  },
+  "updatePopup": {
+    "title": "Neu in UCM {{version}}",
+    "installedOn": "Installiert am {{date}}",
+    "noNotes": "Die Versionshinweise konnten nicht geladen werden. Siehe das Änderungsprotokoll unter Einstellungen › Aktualisierungen."
   }
 }

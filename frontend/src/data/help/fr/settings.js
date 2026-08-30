@@ -60,6 +60,7 @@ export default {
           { label: "Installation auto", text: "Désactivée par défaut. Une fois activée, UCM télécharge, vérifie et installe la mise à jour à l'heure choisie, puis redémarre — installations DEB/RPM uniquement" },
           { label: "Somme de contrôle", text: "Une installation sans surveillance exige le SHA256 publié de la release pour vérification ; une installation manuelle vérifie aussi dès qu'une somme de contrôle est publiée" },
           { label: "Docker", text: "Les conteneurs ne peuvent pas se mettre à jour eux-mêmes — la vérification et la notification fonctionnent toujours ; récupérez la nouvelle image pour mettre à jour" },
+          { label: 'Popup post-mise à jour', text: 'Optionnel (v2.217) : affiche une fois les notes de version après l\'installation d\'une mise à jour, par utilisateur. Désactivé par défaut' },
         ]
       },
       {

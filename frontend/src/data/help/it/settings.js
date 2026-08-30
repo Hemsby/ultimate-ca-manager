@@ -60,6 +60,7 @@ export default {
           { label: 'Installazione automatica', text: 'Disattivata per impostazione predefinita. Se abilitata, UCM scarica, verifica e installa l\'aggiornamento all\'ora scelta, poi si riavvia — solo installazioni DEB/RPM' },
           { label: 'Checksum', text: 'Un\'installazione non presidiata richiede lo SHA256 pubblicato del rilascio per la verifica; anche un\'installazione manuale verifica ogni volta che un checksum è pubblicato' },
           { label: 'Docker', text: 'I container non possono aggiornarsi da soli — il controllo e la notifica funzionano comunque; esegui il pull della nuova immagine per aggiornare' },
+          { label: 'Popup post-aggiornamento', text: 'Opzionale (v2.217): mostra una volta le note di versione dopo l\'installazione di un aggiornamento, per utente. Disattivato per impostazione predefinita' },
         ]
       },
       {

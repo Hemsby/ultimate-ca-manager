@@ -60,6 +60,7 @@ export default {
           { label: 'Instalación automática', text: 'Desactivada por defecto. Cuando está activada, UCM descarga, verifica e instala la actualización a la hora elegida y luego se reinicia — solo instalaciones DEB/RPM' },
           { label: 'Suma de comprobación', text: 'Una instalación desatendida requiere el SHA256 publicado de la versión para la verificación; una instalación manual también verifica siempre que se publique una suma de comprobación' },
           { label: 'Docker', text: 'Los contenedores no pueden actualizarse a sí mismos — la comprobación y la notificación siguen funcionando; descargue la nueva imagen para actualizar' },
+          { label: 'Ventana tras actualizar', text: 'Opcional (v2.217): muestra una vez las notas de la versión tras instalar una actualización, por usuario. Desactivado por defecto' },
         ]
       },
       {

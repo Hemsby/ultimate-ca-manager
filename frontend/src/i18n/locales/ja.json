@@ -2499,6 +2499,8 @@
     "autoUpdateHour": "インストール時間帯",
     "autoUpdateDockerHint": "Dockerでは利用できません。代わりに新しいイメージを取得してください",
     "autoUpdateSaved": "アップデート設定を保存しました",
+    "updatePopupEnable": "更新後にリリースノートを表示",
+    "updatePopupEnableDesc": "新しいバージョンのインストール後、各ユーザーに新機能ウィンドウを一度表示します",
     "autoUpdateSaveFailed": "アップデート設定の保存に失敗しました",
     "updatesTitle": "ソフトウェア更新",
     "emailFormat": "メール形式",
@@ -4926,5 +4928,10 @@
       "recovered": "リカバリ済み",
       "cancelled": "キャンセル"
     }
+  },
+  "updatePopup": {
+    "title": "UCM {{version}} の新機能",
+    "installedOn": "{{date}} にインストール",
+    "noNotes": "リリースノートを読み込めませんでした。設定 › 更新 の変更履歴を参照してください。"
   }
 }

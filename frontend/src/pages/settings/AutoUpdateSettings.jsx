@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next'
 import { Card, Button, Select } from '../../components'
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch'
 import { apiClient } from '../../services'
+import { persistPreference } from '../../stores/userPreferencesStore'
 import { useNotification } from '../../contexts'
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({
@@ -23,6 +24,7 @@ export default function AutoUpdateSettings() {
   const [channel, setChannel] = useState('stable')
   const [autoInstall, setAutoInstall] = useState(false)
   const [hour, setHour] = useState(3)
+  const [popupEnabled, setPopupEnabled] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -32,6 +34,7 @@ export default function AutoUpdateSettings() {
         const data = response?.data || response || {}
         setChannel(data.channel || 'stable')
         setAutoInstall(!!data.auto_install)
+        setPopupEnabled(!!data.popup_enabled)
         setHour(Number.isInteger(data.hour) ? data.hour : 3)
         setCanAutoUpdate(data.can_auto_update !== false)
       })
@@ -47,7 +50,17 @@ export default function AutoUpdateSettings() {
         channel,
         auto_install: autoInstall,
         hour,
+        popup_enabled: popupEnabled,
       })
+      if (popupEnabled) {
+        // Prime the per-user marker so the popup only appears after the
+        // NEXT update, not immediately for the version already running.
+        try {
+          const v = await apiClient.get('/system/updates/version')
+          const version = v?.data?.version || v?.version
+          if (version) persistPreference('update_popup_seen_version', version)
+        } catch { /* non-blocking */ }
+      }
       showSuccess(t('settings.autoUpdateSaved'))
     } catch (err) {
       showError(err?.message || t('settings.autoUpdateSaveFailed'))
@@ -83,6 +96,13 @@ export default function AutoUpdateSettings() {
           ? t('settings.autoUpdateEnableDesc')
           : t('settings.autoUpdateDockerHint')}
         disabled={!canAutoUpdate}
+      />
+
+      <ToggleSwitch
+        checked={popupEnabled}
+        onChange={(val) => setPopupEnabled(val)}
+        label={t('settings.updatePopupEnable')}
+        description={t('settings.updatePopupEnableDesc')}
       />
 
       {autoInstall && canAutoUpdate && (
