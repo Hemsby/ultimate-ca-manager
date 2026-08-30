@@ -15,6 +15,14 @@ import * as SelectPrimitive from '@radix-ui/react-select'
 import { CaretDown, Check } from '@phosphor-icons/react'
 import { cn } from '../../lib/utils'
 
+// Radix Select forbids value="" on an Item, and the previous workaround
+// (filtering empty-value options out) silently hid legitimate options like
+// "No template" (#303). Empty values are mapped to this sentinel internally;
+// callers keep the plain '' contract.
+const EMPTY_VALUE = '__empty__'
+const toInternal = (v) => (v === '' ? EMPTY_VALUE : v)
+const fromInternal = (v) => (v === EMPTY_VALUE ? '' : v)
+
 const sizes = {
   sm: {
     trigger: 'h-7 px-2 text-xs gap-1',
@@ -53,7 +61,8 @@ export function Select({
   showActiveState = false,
 }) {
   const sizeConfig = sizes[size] || sizes.default
-  const handleChange = onValueChange || onChange
+  const rawChange = onValueChange || onChange
+  const handleChange = rawChange ? (v) => rawChange(fromInternal(v)) : undefined
   const hasValue = value && value !== ''
   
   const triggerStyles = cn(
@@ -92,7 +101,7 @@ export function Select({
         </label>
       )}
 
-      <SelectPrimitive.Root value={value} onValueChange={handleChange} disabled={disabled}>
+      <SelectPrimitive.Root value={value == null ? value : toInternal(value)} onValueChange={handleChange} disabled={disabled}>
         <SelectPrimitive.Trigger className={triggerStyles}>
           <SelectPrimitive.Value placeholder={placeholder} />
           <SelectPrimitive.Icon>
@@ -125,10 +134,10 @@ export function Select({
             align="start"
           >
             <SelectPrimitive.Viewport className="p-1 max-h-60 overflow-auto">
-              {options.filter(opt => opt.value !== '').map(option => (
+              {options.map(option => (
                 <SelectPrimitive.Item
-                  key={option.value}
-                  value={option.value}
+                  key={toInternal(option.value)}
+                  value={toInternal(option.value)}
                   disabled={option.disabled}
                   className={cn(
                     "flex items-center gap-2 rounded-md cursor-pointer outline-none",

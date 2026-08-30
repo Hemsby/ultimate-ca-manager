@@ -6,6 +6,14 @@ import * as Select from '@radix-ui/react-select'
 import { CaretDown, Check, MagnifyingGlass, X } from '@phosphor-icons/react'
 import { cn } from '../lib/utils'
 
+// Radix Select forbids value="" on an Item; the old workaround filtered
+// empty-value options out and silently hid options like "No template"
+// (#303). Empty values are mapped to a sentinel internally; callers keep
+// the plain '' contract.
+const EMPTY_VALUE = '__empty__'
+const toInternal = (v) => (v === '' ? EMPTY_VALUE : v)
+const fromInternal = (v) => (v === EMPTY_VALUE ? '' : v)
+
 export function SelectComponent({ 
   label, 
   options = [], 
@@ -42,7 +50,7 @@ export function SelectComponent({
         </label>
       )}
 
-      <Select.Root value={value} onValueChange={onChange} disabled={disabled}>
+      <Select.Root value={value == null ? value : toInternal(value)} onValueChange={onChange ? (v) => onChange(fromInternal(v)) : undefined} disabled={disabled}>
         <Select.Trigger
           className={cn(
             "w-full flex items-center justify-between px-2.5 py-1.5 bg-tertiary-op80 border rounded-md text-sm",
@@ -67,10 +75,10 @@ export function SelectComponent({
             sideOffset={4}
           >
             <Select.Viewport className="p-1">
-              {options.filter(opt => opt.value !== '').map(option => (
+              {options.map(option => (
                 <Select.Item
-                  key={option.value}
-                  value={option.value}
+                  key={toInternal(option.value)}
+                  value={toInternal(option.value)}
                   className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-text-primary rounded-md cursor-pointer outline-none hover:bg-tertiary-op80 data-[highlighted]:bg-tertiary-op80 transition-colors duration-100"
                 >
                   <Select.ItemText>{option.label}</Select.ItemText>
@@ -104,8 +112,10 @@ function SearchableSelect({ label, options, value, onChange, placeholder, error,
   const listRef = useRef(null)
 
   const selectedOption = options.find(o => o.value === value)
+  // Empty-value options are legitimate here (custom dropdown, no Radix
+  // constraint) — only labels are matched against the search text.
   const filtered = options.filter(o =>
-    o.value !== '' && o.label.toLowerCase().includes(search.toLowerCase())
+    String(o.label).toLowerCase().includes(search.toLowerCase())
   )
 
   // Close on outside click
