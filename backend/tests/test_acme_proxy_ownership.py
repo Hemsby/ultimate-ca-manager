@@ -199,6 +199,102 @@ class TestAuthzOwnership:
             assert data['challenges'][0]['type'] == 'dns-01'
 
 
+class TestSharedUpstreamAuthz:
+    """#307 - one upstream authorization, several downstream accounts.
+
+    The proxy signs upstream with a single account, so Let's Encrypt hands the
+    same authorization (and challenge) URL to every downstream account that
+    orders the domain. Each local order must resolve to its own owner, and the
+    shared challenge's dns-01 automation must fire only once.
+    """
+
+    _SECOND = f'{UPSTREAM}/acme/order/owner/2'
+
+    def _authz_resp(self, status='pending'):
+        return _FakeResp({
+            'status': status,
+            'identifier': {'type': 'dns', 'value': 'owned.example.com'},
+            'challenges': [
+                {'type': 'dns-01', 'url': CHALL_URL, 'status': status, 'token': 't'},
+            ],
+        })
+
+    def _seed_second(self):
+        return _seed_order(
+            account_id='acct-b', client_jwk_thumbprint='thumb-b',
+            order_url=self._SECOND, upstream_order_url=self._SECOND,
+            certificate_url=f'{UPSTREAM}/acme/cert/bbb',
+        )
+
+    def test_each_account_resolves_to_its_own_order(self, app, monkeypatch):
+        with app.app_context():
+            _seed_order(account_id='acct-a', client_jwk_thumbprint='thumb-a')
+            self._seed_second()
+            svc = _make_svc(
+                app, monkeypatch, upstream_response=self._authz_resp('valid'),
+            )
+            for acct, thumb in (('acct-a', 'thumb-a'), ('acct-b', 'thumb-b')):
+                _authz, identifier = svc.get_authz(
+                    _b64(AUTHZ_URL),
+                    requester_account_id=acct, requester_thumbprint=thumb,
+                )
+                assert identifier['value'] == 'owned.example.com'
+
+    def test_third_account_still_denied(self, app, monkeypatch):
+        with app.app_context():
+            _seed_order(account_id='acct-a', client_jwk_thumbprint='thumb-a')
+            self._seed_second()
+            svc = _make_svc(app, monkeypatch)  # asserts upstream is never called
+            with pytest.raises(PermissionError):
+                svc.get_authz(
+                    _b64(AUTHZ_URL),
+                    requester_account_id='acct-c',
+                    requester_thumbprint='thumb-c',
+                )
+
+    def test_sibling_initiated_challenge_blocks_second_automation(
+        self, app, monkeypatch,
+    ):
+        import services.acme.acme_proxy_service as mod
+
+        started = []
+
+        class _Recorder:
+            def __init__(self, *a, **k):
+                started.append('thread-created')
+
+            def start(self):
+                started.append('thread-started')
+
+        with app.app_context():
+            order_a = _seed_order(
+                account_id='acct-a', client_jwk_thumbprint='thumb-a',
+            )
+            order_a.set_challenges_dict({CHALL_URL: {'status': 'initiated'}})
+            db.session.commit()
+            self._seed_second()
+
+            svc = _make_svc(
+                app, monkeypatch, upstream_response=self._authz_resp('pending'),
+            )
+            monkeypatch.setattr(mod.threading, 'Thread', _Recorder)
+            monkeypatch.setattr(
+                'api.v2.acme_domains.find_provider_for_domain',
+                lambda *_a, **_k: {'provider': object()},
+            )
+            monkeypatch.setattr(svc, '_get_account_thumbprint', lambda: 'x')
+
+            _authz, identifier = svc.get_authz(
+                _b64(AUTHZ_URL),
+                requester_account_id='acct-b', requester_thumbprint='thumb-b',
+            )
+            assert identifier['value'] == 'owned.example.com'
+            assert started == [], (
+                'account B must not start a second dns-01 automation for a '
+                'challenge a sibling order already initiated'
+            )
+
+
 class TestChallengeOwnership:
     """The owning order is resolved through the authz URL upstream returns in
     Link rel="up" — challenge and authz URLs live in disjoint namespaces, so

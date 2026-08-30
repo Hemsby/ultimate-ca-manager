@@ -81,7 +81,7 @@ _LINK_REL_UP_RE = re.compile(
 _cache_lock = threading.Lock()
 _directory_cache = {}        # upstream directory URL -> (stored_at, directory)
 _finalize_url_cache = {}     # upstream order URL     -> (stored_at, finalize URL)
-_challenge_order_cache = {}  # upstream challenge URL -> (stored_at, (order id, domain))
+_challenge_order_cache = {}  # per-requester challenge key -> (stored_at, (order id, domain))
 _nonce_pool = {}             # upstream directory URL -> [(stored_at, nonce), ...]
 
 
@@ -961,8 +961,13 @@ class AcmeProxyService:
             return []
         return [url for url in urls if isinstance(url, str)]
 
-    def _find_order_by_authz_url(self, authz_url: str):
-        """Proxy order owning an upstream authz URL — matched exactly.
+    def _orders_by_authz_url(self, authz_url: str):
+        """Every proxy order that recorded this exact upstream authz URL.
+
+        The proxy signs upstream with one shared account, so Let's Encrypt
+        reuses a single authorization across every downstream account that
+        ordered the same domain — the URL then maps to more than one local
+        order (#307).
 
         ``contains()`` is only a prefilter: as a LIKE '%url%' it also matches a
         *prefix* of a stored URL (".../authz-v3/99" inside ".../authz-v3/999"),
@@ -975,11 +980,83 @@ class AcmeProxyService:
         candidates = AcmeClientOrder.query.filter(
             AcmeClientOrder.is_proxy_order.is_(True),
             AcmeClientOrder.upstream_authz_urls.contains(authz_url),
-        ).all()
+        ).order_by(AcmeClientOrder.id).all()
+        return [o for o in candidates if authz_url in self._order_authz_urls(o)]
+
+    def _find_order_by_authz_url(self, authz_url: str, requester_account_id=None,
+                                 requester_thumbprint=None):
+        """Proxy order owning an upstream authz URL, resolved for the requester.
+
+        When one upstream authz is shared by several local orders (#307), the
+        order owned by the requester is returned so its ownership check passes;
+        with no owner match the lowest-id candidate is handed back and
+        _verify_order_ownership issues the denial, so #260 still holds.
+        """
+        return self._select_owning_order(
+            self._orders_by_authz_url(authz_url),
+            requester_account_id, requester_thumbprint,
+        )
+
+    @staticmethod
+    def _select_owning_order(candidates, requester_account_id=None,
+                             requester_thumbprint=None):
+        """Pick the candidate order that belongs to the requester.
+
+        Two passes keep the AcmeAccount reconciliation off the common path: a
+        direct match on either owner field first, the half-populated-binding
+        reconciliation only if that finds nothing. A single candidate, legacy
+        unbound rows, or no positive match all fall through to the first
+        candidate unchanged, for _verify_order_ownership to rule on.
+        """
+        if not candidates:
+            return None
+        if len(candidates) == 1:
+            return candidates[0]
         for order in candidates:
-            if authz_url in self._order_authz_urls(order):
+            if ((order.account_id
+                 and order.account_id == requester_account_id)
+                    or (order.client_jwk_thumbprint
+                        and order.client_jwk_thumbprint == requester_thumbprint)):
                 return order
-        return None
+        for order in candidates:
+            if AcmeProxyService._owner_matches_via_account_row(
+                order, requester_account_id, requester_thumbprint
+            ):
+                return order
+        return candidates[0]
+
+    @staticmethod
+    def _challenge_cache_key(chall_url, requester_account_id=None,
+                             requester_thumbprint=None):
+        """Per-requester key for _challenge_order_cache.
+
+        One upstream challenge URL resolves to a different local order per
+        downstream account when the upstream authorization is shared (#307), so
+        the cached (order id, domain) is scoped to the requester identity. Both
+        identity fields come from the same verified JWS, so an absent and an
+        empty value are equivalent here and collapse to the same key.
+        """
+        if not chall_url:
+            return ''
+        return '\x1f'.join((
+            chall_url,
+            str(requester_account_id or ''),
+            requester_thumbprint or '',
+        ))
+
+    @staticmethod
+    def _challenge_automation_started(chall_url, sibling_orders):
+        """True when dns-01 automation for this upstream challenge already ran.
+
+        The challenge is one upstream resource even when several local orders
+        point at it (#307); its DNS automation must fire once, so the initiated
+        flag is read across every sibling order, not only the one being served.
+        """
+        for order in sibling_orders or ():
+            state = (order.challenges_dict or {}).get(chall_url)
+            if state and state.get('status') in ('initiated', 'submitted'):
+                return True
+        return False
 
     def get_authz(self, authz_id_b64, requester_account_id=None,
                   requester_thumbprint=None):
@@ -999,10 +1076,14 @@ class AcmeProxyService:
 
         # Find the proxy order that contains this authz URL — every proxy
         # order records its upstream authz URLs at creation, so an untracked
-        # URL is either foreign or no longer served.
-        order = self._find_order_by_authz_url(authz_url)
-        if order is None:
+        # URL is either foreign or no longer served. One upstream authz can be
+        # shared by several local orders (#307), so resolve to the requester's.
+        candidates = self._orders_by_authz_url(authz_url)
+        if not candidates:
             raise ProxyResourceNotFoundError("Authorization not found")
+        order = self._select_owning_order(
+            candidates, requester_account_id, requester_thumbprint,
+        )
         self._verify_order_ownership(
             order, requester_account_id, requester_thumbprint,
             resource='Authorization',
@@ -1047,13 +1128,19 @@ class AcmeProxyService:
 
             # Remember which order (and identifier) this challenge belongs to so
             # respond_challenge can authorize before any upstream round-trip.
-            _cache_put(_challenge_order_cache, chall_url, (order.id, domain))
+            _cache_put(
+                _challenge_order_cache,
+                self._challenge_cache_key(
+                    chall_url, requester_account_id, requester_thumbprint,
+                ),
+                (order.id, domain),
+            )
 
             # Check if we should trigger automation for this challenge
             # We trigger it as soon as the client fetches the authorization
             if chall.get('status') == 'pending':
                 challenges_data = order.challenges_dict
-                if chall_url not in challenges_data or challenges_data[chall_url].get('status') != 'initiated':
+                if not self._challenge_automation_started(chall_url, candidates):
                     # Trigger automation in background
                     token = chall.get('token')
                     jwk_thumbprint = self._get_account_thumbprint()
@@ -1117,7 +1204,9 @@ class AcmeProxyService:
         # Resolve and authorize *before* any upstream call when possible, so an
         # unauthorized caller cannot make the proxy sign a request with the
         # upstream CA account key at all.
-        order, domain = self._resolve_challenge_order(chall_url)
+        order, domain = self._resolve_challenge_order(
+            chall_url, requester_account_id, requester_thumbprint,
+        )
         if order is not None:
             self._verify_order_ownership(
                 order, requester_account_id, requester_thumbprint,
@@ -1146,14 +1235,22 @@ class AcmeProxyService:
                 raise ProxyResourceNotFoundError(
                     "Challenge not found: upstream returned no Link rel=\"up\" header"
                 )
-            order = self._find_order_by_authz_url(authz_url)
+            order = self._find_order_by_authz_url(
+                authz_url, requester_account_id, requester_thumbprint,
+            )
             if order is None:
                 raise ProxyResourceNotFoundError("Challenge not found")
             self._verify_order_ownership(
                 order, requester_account_id, requester_thumbprint,
                 resource='Challenge',
             )
-            _cache_put(_challenge_order_cache, chall_url, (order.id, None))
+            _cache_put(
+                _challenge_order_cache,
+                self._challenge_cache_key(
+                    chall_url, requester_account_id, requester_thumbprint,
+                ),
+                (order.id, None),
+            )
 
         if challenge_type != 'dns-01':
             raise ProxyDns01OnlyError(
@@ -1166,9 +1263,12 @@ class AcmeProxyService:
             challenge_data['url'] = f"{self.base_url}/challenge/{chall_id_b64}"
             return challenge_data, self._get_authz_link(resp.headers.get('Link'))
 
-        # If still pending, check if we already triggered automation in get_authz
+        # If still pending, check if automation already started — for this order
+        # in get_authz, or for a sibling order sharing this upstream challenge
+        # when the authz is reused across downstream accounts (#307).
         challenges_data = order.challenges_dict
-        if chall_url in challenges_data and challenges_data[chall_url].get('status') == 'initiated':
+        siblings = self._orders_by_authz_url(authz_url) if authz_url else [order]
+        if self._challenge_automation_started(chall_url, siblings):
             # Already triggered, just return 'processing'
             challenge_data['status'] = 'processing'
             challenge_data['url'] = f"{self.base_url}/challenge/{chall_id_b64}"
@@ -1180,7 +1280,13 @@ class AcmeProxyService:
 
         if not domain:
             domain = self._challenge_domain(order, authz_url)
-            _cache_put(_challenge_order_cache, chall_url, (order.id, domain))
+            _cache_put(
+                _challenge_order_cache,
+                self._challenge_cache_key(
+                    chall_url, requester_account_id, requester_thumbprint,
+                ),
+                (order.id, domain),
+            )
 
         provider_info = find_provider_for_domain(domain)
         if not provider_info:
@@ -1196,14 +1302,28 @@ class AcmeProxyService:
         )
         thread.name = f"ACMEProxy-DNS-{domain}"
         thread.daemon = True
-        thread.start()
+
+        # Persist the initiated flag before the thread starts so a sibling order
+        # sharing this upstream challenge (#307) does not launch a second one.
+        # Mirror get_authz: only start the thread once the flag is committed.
+        challenges_data[chall_url] = {
+            'status': 'initiated', 'started_at': datetime.now().isoformat(),
+        }
+        order.set_challenges_dict(challenges_data)
+        try:
+            db.session.commit()
+            thread.start()
+        except Exception as exc:
+            db.session.rollback()
+            logger.error(f"Failed to start dns-01 automation: {exc}")
 
         challenge_data['status'] = 'processing'
         challenge_data['url'] = f"{self.base_url}/challenge/{chall_id_b64}"
 
         return challenge_data, self._get_authz_link(resp.headers.get('Link'))
 
-    def _resolve_challenge_order(self, chall_url):
+    def _resolve_challenge_order(self, chall_url, requester_account_id=None,
+                                 requester_thumbprint=None):
         """(order, identifier) for a challenge URL, without any upstream call.
 
         Two local routes, both exact:
@@ -1223,7 +1343,11 @@ class AcmeProxyService:
         from models import AcmeClientOrder
 
         cached = _cache_get(
-            _challenge_order_cache, chall_url, _CHALLENGE_ORDER_CACHE_TTL_SEC
+            _challenge_order_cache,
+            self._challenge_cache_key(
+                chall_url, requester_account_id, requester_thumbprint,
+            ),
+            _CHALLENGE_ORDER_CACHE_TTL_SEC,
         )
         if cached:
             order_id, domain = cached
@@ -1235,7 +1359,10 @@ class AcmeProxyService:
         # Bounded: only the two nearest parent paths, and never above
         # scheme://host/<segment>.
         for depth in range(len(parts) - 1, max(len(parts) - 3, 3), -1):
-            order = self._find_order_by_authz_url('/'.join(parts[:depth]))
+            order = self._find_order_by_authz_url(
+                '/'.join(parts[:depth]),
+                requester_account_id, requester_thumbprint,
+            )
             if order is not None:
                 return order, None
         return None, None
