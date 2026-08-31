@@ -36,22 +36,26 @@ fi
 # ── 2. Frontend unit tests ────────────────────────────────────
 echo -n "  Frontend tests... "
 FRONT_OUT=$(cd "$ROOT/frontend" && npx vitest run --no-coverage 2>&1)
-if echo "$FRONT_OUT" | grep -q "Tests.*passed"; then
-    RESULT=$(echo "$FRONT_OUT" | grep "Tests" | tail -1)
-    echo -e "${GREEN}✅${NC} $RESULT"
+FRONT_RESULT=$(echo "$FRONT_OUT" | grep "Tests" | tail -1)
+# Strict: "N failed | M passed" must fail, not sneak through on "passed".
+if echo "$FRONT_RESULT" | grep -q "passed" && ! echo "$FRONT_RESULT" | grep -qE "fail|error"; then
+    echo -e "${GREEN}✅${NC} $FRONT_RESULT"
 else
-    echo -e "${RED}❌${NC}"
+    echo -e "${RED}❌${NC} $FRONT_RESULT"
     echo -e "${YELLOW}    Run 'cd frontend && npx vitest run' for details${NC}"
     FAILED=1
 fi
 
 # ── 3. Backend tests ──────────────────────────────────────────
+# Single parallel run (pytest-xdist; --dist loadfile is mandatory, tests
+# share state within a file). Strict: any "failed"/"error" in the summary
+# fails the hook — "1 failed, N passed" used to be accepted.
 echo -n "  Backend tests... "
-if cd "$ROOT/backend" && python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1 | grep -q "passed"; then
-    RESULT=$(python3 -m pytest tests/ -q --tb=no 2>&1 | tail -1)
-    echo -e "${GREEN}✅${NC} $RESULT"
+BACK_RESULT=$(cd "$ROOT/backend" && python3 -m pytest tests/ -q --tb=no -n auto --dist loadfile 2>&1 | tail -1)
+if echo "$BACK_RESULT" | grep -q "passed" && ! echo "$BACK_RESULT" | grep -qE "failed|error"; then
+    echo -e "${GREEN}✅${NC} $BACK_RESULT"
 else
-    echo -e "${RED}❌${NC}"
+    echo -e "${RED}❌${NC} $BACK_RESULT"
     echo -e "${YELLOW}    Run 'cd backend && python3 -m pytest tests/ -v' for details${NC}"
     FAILED=1
 fi
