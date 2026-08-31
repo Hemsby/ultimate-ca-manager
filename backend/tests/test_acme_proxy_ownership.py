@@ -676,3 +676,54 @@ class TestEndpointOwnership:
             bob_key, bob_kid,
         )
         assert r_ghost.status_code == 404
+
+
+class TestSameAccountPendingOrderReuse:
+    """#303 (minor 4): a retried new-order for the same account and the same
+    identifier set returns the still-pending order instead of opening a new
+    upstream order every time."""
+
+    def _seed(self, thumbprint='thumb-reuse', domains='["reuse.example.com"]',
+              status='pending', upstream='https://ca.example/acme/order/reuse-1'):
+        return _seed_order(
+            account_id='acct-reuse', client_jwk_thumbprint=thumbprint,
+            domains=domains, status=status,
+            order_url=upstream, upstream_order_url=upstream,
+            certificate_url=f'{UPSTREAM}/acme/cert/reuse',
+        )
+
+    def test_reuses_pending_order_when_upstream_still_pending(self, app, monkeypatch):
+        with app.app_context():
+            self._seed()
+            svc = _make_svc(app, monkeypatch, upstream_response=_FakeResp({
+                'status': 'pending',
+                'authorizations': ['https://ca.example/acme/authz-v3/r1'],
+                'finalize': 'https://ca.example/acme/order/reuse-1/finalize',
+            }))
+            result = svc._find_reusable_pending_order(
+                ['reuse.example.com'], 'thumb-reuse')
+            assert result is not None
+            order_payload, order_id = result
+            assert order_payload['finalize'].endswith(f'/order/{order_id}/finalize')
+            assert order_payload['authorizations'][0].startswith(svc.base_url)
+
+    def test_no_reuse_for_other_thumbprint_or_domains(self, app, monkeypatch):
+        with app.app_context():
+            self._seed()
+            svc = _make_svc(app, monkeypatch)  # upstream never called
+            assert svc._find_reusable_pending_order(
+                ['reuse.example.com'], 'thumb-other') is None
+            assert svc._find_reusable_pending_order(
+                ['different.example.com'], 'thumb-reuse') is None
+            assert svc._find_reusable_pending_order(
+                ['reuse.example.com'], None) is None
+
+    def test_no_reuse_when_upstream_no_longer_pending(self, app, monkeypatch):
+        with app.app_context():
+            self._seed(upstream='https://ca.example/acme/order/reuse-2')
+            svc = _make_svc(app, monkeypatch, upstream_response=_FakeResp({
+                'status': 'invalid',
+                'authorizations': [],
+            }))
+            assert svc._find_reusable_pending_order(
+                ['reuse.example.com'], 'thumb-reuse') is None

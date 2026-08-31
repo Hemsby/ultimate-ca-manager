@@ -779,6 +779,15 @@ class AcmeProxyService:
                 raise Exception(f"No DNS provider configured for domain: {domain}. Configure it in ACME > Domains.")
             domain_providers[domain] = provider
 
+        # Same-account dedupe (#303 minor 4): a client that retries new-order
+        # for the same identifiers (Traefik does) must get its still-pending
+        # order back, like upstream CAs do, instead of opening a new upstream
+        # order every time. Cross-account sharing is #310's job — the match is
+        # strictly on this requester's own orders.
+        existing = self._find_reusable_pending_order(domains, client_thumbprint)
+        if existing is not None:
+            return existing
+
         # Forward to upstream Let's Encrypt
         payload = {
             "identifiers": identifiers,
@@ -853,16 +862,61 @@ class AcmeProxyService:
             )
 
         # Rewrite URLs in response to point to Proxy
-        # We encode upstream URLs into base64 IDs
-        order_id = self._proxy_id(upstream_location)
+        return self._rewrite_order_response(upstream_order, upstream_location)
 
+    def _rewrite_order_response(self, upstream_order, upstream_location):
+        """Rewrite upstream URLs (authorizations, finalize) to proxy URLs."""
+        order_id = self._proxy_id(upstream_location)
         upstream_order['authorizations'] = [
             f"{self.base_url}/authz/{self._proxy_id(authz_url)}"
             for authz_url in upstream_order['authorizations']
         ]
         upstream_order['finalize'] = f"{self.base_url}/order/{order_id}/finalize"
-
         return upstream_order, order_id
+
+    def _find_reusable_pending_order(self, domains, client_thumbprint):
+        """Return the rewritten still-pending order of this requester for the
+        exact same identifier set, or None (#303 minor 4).
+
+        The upstream order is re-fetched to confirm it is still ``pending``;
+        any doubt (fetch failure, other status, missing thumbprint) falls
+        through to creating a fresh order.
+        """
+        from models import AcmeClientOrder
+
+        if not client_thumbprint:
+            return None
+        wanted = sorted(domains)
+        candidates = (AcmeClientOrder.query
+                      .filter_by(is_proxy_order=True, status='pending',
+                                 client_jwk_thumbprint=client_thumbprint)
+                      .order_by(AcmeClientOrder.id.desc())
+                      .limit(20).all())
+        for order in candidates:
+            if sorted(order.domains_list or []) != wanted:
+                continue
+            upstream_url = order.upstream_order_url or order.order_url
+            if not upstream_url:
+                continue
+            try:
+                resp = self._post_with_account(upstream_url, "")
+                if resp.status_code != 200:
+                    continue
+                upstream_order = resp.json()
+            except Exception as exc:
+                logger.debug(f"Pending-order reuse: upstream fetch failed: {exc}")
+                continue
+            if upstream_order.get('status') != 'pending':
+                continue
+            logger.info(
+                "[ACME Proxy] Reusing pending order %s for %s (same account, "
+                "same identifiers)", order.id, ', '.join(wanted),
+            )
+            if upstream_order.get('finalize'):
+                _cache_put(_finalize_url_cache, upstream_url,
+                           upstream_order['finalize'])
+            return self._rewrite_order_response(upstream_order, upstream_url)
+        return None
 
     @staticmethod
     def _verify_order_ownership(local_order, requester_account_id=None,

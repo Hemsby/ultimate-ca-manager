@@ -161,6 +161,14 @@ def regenerate_https_cert():
 
         current_app.logger.info(f"Regenerated HTTPS certificate for {common_name}")
 
+        # A regenerated self-signed certificate replaces any bound managed
+        # certificate: drop the binding so renewals stop re-materializing (#303)
+        try:
+            from services.https_binding import set_bound_refid
+            set_bound_refid('')
+        except Exception as e:
+            current_app.logger.warning(f"Could not clear HTTPS binding: {e}")
+
         AuditService.log_action(
             action='https_regenerate',
             resource_type='system',
@@ -267,6 +275,13 @@ def apply_https_cert():
             pass  # ucm user doesn't exist (or non-POSIX), skip chown
 
         current_app.logger.info(f"Applied certificate {cert.refid} as HTTPS cert")
+
+        # Remember the binding so a renewal re-materializes the files (#303)
+        try:
+            from services.https_binding import set_bound_refid
+            set_bound_refid(cert.refid)
+        except Exception as e:
+            current_app.logger.warning(f"Could not persist HTTPS binding: {e}")
 
         AuditService.log_action(
             action='https_apply',

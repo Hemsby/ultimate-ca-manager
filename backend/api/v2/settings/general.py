@@ -200,6 +200,21 @@ def update_general_settings():
         normalized, err = validate_admin_base_url(data.get('base_url') or '')
         if err:
             return error_response(err, 400)
+        # Reachability guard (#303): a wrong base_url redirects the whole
+        # admin UI (IP access included) to a dead hostname. Refuse unless the
+        # operator explicitly overrides with {"force": true} (e.g. DNS not
+        # published yet). UCM_DISABLE_CANONICAL_REDIRECT=1 is the recovery
+        # escape hatch for an already locked-out instance.
+        if normalized and not data.get('force'):
+            from utils.public_endpoints import probe_admin_base_url
+            probe_err = probe_admin_base_url(normalized)
+            if probe_err:
+                return error_response(
+                    f'base_url looks unreachable: {probe_err}. Fix it, or '
+                    'resend with "force": true to apply anyway. If the UI '
+                    'ever becomes unreachable because of this setting, start '
+                    'the service with UCM_DISABLE_CANONICAL_REDIRECT=1.', 400)
+        data.pop('force', None)
         data['base_url'] = normalized or ''
 
     if 'protocol_base_url' in data:

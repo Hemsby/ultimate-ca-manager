@@ -91,10 +91,21 @@ def init_public_host_middleware(app):
         current_host = request.host.split(':')[0].lower()
         admin_base = get_admin_base_url()
 
+        # Recovery escape hatch (#303): operators locked out by a wrong
+        # base_url can disable the canonical redirect entirely via env.
+        import os
+        if os.environ.get('UCM_DISABLE_CANONICAL_REDIRECT', '').lower() in ('1', 'true', 'yes'):
+            return None
+
         # Explicit base_url: redirect IP and alias hostnames to canonical admin URL.
         if admin_base:
             admin_host = get_admin_public_host()
             if admin_host and current_host != admin_host:
+                from utils.public_endpoints import admin_host_resolves
+                if not admin_host_resolves(admin_host):
+                    # Dead canonical host: serving on the requested host beats
+                    # redirecting every request into a wall (#303).
+                    return None
                 target = build_canonical_redirect_url(request.full_path.rstrip('?'))
                 if target:
                     return redirect(target, code=302)

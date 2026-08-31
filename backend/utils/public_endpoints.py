@@ -368,8 +368,16 @@ def _classify_preflight_dns(hostname: str, ips: list[str], error: Optional[str])
 
 
 def validate_admin_base_url(raw: str) -> tuple[Optional[str], Optional[str]]:
-    """Return (normalized_url, error_message). Admin URL must be HTTPS."""
-    parsed = parse_public_url(raw, default_scheme='https')
+    """Return (normalized_url, error_message). Admin URL must be HTTPS.
+
+    An empty value is valid and clears the setting (the protocol variant
+    always behaved that way; the admin variant rejected it, so the base URL
+    could never be cleared through the API) (#303).
+    """
+    text = (raw or '').strip()
+    if not text:
+        return '', None
+    parsed = parse_public_url(text, default_scheme='https')
     if not parsed:
         return None, 'base_url must be a valid HTTPS URL (scheme, FQDN, optional port; no path)'
     if parsed.scheme != 'https':
@@ -378,6 +386,59 @@ def validate_admin_base_url(raw: str) -> tuple[Optional[str], Optional[str]]:
     if ssrf_err:
         return None, ssrf_err
     return parsed.normalized, None
+
+
+def probe_admin_base_url(normalized: str) -> Optional[str]:
+    """Best-effort reachability check of a candidate admin base URL (#303).
+
+    Returns an error message when the host does not resolve or nothing
+    answers on the HTTPS port, None when it looks reachable. Deliberately
+    cheap: DNS + TCP connect, no TLS validation (the admin cert is often
+    self-signed or not yet issued for the new name).
+    """
+    import socket
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(normalized)
+    host = parts.hostname
+    port = parts.port or 443
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except OSError:
+        return f"'{host}' does not resolve in DNS"
+    last_err = None
+    for family, socktype, proto, _cn, addr in infos[:3]:
+        try:
+            with socket.socket(family, socktype, proto) as sock:
+                sock.settimeout(3)
+                sock.connect(addr)
+                return None
+        except OSError as exc:
+            last_err = exc
+    return f"nothing answers on {host}:{port} ({last_err})"
+
+
+_RESOLVE_CACHE = {}
+
+
+def admin_host_resolves(host: str, ttl: int = 60) -> bool:
+    """Cached DNS check used by the canonical redirect (#303): when the
+    configured admin host stopped resolving, redirecting every request to it
+    would lock the operator out — the middleware skips the redirect instead."""
+    import socket
+    import time
+
+    now = time.monotonic()
+    cached = _RESOLVE_CACHE.get(host)
+    if cached and now - cached[0] < ttl:
+        return cached[1]
+    try:
+        socket.getaddrinfo(host, None)
+        ok = True
+    except OSError:
+        ok = False
+    _RESOLVE_CACHE[host] = (now, ok)
+    return ok
 
 
 def validate_protocol_base_url(raw: str) -> tuple[Optional[str], Optional[str]]:

@@ -283,7 +283,11 @@ class TestPreflightDiagnostics:
 
 
 class TestMiddlewareRedirect:
-    def test_spoofed_localhost_host_from_remote_ip_redirects(self, app, clear_public_endpoint_settings):
+    def test_spoofed_localhost_host_from_remote_ip_redirects(self, app, clear_public_endpoint_settings, monkeypatch):
+        # #303: the redirect steps aside when the canonical host stops
+        # resolving — the test host is fictional, so resolution is stubbed.
+        import utils.public_endpoints as pe
+        monkeypatch.setattr(pe, 'admin_host_resolves', lambda _h, ttl=60: True)
         _set_config(app, 'base_url', 'https://admin.ucm.example.com:8443')
         client = app.test_client()
         resp = client.get(
@@ -431,14 +435,18 @@ class TestPatchValidation:
         )
         assert resp.status_code == 400
 
-    def test_patch_accepts_valid_base_url(self, auth_client, clear_public_endpoint_settings):
+    def test_patch_accepts_valid_base_url(self, auth_client, clear_public_endpoint_settings, monkeypatch):
+        import utils.public_endpoints as pe
+        monkeypatch.setattr(pe, 'probe_admin_base_url', lambda _u: None)
         resp = auth_client.patch(
             '/api/v2/settings/general',
             json={'base_url': 'https://admin.ucm.example.com:8443'},
         )
         assert resp.status_code == 200
 
-    def test_public_endpoints_get(self, auth_client, clear_public_endpoint_settings):
+    def test_public_endpoints_get(self, auth_client, clear_public_endpoint_settings, monkeypatch):
+        import utils.public_endpoints as pe
+        monkeypatch.setattr(pe, 'probe_admin_base_url', lambda _u: None)
         auth_client.patch(
             '/api/v2/settings/general',
             json={
