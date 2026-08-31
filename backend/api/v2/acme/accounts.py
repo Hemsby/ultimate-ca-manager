@@ -218,7 +218,10 @@ def update_acme_account(account_id):
     data = request.json or {}
     if 'email' not in data:
         return error_response('email field required', 400)
-    email = (data.get('email') or '').strip()
+    email = data.get('email')
+    if email is not None and not isinstance(email, str):
+        return error_response('email must be a string', 400)
+    email = (email or '').strip()
     if len(email) > 254:
         return error_response('contact value too long', 400)
 

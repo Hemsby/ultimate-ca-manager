@@ -48,5 +48,11 @@ class TestAccountEmailPatch:
         assert self._patch(auth_client, acme_acct, {}).status_code == 400
         assert self._patch(auth_client, acme_acct, {'email': 'x' * 300}).status_code == 400
 
+    def test_non_string_email_rejected(self, auth_client, acme_acct):
+        assert self._patch(auth_client, acme_acct, {'email': 123}).status_code == 400
+        assert self._patch(auth_client, acme_acct, {'email': ['a@b.c']}).status_code == 400
+        # null clears the contact like an empty string
+        assert self._patch(auth_client, acme_acct, {'email': None}).status_code == 200
+
     def test_unknown_account_404(self, auth_client):
         assert self._patch(auth_client, 'nope', {'email': 'a@b.c'}).status_code == 404
