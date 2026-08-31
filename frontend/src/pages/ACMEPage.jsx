@@ -1087,6 +1087,7 @@ export default function ACMEPage() {
               onDetailTabChange={setActiveDetailTab}
               orders={orders}
               challenges={challenges}
+              onChanged={loadData}
             />
           ) : (
             <CertDetailPanel cert={selectedCert} />

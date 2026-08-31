@@ -1669,7 +1669,11 @@
     "dnsPersistEnabledDesc": "通过绑定 ACME 账户的持久 TXT 记录 _validation-persist.<domain> 进行验证。客户端续期时无需写入 DNS 记录。",
     "dnsPersistIssuerNote": "TXT 记录的签发者域名：{{domains}}（来自 CAA 标识，未设置时使用 ACME 公共主机名）。",
     "dnsPersistSection": "持久 DNS 验证（dns-persist-01）",
-    "dnsPersistWarning": "风险：ACME 账户密钥泄露后，在 TXT 记录删除前将被授予该域名的签发能力（草案 §7.2）。仅为您控制的账户和区域启用。"
+    "dnsPersistWarning": "风险：ACME 账户密钥泄露后，在 TXT 记录删除前将被授予该域名的签发能力（草案 §7.2）。仅为您控制的账户和区域启用。",
+    "editEmail": "编辑邮箱",
+    "editEmailCaveat": "根据 RFC 8555，contact 属于 ACME 客户端：其下一次账户更新可能会覆盖此值。",
+    "emailUpdated": "账户邮箱已更新",
+    "letsEncryptOrders": "Let's Encrypt 订单"
   },
   "scep": {
     "title": "SCEP协议",
@@ -2761,7 +2765,11 @@
     "crlAutoDeleteExpiredRevoked": "自动删除已过期的吊销证书",
     "crlAutoDeleteExpiredRevokedDesc": "在 CRL 生成期间自动清除吊销证书记录（仅限已过期的）。禁用时，已过期的吊销证书将作为历史记录保留。",
     "crlAutoPurgeStaleSerials": "自动清理过期的已吊销序列号",
-    "crlAutoPurgeStaleSerialsDesc": "在 CRL 生成期间自动删除已吊销序列号记录（仅限已过期的）。禁用时，过期记录将作为续期历史保留。"
+    "crlAutoPurgeStaleSerialsDesc": "在 CRL 生成期间自动删除已吊销序列号记录（仅限已过期的）。禁用时，过期记录将作为续期历史保留。",
+    "httpsBound": "绑定的证书",
+    "httpsBoundDesc": "该证书续期后会自动应用到 HTTPS（重新生成文件并重启服务）。",
+    "httpsUnbind": "停止跟随续期",
+    "httpsUnbindDone": "已解除 HTTPS 证书绑定"
   },
   "account": {
     "profile": "个人资料",

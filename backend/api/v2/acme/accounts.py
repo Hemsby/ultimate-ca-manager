@@ -200,6 +200,43 @@ def get_acme_account(account_id):
     })
 
 
+@bp.route('/api/v2/acme/accounts/<string:account_id>', methods=['PATCH'])
+@require_auth(['write:acme'])
+def update_acme_account(account_id):
+    """Admin edit of a local ACME account's contact e-mail (#303 major 4).
+
+    Per RFC 8555 the ``contact`` field belongs to the ACME client, which may
+    silently overwrite this value on its next account update — the UI spells
+    that caveat out. An empty value clears the contact ("tag only" accounts
+    stay possible, nothing is validated beyond a minimal mailbox shape).
+    """
+    account = resolve_acme_account(account_id)
+    if not account:
+        return error_response('Account not found', 404)
+
+    data = request.json or {}
+    if 'email' not in data:
+        return error_response('email field required', 400)
+    email = (data.get('email') or '').strip()
+    if email and ('@' not in email or ' ' in email):
+        return error_response('email does not look like a mailbox address', 400)
+
+    account.contact = json.dumps([f'mailto:{email}']) if email else None
+    if not safe_commit('acme_account_update'):
+        return error_response('Failed to update account', 500)
+
+    AuditService.log_action(
+        action='acme_account_update', resource_type='acme_account',
+        resource_id=account.account_id, resource_name=email or '(cleared)',
+        details=f'ACME account contact e-mail set to {email or "(empty)"} by admin',
+        success=True,
+    )
+    return success_response(
+        data={'account_id': account.account_id, 'contact': account.contact_list},
+        message='Account updated',
+    )
+
+
 @bp.route('/api/v2/acme/accounts/<string:account_id>', methods=['DELETE'])
 @require_auth(['delete:acme'])
 def delete_acme_account(account_id):

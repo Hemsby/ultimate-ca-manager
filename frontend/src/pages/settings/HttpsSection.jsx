@@ -3,7 +3,7 @@ import { Lock, Certificate, MagnifyingGlass, ShieldCheck, ArrowsClockwise, Key, 
 import { Button, Badge, DetailHeader, DetailSection, DetailGrid, DetailField, DetailContent } from '../../components'
 import { formatDate } from '../../lib/utils'
 
-export default function HttpsSection({ httpsInfo, selectedHttpsCert, setSelectedHttpsCert, setShowCertPicker, handleApplyUcmCert, handleRegenerateHttpsCert, setShowHttpsImportModal }) {
+export default function HttpsSection({ httpsInfo, selectedHttpsCert, setSelectedHttpsCert, setShowCertPicker, handleApplyUcmCert, handleRegenerateHttpsCert, setShowHttpsImportModal, onUnbindHttpsCert }) {
   const { t } = useTranslation()
   return (
     <DetailContent>
@@ -43,6 +43,21 @@ export default function HttpsSection({ httpsInfo, selectedHttpsCert, setSelected
             fullWidth
           />
         </DetailGrid>
+        {httpsInfo?.bound_certificate && (
+          <div className="mt-3 p-3 rounded-lg border border-border bg-bg-tertiary flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-text-primary truncate">
+                {t('settings.httpsBound')}: {httpsInfo.bound_certificate.descr || httpsInfo.bound_certificate.refid}
+              </p>
+              <p className="text-xs text-text-secondary mt-0.5">{t('settings.httpsBoundDesc')}</p>
+            </div>
+            {onUnbindHttpsCert && (
+              <Button type="button" variant="ghost" size="sm" onClick={onUnbindHttpsCert}>
+                {t('settings.httpsUnbind')}
+              </Button>
+            )}
+          </div>
+        )}
       </DetailSection>
 
       <DetailSection title={t('settings.useUCMCert')} icon={Certificate} iconClass="icon-bg-violet">

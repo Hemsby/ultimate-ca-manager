@@ -1526,6 +1526,15 @@ export default function SettingsPage() {
             handleApplyUcmCert={handleApplyUcmCert}
             handleRegenerateHttpsCert={handleRegenerateHttpsCert}
             setShowHttpsImportModal={setShowHttpsImportModal}
+            onUnbindHttpsCert={async () => {
+              try {
+                await systemService.unbindHttpsCert()
+                showSuccess(t('settings.httpsUnbindDone'))
+                loadHttpsInfo()
+              } catch (err) {
+                showError(err.message)
+              }
+            }}
           />
         )
       case 'updates':

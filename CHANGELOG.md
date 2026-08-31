@@ -7,6 +7,15 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
+## [Unreleased]
+
+### Added
+- Local ACME accounts: the contact e-mail can now be edited from the account detail (the piece of #303 that had been accepted but not shipped in 2.217). Per RFC 8555 the contact belongs to the ACME client and its next account update may overwrite the value; the edit form says so (#303, reported by @gb-123-git)
+- Settings > HTTPS now shows which certificate is bound to the web UI (renewals applied automatically) with a button to stop following renewals; the Let's Encrypt orders list gains the same status filter and naming as the Local orders view (#303, reported by @gb-123-git)
+
+### Fixed
+- ACME account detail: challenge status badges show valid in green and pending in yellow again (the API capitalizes statuses, the badge mapping compared lowercase, so everything rendered red); the scheduled purge and the purge button now also remove the leftover pending sibling challenges of authorizations validated before 2.217 (#303, reported by @gb-123-git)
+
 ## [2.217] - 2026-08-31
 
 ### Fixed

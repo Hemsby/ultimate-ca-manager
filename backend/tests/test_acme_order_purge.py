@@ -97,6 +97,40 @@ class TestPurge:
                 authorization_id=authz_id).count() == 0
 
 
+class TestStaleSiblingCleanup:
+    def test_pending_siblings_of_valid_authz_are_removed(self, app, acct):
+        with app.app_context():
+            oid = _mk_order(acct, status='valid', expired=False, with_children=False)
+            order = db.session.get(AcmeOrder, oid)
+            authz = AcmeAuthorization(
+                order_id=order.order_id, account_id=acct,
+                identifier=json.dumps({'type': 'dns', 'value': 'stale.example.com'}),
+                status='valid',
+            )
+            db.session.add(authz); db.session.flush()
+            db.session.add(AcmeChallenge(authorization_id=authz.authorization_id,
+                                         type='dns-01', status='valid'))
+            db.session.add(AcmeChallenge(authorization_id=authz.authorization_id,
+                                         type='http-01', status='pending'))
+            db.session.commit()
+            authz_id = authz.authorization_id
+
+            purge_expired_orders()
+
+            remaining = AcmeChallenge.query.filter_by(
+                authorization_id=authz_id).all()
+            assert [c.status for c in remaining] == ['valid']
+            # l'ordre valid (historique) est conservé
+            assert db.session.get(AcmeOrder, oid) is not None
+            # cleanup
+            for c in remaining:
+                db.session.delete(c)
+            db.session.delete(AcmeAuthorization.query.filter_by(
+                authorization_id=authz_id).first())
+            db.session.delete(db.session.get(AcmeOrder, oid))
+            db.session.commit()
+
+
 class TestOrdersAdminApi:
     def test_list_is_paginated(self, app, auth_client, acct):
         with app.app_context():

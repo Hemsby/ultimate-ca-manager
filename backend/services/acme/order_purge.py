@@ -62,6 +62,20 @@ def purge_expired_orders(limit: int = BATCH_LIMIT) -> dict:
         _delete_authz(authz)
         stats['authorizations'] += 1
 
+    # Siblings deprovisioned at validation time since 2.217, but rows
+    # validated earlier (or valid orders kept as history) still store
+    # pending/processing challenges next to the valid one — dead state the
+    # UI would keep showing (#303 follow-up). Delete them here.
+    stale = (AcmeChallenge.query
+             .join(AcmeAuthorization,
+                   AcmeChallenge.authorization_id == AcmeAuthorization.authorization_id)
+             .filter(AcmeAuthorization.status == 'valid',
+                     AcmeChallenge.status.in_(('pending', 'processing')))
+             .limit(limit).all())
+    for challenge in stale:
+        db.session.delete(challenge)
+    stats['challenges'] += len(stale)
+
     try:
         db.session.commit()
     except Exception as exc:

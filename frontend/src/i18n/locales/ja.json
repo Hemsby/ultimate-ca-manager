@@ -1669,7 +1669,11 @@
     "dnsPersistEnabled": "dns-persist-01 チャレンジを提供 (draft-ietf-acme-dns-persist)",
     "dnsPersistEnabledDesc": "_validation-persist.<ドメイン> の永続 TXT レコードで検証。ACME アカウントに紐付け。更新時の DNS 書き込み不要。",
     "dnsPersistWarning": "リスク：ACME アカウント鍵の漏洩により、TXT レコードが削除されるまで当該ドメインへの発行が可能になります（draft §7.2）。管理下のアカウント・ゾーンにのみ有効化してください。",
-    "dnsPersistIssuerNote": "TXT レコードの発行者ドメイン名：{{domains}}（CAA 識別子から取得、未設定時は ACME 公開ホスト名）。"
+    "dnsPersistIssuerNote": "TXT レコードの発行者ドメイン名：{{domains}}（CAA 識別子から取得、未設定時は ACME 公開ホスト名）。",
+    "editEmail": "メールを編集",
+    "editEmailCaveat": "RFC 8555 では contact は ACME クライアントに属します。クライアントの次回のアカウント更新でこの値が上書きされる可能性があります。",
+    "emailUpdated": "アカウントのメールを更新しました",
+    "letsEncryptOrders": "Let's Encrypt の注文"
   },
   "scep": {
     "title": "SCEPプロトコル",
@@ -2761,7 +2765,11 @@
     "crlAutoDeleteExpiredRevoked": "期限切れの失効証明書を自動削除",
     "crlAutoDeleteExpiredRevokedDesc": "CRL生成時に失効証明書レコード（期限切れのもののみ）を自動的に削除します。無効にすると、期限切れの失効証明書は履歴レコードとして保持されます。",
     "crlAutoPurgeStaleSerials": "古い失効シリアル番号を自動削除",
-    "crlAutoPurgeStaleSerialsDesc": "CRL生成時に失効シリアル番号レコード（期限切れのもののみ）を自動的に削除します。無効にすると、古いレコードは更新履歴として保持されます。"
+    "crlAutoPurgeStaleSerialsDesc": "CRL生成時に失効シリアル番号レコード（期限切れのもののみ）を自動的に削除します。無効にすると、古いレコードは更新履歴として保持されます。",
+    "httpsBound": "紐付けられた証明書",
+    "httpsBoundDesc": "この証明書の更新は自動的に HTTPS に適用されます（ファイル再生成、サービス再起動）。",
+    "httpsUnbind": "更新の追従を停止",
+    "httpsUnbindDone": "HTTPS 証明書の紐付けを解除しました"
   },
   "account": {
     "profile": "プロフィール",

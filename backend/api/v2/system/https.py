@@ -67,7 +67,25 @@ def get_https_cert_info():
         fingerprint = cert.fingerprint(hashes.SHA256()).hex()
         fingerprint_formatted = ':'.join(fingerprint[i:i+2].upper() for i in range(0, len(fingerprint), 2))
 
+        # Dedicated binding (#303 M1): which managed certificate follows
+        # renewals automatically, surfaced so the UI can show it (#303 follow-up)
+        bound = None
+        try:
+            from services.https_binding import get_bound_refid
+            bound_refid = get_bound_refid()
+            if bound_refid:
+                from models import Certificate
+                row = Certificate.query.filter_by(refid=bound_refid).first()
+                bound = {
+                    'refid': bound_refid,
+                    'descr': row.descr if row else None,
+                    'exists': bool(row and row.crt and row.prv),
+                }
+        except Exception as e:
+            logger.warning(f"Could not resolve HTTPS binding: {e}")
+
         return success_response(data={
+            'bound_certificate': bound,
             'common_name': cn or 'Unknown',
             'issuer': issuer_cn or 'Unknown',
             'valid_from': utc_isoformat(cert.not_valid_before_utc),
@@ -86,6 +104,28 @@ def get_https_cert_info():
             'fingerprint': '-',
             'type': 'error'
         })
+
+
+@bp.route('/api/v2/system/https/unbind', methods=['POST'])
+@require_auth(['admin:system'])
+def unbind_https_cert():
+    """Stop following renewals of the bound HTTPS certificate (#303 M1).
+
+    The files currently on disk are left untouched; only the automatic
+    re-materialization on renewal stops.
+    """
+    from services.https_binding import get_bound_refid, set_bound_refid
+
+    refid = get_bound_refid()
+    if not refid:
+        return error_response('No certificate is bound to HTTPS', 400)
+    set_bound_refid('')
+    AuditService.log_action(
+        action='https_apply', resource_type='system', resource_id='ucm',
+        resource_name='HTTPS binding',
+        details=f'HTTPS certificate binding cleared (was {refid})', success=True,
+    )
+    return success_response(message='HTTPS certificate binding cleared')
 
 
 @bp.route('/api/v2/system/https/regenerate', methods=['POST'])

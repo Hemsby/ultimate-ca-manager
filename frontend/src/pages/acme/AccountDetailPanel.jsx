@@ -1,13 +1,29 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Key, Globe, ShieldCheck, CheckCircle, XCircle, Trash, Copy } from '@phosphor-icons/react'
-import { Badge, Button, StatusIndicator, CompactSection, CompactGrid, CompactField, CompactStats, CompactHeader } from '../../components'
+import { Key, Globe, ShieldCheck, CheckCircle, XCircle, Trash, Copy, PencilSimple } from '@phosphor-icons/react'
+import { Badge, Button, Input, StatusIndicator, CompactSection, CompactGrid, CompactField, CompactStats, CompactHeader } from '../../components'
+import { apiClient } from '../../services'
 import { useNotification } from '../../contexts'
 import { useClipboard } from '../../hooks'
 import { formatDate } from '../../lib/utils'
 
-export default function AccountDetailPanel({ account, orders, challenges, detailTabs, activeDetailTab, onDetailTabChange, onDeactivate, onDelete }) {
+export default function AccountDetailPanel({ account, orders, challenges, detailTabs, activeDetailTab, onDetailTabChange, onDeactivate, onDelete, onChanged }) {
   const { t } = useTranslation()
-  const { showSuccess } = useNotification()
+  const { showSuccess, showError } = useNotification()
+  const [editingEmail, setEditingEmail] = useState(false)
+  const [emailDraft, setEmailDraft] = useState('')
+
+  const currentEmail = account.contact?.[0]?.replace('mailto:', '') || account.email || ''
+  const saveEmail = async () => {
+    try {
+      await apiClient.patch(`/acme/accounts/${account.account_id || account.id}`, { email: emailDraft.trim() })
+      showSuccess(t('acme.emailUpdated'))
+      setEditingEmail(false)
+      onChanged?.()
+    } catch (err) {
+      showError(err.message || t('messages.errors.updateFailed.settings'))
+    }
+  }
   const { copy } = useClipboard()
 
   return (
@@ -77,7 +93,15 @@ export default function AccountDetailPanel({ account, orders, challenges, detail
         <div className="space-y-3">
           <CompactSection title={t('common.accountInformation')}>
             <CompactGrid>
-              <CompactField autoIcon="email" label={t('common.email')} value={account.contact?.[0]?.replace('mailto:', '') || account.email} copyable />
+              <CompactField autoIcon="email" label={t('common.email')}>
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="truncate">{currentEmail || '-'}</span>
+                  <Button type="button" variant="ghost" size="xs" aria-label={t('acme.editEmail')}
+                    onClick={() => { setEmailDraft(currentEmail); setEditingEmail(!editingEmail) }}>
+                    <PencilSimple size={12} />
+                  </Button>
+                </span>
+              </CompactField>
               <CompactField autoIcon="status" label={t('common.status')}>
                 <StatusIndicator status={account.status === 'valid' ? 'active' : 'inactive'}>
                   {account.status}
@@ -86,6 +110,20 @@ export default function AccountDetailPanel({ account, orders, challenges, detail
               <CompactField autoIcon="keyType" label={t('common.keyType')} value={account.key_type || 'RSA-2048'} />
               <CompactField autoIcon="created" label={t('common.created')} value={formatDate(account.created_at)} />
             </CompactGrid>
+            {editingEmail && (
+              <div className="mt-2 space-y-2">
+                <Input
+                  value={emailDraft}
+                  onChange={(e) => setEmailDraft(e.target.value)}
+                  placeholder="admin@example.com"
+                  helperText={t('acme.editEmailCaveat')}
+                />
+                <div className="flex gap-2 justify-end">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setEditingEmail(false)}>{t('common.cancel')}</Button>
+                  <Button type="button" variant="primary" size="sm" onClick={saveEmail}>{t('common.save')}</Button>
+                </div>
+              </div>
+            )}
           </CompactSection>
 
           <CompactSection title={t('acme.accountId')} collapsible defaultOpen={false}>
@@ -194,7 +232,7 @@ export default function AccountDetailPanel({ account, orders, challenges, detail
                   <div className="flex items-center justify-between">
                     <Badge variant="secondary" size="sm">{ch.type}</Badge>
                     <Badge 
-                      variant={ch.status === 'valid' ? 'success' : ch.status === 'pending' ? 'warning' : 'danger'} 
+                      variant={ch.status?.toLowerCase() === 'valid' ? 'success' : ch.status?.toLowerCase() === 'pending' ? 'warning' : 'danger'} 
                       size="sm"
                     >
                       {ch.status}
