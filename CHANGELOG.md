@@ -17,6 +17,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ### Fixed
 - ACME account detail: challenge status badges show valid in green and pending in yellow again (the API capitalizes statuses, the badge mapping compared lowercase, so everything rendered red); the scheduled purge and the purge button now also remove the leftover pending sibling challenges of authorizations validated before 2.217 (#303, reported by @gb-123-git)
+- Dashboard: the Webhooks badge queried a column that does not exist, so it always showed "Not configured" no matter how many endpoints were configured; on PostgreSQL the failed query also aborted the transaction, dragging the badges probed after it (TSA included) into their fallback state. The query is fixed and every status probe now resets the session on failure so one broken probe cannot poison the next
 
 ## [2.217] - 2026-08-31
 

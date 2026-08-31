@@ -23,6 +23,19 @@ bp = Blueprint('dashboard_v2', __name__)
 # the System Health widget. Matches the auto-renewal window used further down.
 TSA_SIGNER_WARN_DAYS = 30
 
+
+def _status_rollback():
+    """Reset the session after a failed status probe.
+
+    On PostgreSQL a failed statement aborts the whole transaction; without a
+    rollback every later probe in the same request fails with
+    InFailedSqlTransaction and the remaining badges lie about their service.
+    """
+    try:
+        db.session.rollback()
+    except Exception:
+        pass
+
 # Client-safe messages for a dedicated TSA signer that /tsa cannot load, keyed
 # by the coarse `reason` from describe_configured_signer(). The underlying
 # detail (which can embed parse / key-loading exception text) is logged, never
@@ -363,6 +376,7 @@ def get_system_status():
         db.session.execute(text('SELECT 1'))
         status['database'] = {'status': 'online', 'message': 'Connected'}
     except Exception:
+        _status_rollback()
         logger.debug('Database status check failed')
         status['database'] = {'status': 'offline', 'message': 'Connection failed'}
     
@@ -382,6 +396,7 @@ def get_system_status():
         else:
             status['acme'] = {'status': 'offline', 'message': 'Disabled'}
     except Exception:
+        _status_rollback()
         logger.debug('ACME status check failed')
         status['acme'] = {'status': 'offline', 'message': 'Not configured'}
     
@@ -403,6 +418,7 @@ def get_system_status():
         else:
             status['est'] = {'status': 'offline', 'message': 'Disabled'}
     except Exception:
+        _status_rollback()
         logger.debug('EST status check failed')
         status['est'] = {'status': 'offline', 'message': 'Disabled'}
     
@@ -416,6 +432,7 @@ def get_system_status():
         else:
             status['ocsp'] = {'status': 'offline', 'message': 'No CA has OCSP enabled'}
     except Exception:
+        _status_rollback()
         logger.debug('OCSP status check failed')
         status['ocsp'] = {'status': 'offline', 'message': 'Status unknown'}
     
@@ -429,6 +446,7 @@ def get_system_status():
         else:
             status['crl'] = {'status': 'online', 'message': 'Available on demand'}
     except Exception:
+        _status_rollback()
         status['crl'] = {'status': 'online', 'message': 'Distribution active'}
     
     # Auto-renewal status
@@ -450,6 +468,7 @@ def get_system_status():
         else:
             status['auto_renewal'] = {'status': 'offline', 'message': 'Disabled'}
     except Exception:
+        _status_rollback()
         status['auto_renewal'] = {'status': 'offline', 'message': 'Disabled'}
     
     # SMTP / Email notifications status
@@ -467,12 +486,13 @@ def get_system_status():
         else:
             status['smtp'] = {'status': 'offline', 'message': 'Not configured'}
     except Exception:
+        _status_rollback()
         status['smtp'] = {'status': 'offline', 'message': 'Not configured'}
     
     # Webhooks status
     try:
         webhook_count = db.session.execute(
-            text("SELECT COUNT(*) FROM webhook_endpoints WHERE active = true")
+            text("SELECT COUNT(*) FROM webhook_endpoints WHERE enabled = true")
         ).scalar() or 0
         total_webhooks = db.session.execute(
             text("SELECT COUNT(*) FROM webhook_endpoints")
@@ -484,6 +504,7 @@ def get_system_status():
         else:
             status['webhooks'] = {'status': 'offline', 'message': 'No endpoints'}
     except Exception:
+        _status_rollback()
         status['webhooks'] = {'status': 'offline', 'message': 'Not configured'}
     
     # TSA (RFC 3161). A configured dedicated signer is a single point of failure:
@@ -529,6 +550,7 @@ def get_system_status():
                 else:
                     status['tsa'] = {'status': 'online', 'message': 'Dedicated signer'}
     except Exception:
+        _status_rollback()
         # A resolver bug is exactly when the dashboard must not claim health.
         logger.debug('TSA status check failed', exc_info=True)
         status['tsa'] = {'status': 'warning', 'message': 'Status unavailable'}
