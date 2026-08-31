@@ -7,7 +7,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
-## [Unreleased]
+## [2.217] - 2026-08-31
 
 ### Fixed
 - ACME proxy: the dns-01 TXT values computed with the CLIENT account keys are now published next to the upstream CA's value (the proxy knows every client thumbprint), so the propagation pre-checks of lego, Traefik and Caddy find the value they expect and no longer need to be disabled; the extra records are cleaned up with the others (#306, #307)
