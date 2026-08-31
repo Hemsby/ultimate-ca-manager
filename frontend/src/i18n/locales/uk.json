@@ -626,6 +626,7 @@
     "widgetNextExpirations": "Наступні закінчення",
     "nextExpirations": "Наступні закінчення",
     "noExpirations": "Немає сертифікатів для закінчення",
+    "tsaSigner": "Підписувач TSA",
     "daysRemaining": "{{count}} днів",
     "editLayout": "Редагувати макет",
     "doneEditing": "Готово",

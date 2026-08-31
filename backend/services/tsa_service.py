@@ -46,7 +46,21 @@ HASH_CLASSES = {
 
 
 class TSAConfigurationError(ValueError):
-    """Raised when the TSA signing certificate is not RFC 3161 compliant."""
+    """Raised when the TSA signing certificate is not RFC 3161 compliant.
+
+    `reason` is a coarse machine code (one of `TSA_SIGNER_REASONS`) safe to show
+    an unprivileged caller; the message carries the detail and stays server-side.
+    """
+
+    def __init__(self, *args, reason: str = 'invalid'):
+        super().__init__(*args)
+        self.reason = reason
+
+
+# Coarse, client-safe classes for a dedicated signer that cannot be used. The
+# full TSAConfigurationError message (which can embed parse / key-loading
+# exception text) is logged, never returned to a plain authenticated caller.
+TSA_SIGNER_REASONS = ('expired', 'revoked', 'key_unavailable', 'invalid')
 
 
 class TSAService:
@@ -472,16 +486,19 @@ def _load_signer_certificate(refid: str):
     record = Certificate.query.filter_by(refid=refid).first()
     if record is None:
         raise TSAConfigurationError(
-            f'configured TSA signer certificate {refid!r} was not found'
+            f'configured TSA signer certificate {refid!r} was not found',
+            reason='invalid',
         )
     if record.revoked:
         raise TSAConfigurationError(
-            f'configured TSA signer certificate {refid!r} is revoked'
+            f'configured TSA signer certificate {refid!r} is revoked',
+            reason='revoked',
         )
     if not record.crt or not record.prv:
         raise TSAConfigurationError(
             f'configured TSA signer certificate {refid!r} has no private key '
-            f'held by UCM'
+            f'held by UCM',
+            reason='key_unavailable',
         )
 
     try:
@@ -490,19 +507,22 @@ def _load_signer_certificate(refid: str):
         )
     except Exception as exc:
         raise TSAConfigurationError(
-            f'configured TSA signer certificate {refid!r} could not be parsed: {exc}'
+            f'configured TSA signer certificate {refid!r} could not be parsed: {exc}',
+            reason='invalid',
         )
 
     now = datetime.now(timezone.utc)
     if now < cert.not_valid_before_utc:
         raise TSAConfigurationError(
             f'configured TSA signer certificate {refid!r} is not valid until '
-            f'{cert.not_valid_before_utc.isoformat()}'
+            f'{cert.not_valid_before_utc.isoformat()}',
+            reason='invalid',
         )
     if now > cert.not_valid_after_utc:
         raise TSAConfigurationError(
             f'configured TSA signer certificate {refid!r} expired at '
-            f'{cert.not_valid_after_utc.isoformat()}'
+            f'{cert.not_valid_after_utc.isoformat()}',
+            reason='expired',
         )
 
     try:
@@ -517,7 +537,8 @@ def _load_signer_certificate(refid: str):
     except Exception as exc:
         raise TSAConfigurationError(
             f'configured TSA signer certificate {refid!r} private key could '
-            f'not be decrypted or loaded: {exc}'
+            f'not be decrypted or loaded: {exc}',
+            reason='key_unavailable',
         )
 
     # A dedicated end-entity signer without the timeStamping EKU is refused
@@ -551,7 +572,8 @@ def describe_configured_signer() -> dict:
         record, cert, _key, chain = _load_signer_certificate(refid)
     except TSAConfigurationError as exc:
         info = {'configured': True, 'refid': refid, 'usable': False,
-                'error': str(exc)}
+                'error': str(exc),
+                'reason': getattr(exc, 'reason', 'invalid')}
         try:
             from models import Certificate
             record = Certificate.query.filter_by(refid=refid).first()
@@ -596,3 +618,39 @@ def describe_configured_signer() -> dict:
         'chain_to_root': chain_to_root,
         'eku_critical_exclusive': eku_critical_exclusive,
     }
+
+
+def tsa_is_enabled() -> bool:
+    """Whether /tsa will serve timestamp requests, per the tsa_enabled row.
+
+    Mirrors the grandfathering rule in api/tsa_protocol.py: the row did not
+    exist before 2.200, so a missing row counts as enabled; only an existing
+    row holding a non-true value disables the service. Callers that surface
+    TSA health (the dashboard widget) must use this, not a bare value check,
+    or they disagree with the protocol on a grandfathered install.
+
+    Does not guard against a DB error: the protocol path relies on that
+    propagating to its own handler (500), unchanged from before this helper
+    existed. Callers that must not raise (the dashboard) wrap their own block.
+    """
+    from models import SystemConfig
+    row = SystemConfig.query.filter_by(key='tsa_enabled').first()
+    return row is None or str(row.value).lower() == 'true'
+
+
+def tsa_ca_certificate_path_ready() -> bool:
+    """Whether the historical CA-certificate signing path can serve /tsa.
+
+    Only meaningful when no dedicated signer is configured. Mirrors the gates
+    in api/tsa_protocol.py: an admin-designated tsa_ca_refid resolving to a CA
+    that exists, holds its cert and key, and is not offline. Without this the
+    protocol returns 503, so the dashboard must not report the CA path online.
+    Only consumer is the dashboard, which wraps its own block.
+    """
+    from models import SystemConfig, CA
+    row = SystemConfig.query.filter_by(key='tsa_ca_refid').first()
+    refid = (row.value or '').strip() if row and row.value else ''
+    if not refid:
+        return False
+    ca = CA.query.filter_by(refid=refid).first()
+    return bool(ca and ca.crt and ca.prv and not ca.offline)

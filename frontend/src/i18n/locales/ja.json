@@ -626,6 +626,7 @@
     "widgetNextExpirations": "次の有効期限",
     "nextExpirations": "次の有効期限",
     "noExpirations": "期限切れの証明書はありません",
+    "tsaSigner": "TSA署名者",
     "daysRemaining": "{{count}} 日",
     "editLayout": "レイアウト編集",
     "doneEditing": "完了",
