@@ -23,6 +23,17 @@ bp = Blueprint('dashboard_v2', __name__)
 # the System Health widget. Matches the auto-renewal window used further down.
 TSA_SIGNER_WARN_DAYS = 30
 
+# Client-safe messages for a dedicated TSA signer that /tsa cannot load, keyed
+# by the coarse `reason` from describe_configured_signer(). The underlying
+# detail (which can embed parse / key-loading exception text) is logged, never
+# handed to the plain-auth dashboard caller.
+_TSA_SIGNER_UNUSABLE_MSG = {
+    'expired': 'Signer certificate has expired',
+    'revoked': 'Signer certificate is revoked',
+    'key_unavailable': 'Signer private key is unavailable',
+    'invalid': 'Signer certificate is not usable',
+}
+
 
 @bp.route('/api/v2/stats/overview', methods=['GET'])
 @require_auth()
@@ -478,22 +489,33 @@ def get_system_status():
     # TSA (RFC 3161). A configured dedicated signer is a single point of failure:
     # /tsa returns 503 the moment it expires, is revoked, or its key stops
     # decrypting, with no CA fallback. Surface its health before that happens.
+    # The status rules mirror api/tsa_protocol.py: the grandfathered enable rule
+    # (missing tsa_enabled row = enabled) and the CA-path gates both live in
+    # tsa_service helpers so the widget and the endpoint cannot drift apart.
     try:
-        tsa_enabled = db.session.execute(
-            text("SELECT value FROM system_config WHERE key = 'tsa_enabled'")
-        ).scalar()
-        if str(tsa_enabled).lower() != 'true':
+        from services.tsa_service import (
+            describe_configured_signer, tsa_ca_certificate_path_ready,
+            tsa_is_enabled,
+        )
+        if not tsa_is_enabled():
             status['tsa'] = {'status': 'offline', 'message': 'Disabled'}
         else:
-            from services.tsa_service import describe_configured_signer
             signer = describe_configured_signer()
             if not signer.get('configured'):
-                status['tsa'] = {'status': 'online',
-                                 'message': 'Signing with CA certificate'}
+                if tsa_ca_certificate_path_ready():
+                    status['tsa'] = {'status': 'online',
+                                     'message': 'Signing with CA certificate'}
+                else:
+                    status['tsa'] = {'status': 'offline',
+                                     'message': 'No signing certificate configured'}
             elif not signer.get('usable'):
-                reason = (signer.get('error') or 'signer unusable').strip()
-                status['tsa'] = {'status': 'offline',
-                                 'message': f'Signer unusable: {reason}'}
+                logger.warning('TSA dashboard: dedicated signer unusable: %s',
+                               signer.get('error'))
+                status['tsa'] = {
+                    'status': 'offline',
+                    'message': _TSA_SIGNER_UNUSABLE_MSG.get(
+                        signer.get('reason'), 'Signer certificate is not usable'),
+                }
             else:
                 dt = to_naive_utc(
                     datetime.fromisoformat(signer['not_after'])
@@ -507,8 +529,9 @@ def get_system_status():
                 else:
                     status['tsa'] = {'status': 'online', 'message': 'Dedicated signer'}
     except Exception:
+        # A resolver bug is exactly when the dashboard must not claim health.
         logger.debug('TSA status check failed', exc_info=True)
-        status['tsa'] = {'status': 'online', 'message': 'Status unknown'}
+        status['tsa'] = {'status': 'warning', 'message': 'Status unavailable'}
 
     # Core is online if we can respond
     status['core'] = {'status': 'online', 'message': 'Operational'}

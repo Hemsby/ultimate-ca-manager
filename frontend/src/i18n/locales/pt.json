@@ -626,6 +626,7 @@
     "widgetNextExpirations": "Próximas expirações",
     "nextExpirations": "Próximas expirações",
     "noExpirations": "Nenhum certificado a expirar",
+    "tsaSigner": "Signatário TSA",
     "daysRemaining": "{{count}} dias",
     "editLayout": "Editar layout",
     "doneEditing": "Concluído",

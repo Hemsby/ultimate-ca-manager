@@ -1733,6 +1733,7 @@
     "widgetNextExpirations": "Prochaines expirations",
     "nextExpirations": "Prochaines expirations",
     "noExpirations": "Aucun certificat à expirer",
+    "tsaSigner": "Signataire TSA",
     "daysRemaining": "{{count}} jours",
     "editLayout": "Modifier la disposition",
     "doneEditing": "Terminé",

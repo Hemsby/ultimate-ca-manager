@@ -626,6 +626,7 @@
     "widgetNextExpirations": "Prossime scadenze",
     "nextExpirations": "Prossime scadenze",
     "noExpirations": "Nessun certificato in scadenza",
+    "tsaSigner": "Firmatario TSA",
     "daysRemaining": "{{count}} giorni",
     "editLayout": "Modifica layout",
     "doneEditing": "Fatto",

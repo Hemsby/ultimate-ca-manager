@@ -626,6 +626,7 @@
     "widgetNextExpirations": "Nächste Abläufe",
     "nextExpirations": "Nächste Abläufe",
     "noExpirations": "Keine Zertifikate laufen ab",
+    "tsaSigner": "TSA-Signaturzertifikat",
     "daysRemaining": "{{count}} Tage",
     "editLayout": "Layout bearbeiten",
     "doneEditing": "Fertig",

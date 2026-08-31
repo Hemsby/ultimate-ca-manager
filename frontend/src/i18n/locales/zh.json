@@ -626,6 +626,7 @@
     "widgetNextExpirations": "即将到期",
     "nextExpirations": "即将到期",
     "noExpirations": "没有即将到期的证书",
+    "tsaSigner": "TSA 签名者",
     "daysRemaining": "{{count}} 天",
     "editLayout": "编辑布局",
     "doneEditing": "完成",

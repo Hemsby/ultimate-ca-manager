@@ -13,6 +13,7 @@ Tests all dashboard endpoints:
 Uses shared conftest fixtures: app, client, auth_client, create_ca, create_cert.
 """
 import json
+import pytest
 from tests.conftest import get_json, assert_success, assert_error
 
 CONTENT_JSON = 'application/json'
@@ -221,6 +222,14 @@ class TestTsaSystemStatus:
 
     TS_OID = '1.3.6.1.5.5.7.3.8'
 
+    @pytest.fixture(autouse=True)
+    def _isolate_tsa_config(self, app):
+        """The session DB is shared; make each case start from no TSA rows so a
+        stray tsa_ca_refid / tsa_enabled from elsewhere cannot flip the result."""
+        self._clear(app)
+        yield
+        self._clear(app)
+
     def _set(self, app, **cfg):
         from models import SystemConfig, db
         with app.app_context():
@@ -234,9 +243,17 @@ class TestTsaSystemStatus:
         from models import SystemConfig, db
         with app.app_context():
             SystemConfig.query.filter(
-                SystemConfig.key.in_(['tsa_enabled', 'tsa_signer_cert_refid'])
+                SystemConfig.key.in_([
+                    'tsa_enabled', 'tsa_signer_cert_refid', 'tsa_ca_refid',
+                ])
             ).delete(synchronize_session=False)
             db.session.commit()
+
+    def _ca_refid(self, app, create_ca, cn):
+        from models import db, CA
+        ca = create_ca(cn=cn)
+        with app.app_context():
+            return db.session.get(CA, ca['id']).refid
 
     def _tsa(self, auth_client):
         return assert_success(auth_client.get(f'{DASH}/system-status'))['tsa']
@@ -248,12 +265,38 @@ class TestTsaSystemStatus:
         finally:
             self._clear(app)
 
-    def test_online_ca_certificate_when_no_dedicated_signer(self, app, auth_client):
-        self._set(app, tsa_enabled='true', tsa_signer_cert_refid='')
+    def test_online_ca_certificate_when_no_dedicated_signer(
+        self, app, auth_client, create_ca
+    ):
+        refid = self._ca_refid(app, create_ca, 'status-tsa-ca')
+        self._set(app, tsa_enabled='true', tsa_signer_cert_refid='',
+                  tsa_ca_refid=refid)
         try:
             tsa = self._tsa(auth_client)
             assert tsa['status'] == 'online'
             assert 'CA certificate' in tsa['message']
+        finally:
+            self._clear(app)
+
+    def test_offline_when_enabled_but_no_tsa_ca_configured(self, app, auth_client):
+        """Enabled + no dedicated signer + no tsa_ca_refid: /tsa 503s, so must
+        the widget. Previously it reported online (#315 review, case 1a)."""
+        self._set(app, tsa_enabled='true', tsa_signer_cert_refid='')
+        try:
+            assert self._tsa(auth_client)['status'] == 'offline'
+        finally:
+            self._clear(app)
+
+    def test_grandfathered_missing_enabled_row_mirrors_protocol(
+        self, app, auth_client, create_ca
+    ):
+        """No tsa_enabled row (pre-2.200) + a configured TSA CA: tsa_protocol.py
+        treats the missing row as enabled, so the widget must too, not offline
+        (#315 review, case 1b)."""
+        refid = self._ca_refid(app, create_ca, 'status-tsa-grandfathered-ca')
+        self._set(app, tsa_ca_refid=refid)  # note: tsa_enabled deliberately unset
+        try:
+            assert self._tsa(auth_client)['status'] == 'online'
         finally:
             self._clear(app)
 
@@ -290,9 +333,54 @@ class TestTsaSystemStatus:
                 db.session.commit()
             tsa = self._tsa(auth_client)
             assert tsa['status'] == 'offline'
-            assert 'unusable' in tsa['message'].lower()
+            # Coarse, client-safe class only — no refid, no exception text
+            # (#315 review, case 3).
+            assert 'revoked' in tsa['message'].lower()
+            assert signer['refid'] not in tsa['message']
         finally:
             self._clear(app)
+
+    def test_offline_message_does_not_leak_internal_detail(
+        self, app, auth_client, create_cert
+    ):
+        """The key-loading / parse failure classes are the ones whose
+        TSAConfigurationError embeds exception text; the widget must map them to
+        a coarse reason and never forward refid or a traceback (#315 review,
+        case 3)."""
+        from models import Certificate, db
+
+        signer = create_cert(cn='status-tsa-nokey', validity_days=200,
+                             extra_ekus=[self.TS_OID])
+        self._set(app, tsa_enabled='true', tsa_signer_cert_refid=signer['refid'])
+        try:
+            with app.app_context():
+                row = Certificate.query.filter_by(refid=signer['refid']).first()
+                row.prv = None  # key no longer held by UCM
+                db.session.commit()
+            tsa = self._tsa(auth_client)
+            assert tsa['status'] == 'offline'
+            assert 'key' in tsa['message'].lower()
+            assert signer['refid'] not in tsa['message']
+            assert 'Traceback' not in tsa['message']
+        finally:
+            self._clear(app)
+
+    def test_resolution_error_is_not_reported_as_online(
+        self, app, auth_client, create_ca, monkeypatch
+    ):
+        """A crash in the status check is exactly when the widget must not
+        claim health (#315 review, case 2)."""
+        import services.tsa_service as tsa_service
+
+        refid = self._ca_refid(app, create_ca, 'status-tsa-boom-ca')
+        self._set(app, tsa_enabled='true', tsa_ca_refid=refid)
+
+        def _boom():
+            raise RuntimeError('resolver blew up')
+
+        monkeypatch.setattr(tsa_service, 'describe_configured_signer', _boom)
+        tsa = self._tsa(auth_client)
+        assert tsa['status'] != 'online'
 
 
 # ============================================================
