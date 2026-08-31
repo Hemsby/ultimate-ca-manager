@@ -111,3 +111,16 @@ class TestRenewalSubscriber:
             # missing cert row → warning path, no exception
             on_certificate_renewed('certificate.renewed',
                                    self._payload('x'), None, {})
+
+
+class TestUnbindEndpoint:
+    def test_unbind_without_binding_is_400(self, app, auth_client, clean_binding):
+        assert auth_client.post('/api/v2/system/https/unbind').status_code == 400
+
+    def test_unbind_clears_the_binding(self, app, auth_client, clean_binding):
+        with app.app_context():
+            set_bound_refid('bound-for-unbind')
+        r = auth_client.post('/api/v2/system/https/unbind')
+        assert r.status_code == 200
+        with app.app_context():
+            assert get_bound_refid() == ''

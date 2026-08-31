@@ -81,6 +81,10 @@ export const systemService = {
     return apiClient.post('/system/https/regenerate', data)
   },
 
+  async unbindHttpsCert() {
+    return apiClient.post('/system/https/unbind')
+  },
+
   async applyHttpsCert(certData) {
     return apiClient.post('/system/https/apply', certData)
   },

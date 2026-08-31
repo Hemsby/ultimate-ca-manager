@@ -1669,7 +1669,11 @@
     "dnsPersistEnabled": "Offrire la sfida dns-persist-01 (draft-ietf-acme-dns-persist)",
     "dnsPersistEnabledDesc": "Validazione tramite record TXT persistente in _validation-persist.<dominio> legato all'account ACME. Rinnovi senza scritture DNS.",
     "dnsPersistWarning": "Rischio: una chiave account ACME compromessa consente l'emissione per il dominio finché il TXT esiste (draft §7.2). Abilitare solo per account e zone controllati.",
-    "dnsPersistIssuerNote": "Domini issuer per il record TXT: {{domains}} (dagli identificatori CAA, o dall'hostname pubblico ACME se non impostato)."
+    "dnsPersistIssuerNote": "Domini issuer per il record TXT: {{domains}} (dagli identificatori CAA, o dall'hostname pubblico ACME se non impostato).",
+    "editEmail": "Modifica e-mail",
+    "editEmailCaveat": "Secondo la RFC 8555 il contatto appartiene al client ACME: il suo prossimo aggiornamento dell'account può sovrascrivere questo valore.",
+    "emailUpdated": "E-mail dell'account aggiornata",
+    "letsEncryptOrders": "Ordini Let's Encrypt"
   },
   "scep": {
     "title": "Protocollo SCEP",
@@ -2761,7 +2765,11 @@
     "crlAutoDeleteExpiredRevoked": "Elimina automaticamente i certificati revocati scaduti",
     "crlAutoDeleteExpiredRevokedDesc": "Elimina automaticamente i record dei certificati revocati (solo quelli scaduti) durante la generazione della CRL. Quando disattivato, i certificati revocati scaduti vengono conservati come record storici.",
     "crlAutoPurgeStaleSerials": "Elimina automaticamente i numeri di serie revocati obsoleti",
-    "crlAutoPurgeStaleSerialsDesc": "Elimina automaticamente i record dei numeri di serie revocati (solo quelli scaduti) durante la generazione della CRL. Quando disattivato, i record obsoleti vengono conservati come cronologia dei rinnovi."
+    "crlAutoPurgeStaleSerialsDesc": "Elimina automaticamente i record dei numeri di serie revocati (solo quelli scaduti) durante la generazione della CRL. Quando disattivato, i record obsoleti vengono conservati come cronologia dei rinnovi.",
+    "httpsBound": "Certificato associato",
+    "httpsBoundDesc": "I rinnovi di questo certificato vengono applicati automaticamente a HTTPS (file rigenerati, servizio riavviato).",
+    "httpsUnbind": "Smetti di seguire i rinnovi",
+    "httpsUnbindDone": "Associazione del certificato HTTPS rimossa"
   },
   "account": {
     "profile": "Profilo",
