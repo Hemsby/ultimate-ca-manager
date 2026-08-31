@@ -217,6 +217,64 @@ class TestExpiringCerts:
                 db.session.commit()
 
 
+class TestWebhooksSystemStatus:
+    """GET /api/v2/dashboard/system-status — the `webhooks` service entry.
+
+    Regression: the probe queried a nonexistent `active` column, so the badge
+    always fell back to "Not configured", and on PostgreSQL the failed
+    statement aborted the transaction for every later probe in the request.
+    """
+
+    def _webhooks(self, auth_client):
+        return assert_success(auth_client.get(f'{DASH}/system-status'))['webhooks']
+
+    def _cleanup(self, app, ids):
+        from services.webhook_service import WebhookEndpoint
+        from models import db
+        with app.app_context():
+            WebhookEndpoint.query.filter(WebhookEndpoint.id.in_(ids)).delete(
+                synchronize_session=False)
+            db.session.commit()
+
+    def test_enabled_endpoint_reports_online_and_next_probes_survive(
+        self, app, auth_client
+    ):
+        from services.webhook_service import WebhookEndpoint
+        from models import db
+        with app.app_context():
+            ep = WebhookEndpoint(name='dash-wh-on', url='https://wh.example/hook',
+                                 enabled=True)
+            db.session.add(ep)
+            db.session.commit()
+            ep_id = ep.id
+        try:
+            data = assert_success(auth_client.get(f'{DASH}/system-status'))
+            assert data['webhooks']['status'] == 'online'
+            assert 'active endpoint' in data['webhooks']['message']
+            # the probes that run after webhooks in the same request must not
+            # be poisoned by a failed statement (PostgreSQL aborts the tx)
+            assert data['tsa']['message'] != 'Status unavailable'
+            assert data['core']['status'] == 'online'
+        finally:
+            self._cleanup(app, [ep_id])
+
+    def test_disabled_endpoint_reports_warning(self, app, auth_client):
+        from services.webhook_service import WebhookEndpoint
+        from models import db
+        with app.app_context():
+            ep = WebhookEndpoint(name='dash-wh-off', url='https://wh.example/hook',
+                                 enabled=False)
+            db.session.add(ep)
+            db.session.commit()
+            ep_id = ep.id
+        try:
+            wh = self._webhooks(auth_client)
+            assert wh['status'] in ('warning', 'online')  # online if other tests left enabled rows
+            assert wh['message'] != 'Not configured'
+        finally:
+            self._cleanup(app, [ep_id])
+
+
 class TestTsaSystemStatus:
     """GET /api/v2/dashboard/system-status — the `tsa` service entry (#312)."""
 
