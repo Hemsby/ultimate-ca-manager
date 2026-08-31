@@ -7,7 +7,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
-## [Unreleased]
+## [2.218] - 2026-08-31
 
 ### Added
 - Local ACME accounts: the contact e-mail can now be edited from the account detail (the piece of #303 that had been accepted but not shipped in 2.217). Per RFC 8555 the contact belongs to the ACME client and its next account update may overwrite the value; the edit form says so (#303, reported by @gb-123-git)
