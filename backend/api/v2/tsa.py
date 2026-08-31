@@ -263,6 +263,14 @@ def issue_signer_certificate():
 
     data = request.json or {}
 
+    # Reject wrong-typed inputs before they reach the issuer. bool() / .strip()
+    # on a coerced value is how {"select": "false"} swaps a healthy signer and
+    # {"cn": 123} 500s (#314 review).
+    if 'select' in data and not isinstance(data['select'], bool):
+        return error_response('select must be a boolean', 400)
+    if data.get('cn') is not None and not isinstance(data['cn'], str):
+        return error_response('cn must be a string', 400)
+
     ca = None
     if data.get('ca_refid'):
         ca = CA.query.filter_by(refid=data['ca_refid']).first()
@@ -282,7 +290,7 @@ def issue_signer_certificate():
     # from the caller always wins, so the live signer is never swapped silently.
     current = describe_configured_signer()
     if 'select' in data:
-        want_select = bool(data['select'])
+        want_select = data['select']  # validated bool above
     else:
         want_select = not current.get('usable', False)
 

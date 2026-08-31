@@ -126,6 +126,44 @@ describe('TSAPage — one-click signer issuance (#312)', () => {
     await waitFor(() => expect(tsaService.getConfig).toHaveBeenCalledTimes(2))
   })
 
+  it('shows the auto-renewal caveat in the Generate modal', async () => {
+    await openSettingsTab()
+    fireEvent.click(await screen.findByText('tsa.signerGenerate'))
+    expect(await screen.findByText('tsa.signerGenerateRenewalNote')).toBeInTheDocument()
+  })
+
+  it('sends an explicit validity of 0 rather than swallowing it to the default', async () => {
+    await openSettingsTab()
+    fireEvent.click(await screen.findByText('tsa.signerGenerate'))
+    await screen.findByText('tsa.signerGenerateModalDesc')
+
+    const validity = screen.getByText('tsa.signerGenerateValidity')
+      .closest('div').querySelector('input')
+    fireEvent.change(validity, { target: { value: '0' } })
+
+    const buttons = screen.getAllByText('tsa.signerGenerate')
+    fireEvent.click(buttons[buttons.length - 1])
+
+    await waitFor(() => expect(tsaService.issueSignerCertificate).toHaveBeenCalled())
+    expect(tsaService.issueSignerCertificate.mock.calls[0][0].validity_days).toBe(0)
+  })
+
+  it('omits validity_days when the field is cleared', async () => {
+    await openSettingsTab()
+    fireEvent.click(await screen.findByText('tsa.signerGenerate'))
+    await screen.findByText('tsa.signerGenerateModalDesc')
+
+    const validity = screen.getByText('tsa.signerGenerateValidity')
+      .closest('div').querySelector('input')
+    fireEvent.change(validity, { target: { value: '' } })
+
+    const buttons = screen.getAllByText('tsa.signerGenerate')
+    fireEvent.click(buttons[buttons.length - 1])
+
+    await waitFor(() => expect(tsaService.issueSignerCertificate).toHaveBeenCalled())
+    expect(tsaService.issueSignerCertificate.mock.calls[0][0].validity_days).toBeUndefined()
+  })
+
   it('renders the strict-EKU line in the status box for a critical/exclusive signer', async () => {
     setConfig({
       signer_cert_refid: 'cert-ts-1',

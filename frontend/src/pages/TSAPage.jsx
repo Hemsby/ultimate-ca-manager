@@ -96,7 +96,13 @@ export default function TSAPage() {
       const res = await tsaService.issueSignerCertificate({
         ca_refid: genForm.ca_refid || undefined,
         cn: genForm.cn || undefined,
-        validity_days: Number(genForm.validity_days) || undefined,
+        // Send whatever the operator typed (0 included) and let the backend
+        // reject it; `|| undefined` silently turned an explicit 0 into the
+        // 397-day default with a success toast (#314 review).
+        validity_days:
+          String(genForm.validity_days ?? '').trim() === ''
+            ? undefined
+            : Number(genForm.validity_days),
         key_type: algo,
         key_size: algo === 'RSA' ? rest : undefined,
         curve: algo === 'EC' ? rest : undefined,
@@ -390,6 +396,7 @@ export default function TSAPage() {
                 value={genForm.key_type}
                 onChange={(val) => setGenForm({ ...genForm, key_type: val })}
               />
+              <p className="text-xs text-text-tertiary">{t('tsa.signerGenerateRenewalNote')}</p>
             </FormModal>
           )}
         </div>

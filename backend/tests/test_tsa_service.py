@@ -794,6 +794,44 @@ class TestTsaSignerOneClickIssuance:
         finally:
             self._cleanup(app)
 
+    def test_non_boolean_select_is_rejected(self, app, auth_client, create_ca):
+        """#314 review: bool("false") is True, so a string must not reach the
+        select branch and swap a healthy signer."""
+        ca = create_ca(cn='One-Click TSA CA Select')
+        try:
+            r = self._issue(auth_client, ca['id'], cn='ucm-oneclick-selstr',
+                            select='false')
+            assert r.status_code == 400
+            assert b'select' in r.data.lower()
+        finally:
+            self._cleanup(app)
+
+    def test_non_string_cn_is_rejected_with_400_not_500(
+        self, app, auth_client, create_ca
+    ):
+        """#314 review: a non-string cn reached (cn or DEFAULT_CN).strip() and
+        raised AttributeError -> 500."""
+        ca = create_ca(cn='One-Click TSA CA Cn')
+        try:
+            r = self._issue(auth_client, ca['id'], cn=123)
+            assert r.status_code == 400
+        finally:
+            self._cleanup(app)
+
+    def test_explicit_zero_validity_is_rejected_not_defaulted(
+        self, app, auth_client, create_ca
+    ):
+        """#314 review: an explicit 0 must surface the backend's own error, not
+        silently become the 397-day default."""
+        ca = create_ca(cn='One-Click TSA CA Zero')
+        try:
+            r = self._issue(auth_client, ca['id'], cn='ucm-oneclick-zero',
+                            validity_days=0)
+            assert r.status_code == 400
+            assert b'positive' in r.data.lower()
+        finally:
+            self._cleanup(app)
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
