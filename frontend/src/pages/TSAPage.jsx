@@ -12,7 +12,7 @@ import {
   ResponsiveLayout,
   Button, Input, Select, Card,
   LoadingSpinner, HelpCard,
-  CompactStats
+  CompactStats, FormModal
 } from '../components'
 import { tsaService, casService } from '../services'
 import { useNotification } from '../contexts'
@@ -31,6 +31,9 @@ export default function TSAPage() {
   const [stats, setStats] = useState({ total_requests: 0 })
   const [activeTab, setActiveTab] = useState('settings')
   const [saving, setSaving] = useState(false)
+  const [generateOpen, setGenerateOpen] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [genForm, setGenForm] = useState(null)
 
   useEffect(() => {
     loadData()
@@ -69,6 +72,46 @@ export default function TSAPage() {
       showError(error.message || t('messages.errors.updateFailed.settings'))
     } finally {
       setSaving(false)
+    }
+  }
+
+  const openGenerate = () => {
+    setGenForm({
+      ca_refid: config.ca_refid || (cas[0]?.refid ?? ''),
+      cn: 'UCM Timestamping Authority',
+      validity_days: 397,
+      key_type: 'RSA-3072',
+    })
+    setGenerateOpen(true)
+  }
+
+  const handleGenerateSigner = async () => {
+    if (!genForm) return
+    setGenerating(true)
+    try {
+      const kt = genForm.key_type || 'RSA-3072'
+      const dash = kt.indexOf('-')
+      const algo = dash === -1 ? kt : kt.slice(0, dash)
+      const rest = dash === -1 ? '' : kt.slice(dash + 1)
+      const res = await tsaService.issueSignerCertificate({
+        ca_refid: genForm.ca_refid || undefined,
+        cn: genForm.cn || undefined,
+        validity_days: Number(genForm.validity_days) || undefined,
+        key_type: algo,
+        key_size: algo === 'RSA' ? rest : undefined,
+        curve: algo === 'EC' ? rest : undefined,
+      })
+      setGenerateOpen(false)
+      showSuccess(
+        res?.data?.selected
+          ? t('tsa.signerGeneratedSelected')
+          : t('tsa.signerGenerated')
+      )
+      await loadData()
+    } catch (error) {
+      showError(error.message || t('tsa.signerGenerateFailed'))
+    } finally {
+      setGenerating(false)
     }
   }
 
@@ -195,7 +238,9 @@ export default function TSAPage() {
                 { value: '', label: t('tsa.signingCertCa') },
                 ...signerCandidates.map(c => ({
                   value: c.refid,
-                  label: `${c.subject_cn || c.descr || c.subject}${c.key_type ? ` (${c.key_type})` : ''}`
+                  label: `${c.subject_cn || c.descr || c.subject}`
+                    + `${c.key_type ? ` (${c.key_type})` : ''}`
+                    + `${c.eku_critical_exclusive ? ` — ${t('tsa.signerStrictBadge')}` : ''}`
                 }))
               ]}
               value={config.signer_cert_refid || ''}
@@ -211,6 +256,24 @@ export default function TSAPage() {
               disabled={!config.enabled}
               helperText={t('tsa.signingCertHelp')}
             />
+
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs text-text-tertiary">{t('tsa.signerGenerateHint')}</p>
+              <Button
+                type="button"
+                size="sm"
+                variant={dedicatedSignerReady ? 'ghost' : 'secondary'}
+                onClick={openGenerate}
+                disabled={
+                  !config.enabled
+                  || !hasPermission('write:settings')
+                  || !hasPermission('write:certificates')
+                }
+              >
+                <Shield size={14} />
+                {t('tsa.signerGenerate')}
+              </Button>
+            </div>
 
             {selectionUnsaved && (
               <div className="p-3 rounded-lg text-xs border border-border bg-bg-tertiary">
@@ -241,11 +304,18 @@ export default function TSAPage() {
                       </p>
                     )}
                     {signerStatus.usable ? (
-                      <p className="text-text-secondary">
-                        {signerStatus.chain_to_root
-                          ? t('tsa.signerChainComplete')
-                          : t('tsa.signerChainPartial', { count: signerStatus.chain_len || 0 })}
-                      </p>
+                      <>
+                        <p className="text-text-secondary">
+                          {signerStatus.chain_to_root
+                            ? t('tsa.signerChainComplete')
+                            : t('tsa.signerChainPartial', { count: signerStatus.chain_len || 0 })}
+                        </p>
+                        <p className="text-text-secondary">
+                          {signerStatus.eku_critical_exclusive
+                            ? t('tsa.signerEkuStrict')
+                            : t('tsa.signerEkuLoose')}
+                        </p>
+                      </>
                     ) : (
                       <p className="status-warning-text">
                         {signerStatus.error || t('tsa.signerUnusable')}
@@ -276,6 +346,51 @@ export default function TSAPage() {
                 {saving ? t('common.saving') : t('common.saveConfiguration')}
               </Button>
             </div>
+          )}
+
+          {generateOpen && genForm && (
+            <FormModal
+              open={generateOpen}
+              onClose={() => setGenerateOpen(false)}
+              title={t('tsa.signerGenerateTitle')}
+              onSubmit={handleGenerateSigner}
+              submitLabel={t('tsa.signerGenerate')}
+              loading={generating}
+            >
+              <p className="text-xs text-text-secondary">{t('tsa.signerGenerateModalDesc')}</p>
+              <Select
+                label={t('tsa.signingCA')}
+                options={cas.map(ca => ({
+                  value: ca.refid || ca.id.toString(),
+                  label: ca.name || ca.subject,
+                }))}
+                value={genForm.ca_refid}
+                onChange={(val) => setGenForm({ ...genForm, ca_refid: val })}
+              />
+              <Input
+                label={t('tsa.signerGenerateCn')}
+                value={genForm.cn}
+                onChange={(e) => setGenForm({ ...genForm, cn: e.target.value })}
+              />
+              <Input
+                label={t('tsa.signerGenerateValidity')}
+                type="number"
+                value={genForm.validity_days}
+                onChange={(e) => setGenForm({ ...genForm, validity_days: e.target.value })}
+              />
+              <Select
+                label={t('tsa.signerGenerateKeyType')}
+                options={[
+                  { value: 'RSA-3072', label: 'RSA 3072' },
+                  { value: 'RSA-2048', label: 'RSA 2048' },
+                  { value: 'RSA-4096', label: 'RSA 4096' },
+                  { value: 'EC-P-256', label: 'EC P-256' },
+                  { value: 'EC-P-384', label: 'EC P-384' },
+                ]}
+                value={genForm.key_type}
+                onChange={(val) => setGenForm({ ...genForm, key_type: val })}
+              />
+            </FormModal>
           )}
         </div>
       )}

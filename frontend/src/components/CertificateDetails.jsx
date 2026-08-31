@@ -75,6 +75,7 @@ const CERT_TYPE_LABELS = {
   intermediate_ca: 'certificates.sourceTypes.intermediateCA',
   root_ca: 'certificates.sourceTypes.rootCA',
   self_signed: 'certificates.sourceTypes.selfSigned',
+  timestamping: 'certificates.sourceTypes.timestamping',
 }
 
 function formatCertType(type, t) {

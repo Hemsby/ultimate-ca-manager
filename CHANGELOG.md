@@ -7,6 +7,11 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
+## [Unreleased]
+
+### Added
+- **One-click TSA signing certificate** — Settings > TSA > Signing certificate now has a "Generate a signing certificate" action that issues an end-entity certificate purpose-built as an RFC 3161 timestamp signer: `BasicConstraints` CA:FALSE, `KeyUsage` `digitalSignature` only (critical), and a **critical, exclusive** `timeStamping` EKU. The generic issue path cannot produce this (it always emits the EKU non-critical and merges the base profile with `extra_ekus`), so before this an operator had to hand-craft the certificate outside UCM. The private key is stored encrypted at rest. The certificate is issued and committed first; when no usable dedicated signer is configured yet it is then selected as `tsa_signer_cert_refid` (a second write), and if that selection write fails the certificate stays issued but unselected with a log line. An already-healthy signer is never swapped without an explicit request. Issued through `POST /api/v2/tsa/signer-certificate` (needs both `write:settings` and `write:certificates`), defaulting to the configured TSA CA, `RSA 3072`, and a 397-day validity clamped to the issuing CA's own expiry. The certificate is an ordinary UCM certificate: in-place renewal keeps the critical exclusive EKU and expiry alerts apply, but the auto-renewal scheduler only covers it if `manual` is added to `auto_renewal_sources` (default `scep`, `acme`, `est`). The TSA page also now shows whether the active signer's `timeStamping` EKU is critical/exclusive (`eku_critical_exclusive`), on both the candidate list and the status box (#312, contributed by @Hemsby)
+
 ## [2.217] - 2026-08-31
 
 ### Fixed

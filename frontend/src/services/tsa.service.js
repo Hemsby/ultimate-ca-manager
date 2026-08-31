@@ -18,5 +18,10 @@ export const tsaService = {
 
   async getSignerCandidates() {
     return apiClient.get('/tsa/signer-candidates')
+  },
+
+  // One-click issuance of a dedicated RFC 3161 signing certificate (#312).
+  async issueSignerCertificate(payload = {}) {
+    return apiClient.post('/tsa/signer-certificate', payload)
   }
 }
