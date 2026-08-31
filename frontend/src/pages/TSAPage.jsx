@@ -27,6 +27,7 @@ export default function TSAPage() {
   const [loading, setLoading] = useState(true)
   const [config, setConfig] = useState({})
   const [cas, setCas] = useState([])
+  const [signerCandidates, setSignerCandidates] = useState([])
   const [stats, setStats] = useState({ total_requests: 0 })
   const [activeTab, setActiveTab] = useState('settings')
   const [saving, setSaving] = useState(false)
@@ -38,14 +39,16 @@ export default function TSAPage() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const [configRes, casRes, statsRes] = await Promise.all([
+      const [configRes, casRes, statsRes, candidatesRes] = await Promise.all([
         tsaService.getConfig(),
         casService.getAll(),
-        tsaService.getStats()
+        tsaService.getStats(),
+        tsaService.getSignerCandidates()
       ])
       setConfig(configRes.data || {})
       setCas(casRes.data || [])
       setStats(statsRes.data || { total_requests: 0 })
+      setSignerCandidates(candidatesRes.data || [])
     } catch (error) {
       showError(error.message || t('messages.errors.loadFailed.tsa'))
     } finally {
@@ -59,12 +62,27 @@ export default function TSAPage() {
     try {
       await tsaService.updateConfig(config)
       showSuccess(t('messages.success.update.settings'))
+      // Re-read so the resolved signer status (expiry, chain, usability)
+      // reflects what was just saved and gates the strict-mode toggle.
+      await loadData()
     } catch (error) {
       showError(error.message || t('messages.errors.updateFailed.settings'))
     } finally {
       setSaving(false)
     }
   }
+
+  // config.signer describes what is SAVED. A freshly picked certificate has
+  // not been resolved yet, so only trust the status when it matches the
+  // current selection.
+  const signerStatus = config.signer && config.signer.refid === config.signer_cert_refid
+    ? config.signer
+    : null
+  const selectionUnsaved = Boolean(config.signer_cert_refid) && !signerStatus
+
+  // The strict tsa_require_dedicated_cert mode is only operable once a usable
+  // dedicated signer is saved: without one, /tsa would 503 every request.
+  const dedicatedSignerReady = Boolean(signerStatus?.usable)
 
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text)
@@ -162,13 +180,92 @@ export default function TSAPage() {
               helperText={t('tsa.policyOidHelp')}
               placeholder="1.2.3.4.1"
             />
+          </Card>
+
+          <Card className="p-4 space-y-4">
+            <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+              <Shield size={16} />
+              {t('tsa.signingCert')}
+            </h3>
+            <p className="text-xs text-text-secondary">{t('tsa.signingCertDesc')}</p>
+
+            <Select
+              label={t('tsa.signingCert')}
+              options={[
+                { value: '', label: t('tsa.signingCertCa') },
+                ...signerCandidates.map(c => ({
+                  value: c.refid,
+                  label: `${c.subject_cn || c.descr || c.subject}${c.key_type ? ` (${c.key_type})` : ''}`
+                }))
+              ]}
+              value={config.signer_cert_refid || ''}
+              onChange={(val) => setConfig({
+                ...config,
+                signer_cert_refid: val,
+                // Strict mode cannot outlive its signer: clearing or changing
+                // the signer drops require_dedicated_cert so a save can never
+                // persist a strict mode with no usable dedicated signer.
+                ...((!val || val !== config.signer?.refid)
+                  ? { require_dedicated_cert: false } : {}),
+              })}
+              disabled={!config.enabled}
+              helperText={t('tsa.signingCertHelp')}
+            />
+
+            {selectionUnsaved && (
+              <div className="p-3 rounded-lg text-xs border border-border bg-bg-tertiary">
+                <div className="flex items-start gap-2">
+                  <Info size={16} className="text-text-tertiary flex-shrink-0 mt-0.5" />
+                  <p className="text-text-secondary">{t('tsa.signerUnsaved')}</p>
+                </div>
+              </div>
+            )}
+
+            {signerStatus && (
+              <div className={`p-3 rounded-lg text-xs border ${
+                signerStatus.usable
+                  ? 'status-success-bg status-success-border'
+                  : 'status-warning-bg status-warning-border'
+              }`}>
+                <div className="flex items-start gap-2">
+                  {signerStatus.usable
+                    ? <CheckCircle size={16} className="status-success-text flex-shrink-0 mt-0.5" />
+                    : <Warning size={16} className="status-warning-text flex-shrink-0 mt-0.5" />}
+                  <div className="space-y-0.5">
+                    {signerStatus.subject && (
+                      <p className="text-text-primary font-mono break-all">{signerStatus.subject}</p>
+                    )}
+                    {signerStatus.not_after && (
+                      <p className="text-text-secondary">
+                        {t('tsa.signerExpires')}: {new Date(signerStatus.not_after).toLocaleString()}
+                      </p>
+                    )}
+                    {signerStatus.usable ? (
+                      <p className="text-text-secondary">
+                        {signerStatus.chain_to_root
+                          ? t('tsa.signerChainComplete')
+                          : t('tsa.signerChainPartial', { count: signerStatus.chain_len || 0 })}
+                      </p>
+                    ) : (
+                      <p className="status-warning-text">
+                        {signerStatus.error || t('tsa.signerUnusable')}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <ToggleSwitch
               checked={config.require_dedicated_cert || false}
               onChange={(val) => setConfig({ ...config, require_dedicated_cert: val })}
               label={t('tsa.requireDedicatedCert')}
-              description={t('tsa.requireDedicatedCertDesc')}
-              disabled={!config.enabled}
+              description={
+                dedicatedSignerReady
+                  ? t('tsa.requireDedicatedCertDesc')
+                  : t('tsa.requireDedicatedCertBlocked')
+              }
+              disabled={!config.enabled || (!dedicatedSignerReady && !config.require_dedicated_cert)}
             />
           </Card>
 

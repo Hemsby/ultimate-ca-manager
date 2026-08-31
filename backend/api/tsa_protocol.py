@@ -51,7 +51,9 @@ def timestamp_request():
         from cryptography import x509
         from cryptography.hazmat.backends import default_backend
         from cryptography.hazmat.primitives.serialization import load_pem_private_key
-        from services.tsa_service import TSAConfigurationError, TSAService
+        from services.tsa_service import (
+            TSAConfigurationError, TSAService, load_configured_signer,
+        )
         from models import SystemConfig
 
         # tsa_enabled did not exist before 2.200: an install that configured a
@@ -64,64 +66,86 @@ def timestamp_request():
             response.headers['Content-Type'] = 'text/plain'
             return response
 
-        # Get configured TSA CA. Timestamping is an explicit opt-in service:
-        # without an admin-designated CA we do NOT silently fall back to an
-        # arbitrary CA key (that would turn any deployment into an anonymous
-        # signing service using the CA's private key).
-        tsa_ca_config = SystemConfig.query.filter_by(key='tsa_ca_refid').first()
-        tsa_ca_refid = tsa_ca_config.value if tsa_ca_config else ''
-        if not tsa_ca_refid:
-            logger.warning("TSA request refused: no CA configured for TSA")
-            response = make_response('TSA not configured', 503)
-            response.headers['Content-Type'] = 'text/plain'
-            return response
-        ca = CA.query.filter_by(refid=tsa_ca_refid).first()
-
-        if not ca or not ca.crt or not ca.prv:
-            logger.warning(
-                "TSA request refused: configured CA %r not found or missing cert/key",
-                tsa_ca_refid,
-            )
-            response = make_response('TSA not configured', 503)
-            response.headers['Content-Type'] = 'text/plain'
-            return response
-
-        # Pending external-CSR CAs have no certificate to sign with
-        if not ca.crt:
-            logger.warning(f"TSA request refused: CA '{ca.descr}' is awaiting its certificate")
-            response = make_response('TSA temporarily unavailable', 503)
-            response.headers['Content-Type'] = 'text/plain'
-            return response
-
-        # Offline CAs must not sign (consistent with CSR/CRL signing paths)
-        if ca.offline:
-            logger.warning(f"TSA request refused: CA '{ca.descr}' is offline")
-            response = make_response('TSA temporarily unavailable', 503)
-            response.headers['Content-Type'] = 'text/plain'
-            return response
-        
-        # Load CA cert and key
-        import base64
-        ca_cert = x509.load_pem_x509_certificate(
-            base64.b64decode(ca.crt), default_backend()
-        )
-        
-        # Decrypt private key (may be stored encrypted)
+        # Dedicated end-entity signer (#312). When tsa_signer_cert_refid is set
+        # it fully replaces the CA certificate as the timestamp signer. An
+        # expired / revoked / undecryptable signer fails hard here: we never
+        # fall back to the CA certificate silently. When unset, everything
+        # below is the unchanged CA-certificate path.
+        signer_chain = []
         try:
-            from security.encryption import decrypt_private_key
-            prv_decrypted = decrypt_private_key(ca.prv)
-        except ImportError:
-            prv_decrypted = ca.prv
-        
-        ca_key = load_pem_private_key(
-            base64.b64decode(prv_decrypted), password=None, backend=default_backend()
-        )
-        
-        # Process timestamp request
+            configured_signer = load_configured_signer()
+        except TSAConfigurationError as exc:
+            logger.error("TSA request refused: dedicated signer unusable: %s", exc)
+            response = make_response('TSA configuration invalid', 503)
+            response.headers['Content-Type'] = 'text/plain'
+            return response
+
+        import base64
         tsa_policy_config = SystemConfig.query.filter_by(key='tsa_policy_oid').first()
         tsa_policy = tsa_policy_config.value if tsa_policy_config else '1.2.3.4.1'
+
+        if configured_signer is not None:
+            # A dedicated signer is self-contained: it carries its own key and
+            # issuer chain and does not use the CA's private key, so the CA
+            # cert / offline / pending-CSR gates below do not apply to it.
+            signer_cert, signer_key, signer_chain = configured_signer
+        else:
+            # Get configured TSA CA. Timestamping is an explicit opt-in service:
+            # without an admin-designated CA we do NOT silently fall back to an
+            # arbitrary CA key (that would turn any deployment into an anonymous
+            # signing service using the CA's private key).
+            tsa_ca_config = SystemConfig.query.filter_by(key='tsa_ca_refid').first()
+            tsa_ca_refid = tsa_ca_config.value if tsa_ca_config else ''
+            if not tsa_ca_refid:
+                logger.warning("TSA request refused: no CA configured for TSA")
+                response = make_response('TSA not configured', 503)
+                response.headers['Content-Type'] = 'text/plain'
+                return response
+            ca = CA.query.filter_by(refid=tsa_ca_refid).first()
+
+            if not ca or not ca.crt or not ca.prv:
+                logger.warning(
+                    "TSA request refused: configured CA %r not found or missing cert/key",
+                    tsa_ca_refid,
+                )
+                response = make_response('TSA not configured', 503)
+                response.headers['Content-Type'] = 'text/plain'
+                return response
+
+            # Pending external-CSR CAs have no certificate to sign with
+            if not ca.crt:
+                logger.warning(f"TSA request refused: CA '{ca.descr}' is awaiting its certificate")
+                response = make_response('TSA temporarily unavailable', 503)
+                response.headers['Content-Type'] = 'text/plain'
+                return response
+
+            # Offline CAs must not sign (consistent with CSR/CRL signing paths)
+            if ca.offline:
+                logger.warning(f"TSA request refused: CA '{ca.descr}' is offline")
+                response = make_response('TSA temporarily unavailable', 503)
+                response.headers['Content-Type'] = 'text/plain'
+                return response
+
+            # Load CA cert and key
+            signer_cert = x509.load_pem_x509_certificate(
+                base64.b64decode(ca.crt), default_backend()
+            )
+
+            # Decrypt private key (may be stored encrypted)
+            try:
+                from security.encryption import decrypt_private_key
+                prv_decrypted = decrypt_private_key(ca.prv)
+            except ImportError:
+                prv_decrypted = ca.prv
+
+            signer_key = load_pem_private_key(
+                base64.b64decode(prv_decrypted), password=None, backend=default_backend()
+            )
+
+        # Process timestamp request
         try:
-            service = TSAService(ca_cert, ca_key, tsa_policy)
+            service = TSAService(signer_cert, signer_key, tsa_policy,
+                                 chain_certs=signer_chain)
         except TSAConfigurationError as exc:
             logger.error(f'Invalid TSA configuration: {exc}')
             response = make_response('TSA configuration invalid', 503)

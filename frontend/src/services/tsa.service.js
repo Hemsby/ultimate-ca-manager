@@ -14,5 +14,9 @@ export const tsaService = {
 
   async getStats() {
     return apiClient.get('/tsa/stats')
+  },
+
+  async getSignerCandidates() {
+    return apiClient.get('/tsa/signer-candidates')
   }
 }

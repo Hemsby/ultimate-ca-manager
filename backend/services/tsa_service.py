@@ -52,11 +52,16 @@ class TSAConfigurationError(ValueError):
 class TSAService:
     """RFC 3161 Timestamp Authority Service"""
 
-    def __init__(self, tsa_cert: x509.Certificate, tsa_key, policy_oid: str = '1.2.3.4.1'):
+    def __init__(self, tsa_cert: x509.Certificate, tsa_key, policy_oid: str = '1.2.3.4.1',
+                 chain_certs: Optional[list] = None):
         self.validate_certificate(tsa_cert)
         self.tsa_cert = tsa_cert
         self.tsa_key = tsa_key
         self.policy_oid = policy_oid
+        # Issuer chain of the signer, leaf-most first. Only a dedicated
+        # end-entity signer (#312) sets this; with a CA-certificate signer it
+        # stays empty so the emitted token is byte-for-byte what it was.
+        self.chain_certs = list(chain_certs) if chain_certs else []
 
     @staticmethod
     def _require_dedicated_tsa_cert() -> bool:
@@ -324,9 +329,20 @@ class TSAService:
         })
 
         if include_certs:
-            signed_data_value['certificates'] = [
-                cms.CertificateChoices({'certificate': cert_asn1})
-            ]
+            # RFC 3161 §2.4.2: only carry certificates when the client asked
+            # (certReq). The signer leaf comes first; a dedicated signer also
+            # carries its issuer chain so strict verifiers can build a path
+            # (#312). With a CA-certificate signer chain_certs is empty and
+            # this is the single-element list it always was.
+            cert_choices = [cms.CertificateChoices({'certificate': cert_asn1})]
+            for chain_cert in self.chain_certs:
+                chain_der = chain_cert.public_bytes(serialization.Encoding.DER)
+                cert_choices.append(
+                    cms.CertificateChoices(
+                        {'certificate': asn1_x509.Certificate.load(chain_der)}
+                    )
+                )
+            signed_data_value['certificates'] = cert_choices
 
         content_info = cms.ContentInfo({
             'content_type': 'signed_data',
@@ -390,3 +406,179 @@ class TSAService:
         if total_len < 256:
             return b'\x30\x81' + bytes([total_len]) + status_der
         return b'\x30\x82' + total_len.to_bytes(2, 'big') + status_der
+
+
+# ---------------------------------------------------------------------------
+# Dedicated end-entity signer (#312)
+#
+# tsa_require_dedicated_cert (RFC 3161 §2.3) had no way to actually supply a
+# dedicated signer: /tsa always signed with the configured CA's own
+# certificate. tsa_signer_cert_refid points the signer at an already-issued
+# UCM certificate carrying the timeStamping EKU. Resolution is by refid so an
+# in-place renewal (stable refid since 2.214) is picked up automatically.
+#
+# When the key is unset, behaviour is byte-for-byte the post-#311 CA-signer
+# path: none of the code below runs.
+# ---------------------------------------------------------------------------
+
+SIGNER_CONFIG_KEY = 'tsa_signer_cert_refid'
+
+
+def _get_signer_refid() -> str:
+    """Configured dedicated-signer refid, or '' when unset."""
+    try:
+        from models import SystemConfig
+        cfg = SystemConfig.query.filter_by(key=SIGNER_CONFIG_KEY).first()
+        return (cfg.value or '').strip() if cfg and cfg.value else ''
+    except Exception:
+        return ''
+
+
+def _load_issuer_chain(caref: Optional[str]) -> list:
+    """Issuer chain (leaf-most CA first) for the signer's issuing CA, or []."""
+    if not caref:
+        return []
+    try:
+        from services.ca.ca_operations import CAOperationsMixin
+        from cryptography.hazmat.backends import default_backend
+        pems = CAOperationsMixin.get_certificate_chain(caref)
+    except Exception:
+        return []
+    chain = []
+    for pem in pems:
+        try:
+            data = pem.encode() if isinstance(pem, str) else pem
+            chain.append(x509.load_pem_x509_certificate(data, default_backend()))
+        except Exception:
+            continue
+    return chain
+
+
+def _load_signer_certificate(refid: str):
+    """Resolve a dedicated TSA signer refid to (record, cert, key, chain).
+
+    Raises TSAConfigurationError with an explicit reason when the configured
+    signer cannot be used. The caller MUST fail hard on that (503, explicit
+    log line) and never fall back to the CA certificate: the signer is an
+    ordinary UCM certificate covered by the standard expiry alerts and
+    in-place auto-renewal, which are the intended safety net.
+    """
+    import base64
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+    from models import Certificate
+
+    record = Certificate.query.filter_by(refid=refid).first()
+    if record is None:
+        raise TSAConfigurationError(
+            f'configured TSA signer certificate {refid!r} was not found'
+        )
+    if record.revoked:
+        raise TSAConfigurationError(
+            f'configured TSA signer certificate {refid!r} is revoked'
+        )
+    if not record.crt or not record.prv:
+        raise TSAConfigurationError(
+            f'configured TSA signer certificate {refid!r} has no private key '
+            f'held by UCM'
+        )
+
+    try:
+        cert = x509.load_pem_x509_certificate(
+            base64.b64decode(record.crt), default_backend()
+        )
+    except Exception as exc:
+        raise TSAConfigurationError(
+            f'configured TSA signer certificate {refid!r} could not be parsed: {exc}'
+        )
+
+    now = datetime.now(timezone.utc)
+    if now < cert.not_valid_before_utc:
+        raise TSAConfigurationError(
+            f'configured TSA signer certificate {refid!r} is not valid until '
+            f'{cert.not_valid_before_utc.isoformat()}'
+        )
+    if now > cert.not_valid_after_utc:
+        raise TSAConfigurationError(
+            f'configured TSA signer certificate {refid!r} expired at '
+            f'{cert.not_valid_after_utc.isoformat()}'
+        )
+
+    try:
+        from security.encryption import decrypt_private_key
+        prv_pem = decrypt_private_key(record.prv)
+    except ImportError:
+        prv_pem = record.prv
+    try:
+        key = load_pem_private_key(
+            base64.b64decode(prv_pem), password=None, backend=default_backend()
+        )
+    except Exception as exc:
+        raise TSAConfigurationError(
+            f'configured TSA signer certificate {refid!r} private key could '
+            f'not be decrypted or loaded: {exc}'
+        )
+
+    # A dedicated end-entity signer without the timeStamping EKU is refused
+    # here; validate_certificate only waves through CA certificates.
+    TSAService.validate_certificate(cert)
+
+    return record, cert, key, _load_issuer_chain(record.caref)
+
+
+def load_configured_signer():
+    """Return (cert, key, chain_certs) for the dedicated TSA signer, or None.
+
+    None means no dedicated signer is configured; the caller keeps the
+    historical CA-certificate behaviour unchanged. Raises
+    TSAConfigurationError when a signer is configured but unusable.
+    """
+    refid = _get_signer_refid()
+    if not refid:
+        return None
+    _record, cert, key, chain = _load_signer_certificate(refid)
+    return cert, key, chain
+
+
+def describe_configured_signer() -> dict:
+    """Describe the configured dedicated signer for the config API. Never raises."""
+    refid = _get_signer_refid()
+    if not refid:
+        return {'configured': False}
+
+    try:
+        record, cert, _key, chain = _load_signer_certificate(refid)
+    except TSAConfigurationError as exc:
+        info = {'configured': True, 'refid': refid, 'usable': False,
+                'error': str(exc)}
+        try:
+            from models import Certificate
+            record = Certificate.query.filter_by(refid=refid).first()
+            if record is not None:
+                info.update({
+                    'descr': record.descr,
+                    'subject': record.subject,
+                    'serial': record.serial_number,
+                    'not_after': record.valid_to.isoformat() if record.valid_to else None,
+                    'revoked': bool(record.revoked),
+                })
+        except Exception:
+            pass
+        return info
+
+    last = chain[-1] if chain else None
+    chain_to_root = bool(last and last.subject == last.issuer)
+    return {
+        'configured': True,
+        'refid': refid,
+        'usable': True,
+        'descr': record.descr,
+        'subject': record.subject,
+        'subject_cn': record.subject_cn or record.common_name,
+        'serial': record.serial_number,
+        'not_after': cert.not_valid_after_utc.isoformat(),
+        'revoked': False,
+        'chain_len': len(chain),
+        'chain_to_root': chain_to_root,
+    }

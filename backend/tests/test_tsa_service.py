@@ -216,6 +216,96 @@ class TestProcessRequest:
         )
 
 
+class TestDedicatedSignerToken:
+    """#312: a dedicated signer embeds its issuer chain; the CA-signer path
+    (no chain) stays byte-for-byte what it was."""
+
+    def _issue_chain(self):
+        """Return (leaf_cert, leaf_key, [intermediate, root])."""
+        from cryptography import x509
+        from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from datetime import datetime, timedelta, timezone
+
+        now = datetime.now(timezone.utc)
+
+        def _mk(cn, signer_key=None, signer_name=None, ca=False, eku=None):
+            key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, cn)])
+            b = (x509.CertificateBuilder()
+                 .subject_name(name)
+                 .issuer_name(signer_name or name)
+                 .public_key(key.public_key())
+                 .serial_number(x509.random_serial_number())
+                 .not_valid_before(now - timedelta(days=1))
+                 .not_valid_after(now + timedelta(days=365)))
+            if ca:
+                b = b.add_extension(x509.BasicConstraints(ca=True, path_length=None), True)
+            if eku:
+                b = b.add_extension(x509.ExtendedKeyUsage(eku), True)
+            return b.sign(signer_key or key, hashes.SHA256()), key
+
+        root, root_key = _mk('Test Root', ca=True)
+        inter, inter_key = _mk('Test Intermediate', signer_key=root_key,
+                               signer_name=root.subject, ca=True)
+        leaf, leaf_key = _mk('Test TSA Signer', signer_key=inter_key,
+                             signer_name=inter.subject,
+                             eku=[ExtendedKeyUsageOID.TIME_STAMPING])
+        return leaf, leaf_key, [inter, root]
+
+    def test_ca_signer_path_embeds_exactly_one_certificate(self):
+        # Regression guard for NeySlim's byte-for-byte constraint: with no
+        # dedicated signer configured, chain_certs defaults to empty and the
+        # token carries only the signer certificate.
+        from services.tsa_service import TSAService
+
+        cert, key = _self_signed_tsa()
+        svc = TSAService(cert, key)
+        resp_der, _ = svc.process_request(
+            _build_tsq(hashlib.sha256(b'no chain').digest())
+        )
+        signed_data = tsp.TimeStampResp.load(resp_der)['time_stamp_token']['content']
+        assert len(signed_data['certificates']) == 1
+
+    def test_dedicated_signer_embeds_leaf_then_issuer_chain(self):
+        from services.tsa_service import TSAService
+
+        leaf, leaf_key, chain = self._issue_chain()
+        svc = TSAService(leaf, leaf_key, chain_certs=chain)
+        resp_der, _ = svc.process_request(
+            _build_tsq(hashlib.sha256(b'with chain').digest())
+        )
+        signed_data = tsp.TimeStampResp.load(resp_der)['time_stamp_token']['content']
+        certs = signed_data['certificates']
+        assert len(certs) == 3
+        # CMS 'certificates' is a SET (DER reorders it); all three must be
+        # present so a strict verifier can build leaf -> intermediate -> root.
+        subjects = {c.chosen.subject.native['common_name'] for c in certs}
+        assert subjects == {'Test TSA Signer', 'Test Intermediate', 'Test Root'}
+
+        # ESSCertIDv2 / SignerInfo.sid still bind the leaf, not a chain cert.
+        signer = signed_data['signer_infos'][0]
+        assert signer['sid'].chosen['serial_number'].native == leaf.serial_number
+
+    def test_chain_is_omitted_when_client_did_not_request_certs(self):
+        from services.tsa_service import TSAService
+
+        leaf, leaf_key, chain = self._issue_chain()
+        svc = TSAService(leaf, leaf_key, chain_certs=chain)
+        tsq = _build_tsq(hashlib.sha256(b'no certreq').digest())
+        # flip cert_req off
+        req = tsp.TimeStampReq.load(tsq)
+        fields = {
+            'version': 1,
+            'message_imprint': req['message_imprint'],
+            'cert_req': False,
+        }
+        resp_der, _ = svc.process_request(tsp.TimeStampReq(fields).dump())
+        signed_data = tsp.TimeStampResp.load(resp_der)['time_stamp_token']['content']
+        assert signed_data['certificates'].native is None
+
+
 class TestTsaCertificateValidation:
     def test_end_entity_without_eku_is_rejected(self):
         from services.tsa_service import TSAConfigurationError, TSAService
@@ -366,6 +456,138 @@ class TestTsaProtocolAudit:
                     SystemConfig.key.in_([
                         'tsa_enabled', 'tsa_ca_refid', 'tsa_policy_oid'
                     ])
+                ).delete(synchronize_session=False)
+                db.session.commit()
+
+
+class TestTsaDedicatedSignerApi:
+    """#312: selecting an already-issued certificate as the TSA signer."""
+
+    TS_OID = '1.3.6.1.5.5.7.3.8'
+
+    def test_candidates_list_only_offers_timestamping_certs_with_a_local_key(
+        self, auth_client, create_cert
+    ):
+        ts_cert = create_cert(cn='ucm-tsa-signer', extra_ekus=[self.TS_OID])
+        plain = create_cert(cn='ucm-plain-server')
+
+        r = auth_client.get('/api/v2/tsa/signer-candidates')
+        assert r.status_code == 200
+        refids = {c['refid'] for c in json.loads(r.data)['data']}
+        assert ts_cert['refid'] in refids
+        assert plain['refid'] not in refids
+
+    def test_patch_rejects_a_certificate_without_the_timestamping_eku(
+        self, auth_client, create_cert
+    ):
+        plain = create_cert(cn='ucm-not-a-signer')
+        r = auth_client.patch(
+            '/api/v2/tsa/config',
+            data=json.dumps({'signer_cert_refid': plain['refid']}),
+            content_type='application/json',
+        )
+        assert r.status_code == 400
+
+    def test_patch_accepts_a_valid_signer_and_config_reports_it(
+        self, app, auth_client, create_cert
+    ):
+        from models import SystemConfig, db
+
+        ts_cert = create_cert(cn='ucm-tsa-signer-2', extra_ekus=[self.TS_OID])
+        try:
+            r = auth_client.patch(
+                '/api/v2/tsa/config',
+                data=json.dumps({'signer_cert_refid': ts_cert['refid']}),
+                content_type='application/json',
+            )
+            assert r.status_code == 200
+
+            cfg = json.loads(auth_client.get('/api/v2/tsa/config').data)['data']
+            assert cfg['signer_cert_refid'] == ts_cert['refid']
+            assert cfg['signer']['configured'] is True
+            assert cfg['signer']['usable'] is True
+
+            # Clearing it returns to the CA-certificate signer.
+            r = auth_client.patch(
+                '/api/v2/tsa/config',
+                data=json.dumps({'signer_cert_refid': ''}),
+                content_type='application/json',
+            )
+            assert r.status_code == 200
+            cfg = json.loads(auth_client.get('/api/v2/tsa/config').data)['data']
+            assert cfg['signer_cert_refid'] == ''
+            assert cfg['signer'] == {'configured': False}
+        finally:
+            with app.app_context():
+                SystemConfig.query.filter_by(
+                    key='tsa_signer_cert_refid'
+                ).delete(synchronize_session=False)
+                db.session.commit()
+
+    def test_tsa_signs_with_the_dedicated_signer_and_embeds_its_chain(
+        self, app, client, auth_client, create_ca, create_cert
+    ):
+        from models import SystemConfig, db
+
+        ca = create_ca(cn='TSA Dedicated Signer CA')
+        ts_cert = create_cert(
+            cn='ucm-tsa-dedicated', ca_id=ca['id'], extra_ekus=[self.TS_OID],
+        )
+        with app.app_context():
+            for k, v in (('tsa_enabled', 'true'),
+                         ('tsa_signer_cert_refid', ts_cert['refid'])):
+                row = SystemConfig.query.filter_by(key=k).first() or SystemConfig(key=k)
+                row.value = v
+                db.session.add(row)
+            db.session.commit()
+        try:
+            digest = hashlib.sha256(b'dedicated signer token').digest()
+            resp = client.post(
+                '/tsa', data=_build_tsq(digest),
+                content_type='application/timestamp-query',
+            )
+            assert resp.status_code == 200
+            signed_data = tsp.TimeStampResp.load(
+                resp.data
+            )['time_stamp_token']['content']
+            assert _status_native(resp.data) == 'granted'
+            subjects = {
+                c.chosen.subject.native.get('common_name')
+                for c in signed_data['certificates']
+            }
+            # signer leaf + its issuing CA are both present
+            assert 'ucm-tsa-dedicated' in subjects
+            assert 'TSA Dedicated Signer CA' in subjects
+        finally:
+            with app.app_context():
+                SystemConfig.query.filter(
+                    SystemConfig.key.in_(['tsa_enabled', 'tsa_signer_cert_refid'])
+                ).delete(synchronize_session=False)
+                db.session.commit()
+
+    def test_missing_signer_fails_hard_without_falling_back_to_the_ca(
+        self, app, client
+    ):
+        """A configured-but-unusable signer must 503, never sign with the CA."""
+        from models import SystemConfig, db
+
+        with app.app_context():
+            for k, v in (('tsa_enabled', 'true'),
+                         ('tsa_signer_cert_refid', 'cert-does-not-exist')):
+                row = SystemConfig.query.filter_by(key=k).first() or SystemConfig(key=k)
+                row.value = v
+                db.session.add(row)
+            db.session.commit()
+        try:
+            resp = client.post(
+                '/tsa', data=_build_tsq(hashlib.sha256(b'x').digest()),
+                content_type='application/timestamp-query',
+            )
+            assert resp.status_code == 503
+        finally:
+            with app.app_context():
+                SystemConfig.query.filter(
+                    SystemConfig.key.in_(['tsa_enabled', 'tsa_signer_cert_refid'])
                 ).delete(synchronize_session=False)
                 db.session.commit()
 
