@@ -7,7 +7,6 @@ import { useTranslation } from 'react-i18next'
 import { Card, Button, Select } from '../../components'
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch'
 import { apiClient } from '../../services'
-import { persistPreference } from '../../stores/userPreferencesStore'
 import { useNotification } from '../../contexts'
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({
@@ -52,15 +51,6 @@ export default function AutoUpdateSettings() {
         hour,
         popup_enabled: popupEnabled,
       })
-      if (popupEnabled) {
-        // Prime the per-user marker so the popup only appears after the
-        // NEXT update, not immediately for the version already running.
-        try {
-          const v = await apiClient.get('/system/updates/version')
-          const version = v?.data?.version || v?.version
-          if (version) persistPreference('update_popup_seen_version', version)
-        } catch { /* non-blocking */ }
-      }
       showSuccess(t('settings.autoUpdateSaved'))
     } catch (err) {
       showError(err?.message || t('settings.autoUpdateSaveFailed'))

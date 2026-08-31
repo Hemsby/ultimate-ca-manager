@@ -37,6 +37,7 @@ export function UpdatePopup() {
         if (cancelled) return
         const data = response?.data || response || {}
         if (!data.enabled || !data.version) return
+        if (data.baseline_version === data.version) return
         if (getPreferences().update_popup_seen_version === data.version) return
         setInfo(data)
         setOpen(true)

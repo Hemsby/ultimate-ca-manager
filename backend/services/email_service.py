@@ -102,15 +102,16 @@ class EmailService:
     
     @staticmethod
     def _is_valid_address(addr: str) -> bool:
-        """Cheap mailbox shape check (#303): something@domain.tld.
+        """Cheap mailbox shape check (#303): something@domain.
 
         Deliberately loose (no full RFC 5322): the goal is only to skip
         obviously undeliverable values ("tag only" account contacts, typos)
-        at SEND time instead of bouncing. Nothing is validated at input time.
+        at SEND time instead of bouncing. Dotless internal SMTP domains and
+        address literals remain valid for on-prem deployments.
         """
         if not addr or len(addr) > 320:
             return False
-        return re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', addr) is not None
+        return re.match(r'^[^@\s]+@[^@\s]+$', addr) is not None
 
     @staticmethod
     def send_email(

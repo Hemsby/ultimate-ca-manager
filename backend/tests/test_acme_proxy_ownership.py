@@ -771,6 +771,35 @@ class TestClientTxtValues:
             ])
             assert upstream_value not in values
 
+    def test_uses_current_authz_for_overlapping_multi_domain_orders(
+        self, app, monkeypatch,
+    ):
+        from services.acme.acme_proxy_service import _dns01_txt_value
+        first_authz = f'{UPSTREAM}/acme/authz-v3/txt-first'
+        shared_authz = f'{UPSTREAM}/acme/authz-v3/txt-overlap'
+        with app.app_context():
+            multi = _seed_order(
+                account_id='acct-multi', client_jwk_thumbprint='thumb-multi',
+                order_url=f'{UPSTREAM}/acme/order/txt/multi',
+                upstream_order_url=f'{UPSTREAM}/acme/order/txt/multi',
+                upstream_authz_urls=json.dumps([first_authz, shared_authz]),
+                certificate_url=f'{UPSTREAM}/acme/cert/txt-multi',
+            )
+            _seed_order(
+                account_id='acct-overlap', client_jwk_thumbprint='thumb-overlap',
+                order_url=f'{UPSTREAM}/acme/order/txt/overlap',
+                upstream_order_url=f'{UPSTREAM}/acme/order/txt/overlap',
+                upstream_authz_urls=json.dumps([shared_authz]),
+                certificate_url=f'{UPSTREAM}/acme/cert/txt-overlap',
+            )
+            svc = _make_svc(app, monkeypatch)
+            upstream_value = _dns01_txt_value('tok.upstream-thumb')
+            values = svc._client_txt_values(
+                multi, 'tok.upstream-thumb', upstream_value,
+                authz_url=shared_authz,
+            )
+            assert _dns01_txt_value('tok.thumb-overlap') in values
+
     def test_no_thumbprint_returns_empty(self, app, monkeypatch):
         with app.app_context():
             order = _seed_order(

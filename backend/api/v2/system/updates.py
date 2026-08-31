@@ -154,8 +154,8 @@ def update_update_settings():
     """Update the update automation settings (#301)"""
     from services.updates import (
         UPDATE_CHANNEL_KEY, AUTO_UPDATE_ENABLED_KEY, AUTO_UPDATE_HOUR_KEY,
-        UPDATE_POPUP_ENABLED_KEY, _cfg_set_many,
-        get_update_settings as read_settings,
+        UPDATE_POPUP_ENABLED_KEY, UPDATE_POPUP_BASELINE_KEY, _cfg_set_many,
+        get_current_version, get_update_settings as read_settings,
     )
 
     data = request.json or {}
@@ -177,6 +177,7 @@ def update_update_settings():
 
     # All fields in one transaction: a commit failure must yield an error,
     # never a partially saved config with a success audit (review F-06)
+    current_settings = read_settings()
     changes = {}
     if 'channel' in data:
         changes[UPDATE_CHANNEL_KEY] = data['channel']
@@ -185,7 +186,12 @@ def update_update_settings():
     if 'auto_install' in data:
         changes[AUTO_UPDATE_ENABLED_KEY] = 'true' if data['auto_install'] else 'false'
     if 'popup_enabled' in data:
-        changes[UPDATE_POPUP_ENABLED_KEY] = 'true' if data['popup_enabled'] else 'false'
+        popup_enabled = data['popup_enabled']
+        changes[UPDATE_POPUP_ENABLED_KEY] = 'true' if popup_enabled else 'false'
+        if popup_enabled and not current_settings.get('popup_enabled'):
+            changes[UPDATE_POPUP_BASELINE_KEY] = get_current_version()
+        elif not popup_enabled:
+            changes[UPDATE_POPUP_BASELINE_KEY] = ''
     try:
         _cfg_set_many(changes)
     except Exception as e:
@@ -218,12 +224,14 @@ def whats_new():
         get_update_settings as read_settings,
     )
 
-    if not read_settings().get('popup_enabled'):
+    settings = read_settings()
+    if not settings.get('popup_enabled'):
         return success_response(data={'enabled': False})
 
     data = {
         'enabled': True,
         'version': get_current_version(),
+        'baseline_version': settings.get('popup_baseline_version') or '',
         'installed_at': get_installed_at(),
         'release_notes': '',
         'published_at': None,

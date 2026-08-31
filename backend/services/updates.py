@@ -568,6 +568,7 @@ UPDATE_CHANNEL_KEY = 'update_check_channel'          # 'stable' | 'rc'
 AUTO_UPDATE_ENABLED_KEY = 'auto_update_enabled'      # 'true' | 'false' (default off)
 AUTO_UPDATE_HOUR_KEY = 'auto_update_hour'            # local hour 0-23 (default 3)
 UPDATE_POPUP_ENABLED_KEY = 'update_popup_enabled'    # 'true' | 'false' (default off, #308)
+UPDATE_POPUP_BASELINE_KEY = 'update_popup_baseline_version'  # version running when enabled
 _LAST_CHECK_TS_KEY = 'update_last_check_ts'
 _NOTIFIED_VERSION_KEY = 'update_notified_version'
 _ATTEMPTED_VERSION_KEY = 'auto_update_attempted_version'
@@ -630,6 +631,7 @@ def get_update_settings():
         'auto_install': _cfg_get(AUTO_UPDATE_ENABLED_KEY, 'false') == 'true',
         'hour': hour if 0 <= hour <= 23 else 3,
         'popup_enabled': _cfg_get(UPDATE_POPUP_ENABLED_KEY, 'false') == 'true',
+        'popup_baseline_version': _cfg_get(UPDATE_POPUP_BASELINE_KEY, ''),
     }
 
 

@@ -16,7 +16,8 @@ def _clear_update_config(app):
     with app.app_context():
         for key in (
             updates.UPDATE_CHANNEL_KEY, updates.AUTO_UPDATE_ENABLED_KEY,
-            updates.AUTO_UPDATE_HOUR_KEY, updates._LAST_CHECK_TS_KEY,
+            updates.AUTO_UPDATE_HOUR_KEY, updates.UPDATE_POPUP_ENABLED_KEY,
+            updates.UPDATE_POPUP_BASELINE_KEY, updates._LAST_CHECK_TS_KEY,
             updates._NOTIFIED_VERSION_KEY, updates._ATTEMPTED_VERSION_KEY,
             updates._RESULT_OP_KEY,
         ):
@@ -573,8 +574,20 @@ class TestUpdatePopup:
         data = r.get_json()['data']
         assert data['enabled'] is True
         assert data['version'] == updates.get_current_version()
+        assert data['baseline_version'] == updates.get_current_version()
         assert data['release_notes'].startswith('## Fixed')
         assert data['published_at'] == '2026-08-30T00:00:00Z'
+
+    def test_resaving_enabled_does_not_advance_baseline(
+        self, auth_client, clean_update_config, monkeypatch,
+    ):
+        monkeypatch.setattr(updates, 'get_current_version', lambda: '2.217')
+        auth_client.patch('/api/v2/system/updates/settings',
+                          json={'popup_enabled': True})
+        monkeypatch.setattr(updates, 'get_current_version', lambda: '2.218')
+        r = auth_client.patch('/api/v2/system/updates/settings',
+                              json={'popup_enabled': True})
+        assert r.get_json()['data']['popup_baseline_version'] == '2.217'
 
     def test_whatsnew_degrades_without_release_notes(self, auth_client,
                                                      clean_update_config, monkeypatch):

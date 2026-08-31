@@ -3,6 +3,8 @@ HTTPS certificate binding (#303 M1): the certificate applied to HTTPS is
 remembered by refid; its renewal re-materializes the files and restarts the
 service; regenerating a self-signed certificate clears the binding.
 """
+import base64
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -30,6 +32,31 @@ class TestBindingStore:
             assert get_bound_refid() == 'cert-ref-1'
             set_bound_refid('')
             assert get_bound_refid() == ''
+
+
+class TestMaterialization:
+    def test_private_key_is_loaded_through_key_codec(self, monkeypatch, tmp_path):
+        cert_path = tmp_path / 'https_cert.pem'
+        key_path = tmp_path / 'https_key.pem'
+        monkeypatch.setattr(https_binding, '_paths', lambda: (cert_path, key_path))
+
+        key_pem = b'-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----\n'
+        load_key = MagicMock(return_value=key_pem)
+        monkeypatch.setattr(https_binding, 'load_pem_bytes', load_key, raising=False)
+        stored_key = base64.b64encode(b'ENC:encrypted-at-rest').decode()
+        cert = SimpleNamespace(
+            id=7,
+            crt=base64.b64encode(
+                b'-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----\n'
+            ).decode(),
+            prv=stored_key,
+            caref=None,
+        )
+
+        https_binding.materialize_https_cert(cert)
+
+        load_key.assert_called_once_with(stored_key, context='certificate 7')
+        assert key_path.read_bytes() == key_pem
 
 
 class TestRenewalSubscriber:

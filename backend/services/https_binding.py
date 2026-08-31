@@ -11,6 +11,9 @@ import logging
 import os
 from pathlib import Path
 
+from utils.datetime_utils import utc_now
+from utils.key_codec import load_pem_bytes
+
 logger = logging.getLogger(__name__)
 
 BOUND_REFID_KEY = 'https_bound_certificate_refid'
@@ -38,7 +41,6 @@ def materialize_https_cert(cert) -> None:
 
     from models import CA
     from services.ca_service import CAService
-    from utils.time_utils import utc_now
 
     cert_path, key_path = _paths()
 
@@ -49,7 +51,9 @@ def materialize_https_cert(cert) -> None:
             shutil.copy(key_path, f"{key_path}.backup-{backup_suffix}")
 
     cert_data = _decode(cert.crt)
-    key_data = _decode(cert.prv)
+    key_data = load_pem_bytes(
+        cert.prv, context=f"certificate {cert.id}"
+    ).decode('utf-8')
 
     full_cert = cert_data
     if cert.caref:

@@ -21,7 +21,8 @@ const STATUS_VARIANT = {
 export default function LocalOrdersTab() {
   const { t } = useTranslation()
   const { showSuccess, showError, showConfirm } = useNotification()
-  const { canWrite, canDelete } = usePermission()
+  const { canDelete } = usePermission()
+  const canDeleteOrders = canDelete('acme')
   const [items, setItems] = useState([])
   const [meta, setMeta] = useState({ page: 1, per_page: 50, total: 0 })
   const [page, setPage] = useState(1)
@@ -34,8 +35,14 @@ export default function LocalOrdersTab() {
       const qs = buildQueryString({ page: p, per_page: 50, status: s || undefined })
       const response = await apiClient.get(`/acme/orders${qs}`)
       const data = response?.data || response || {}
+      const nextMeta = data.meta || { page: p, per_page: 50, total: 0 }
+      const totalPages = Math.max(1, Math.ceil(nextMeta.total / nextMeta.per_page))
+      setMeta(nextMeta)
+      if (p > totalPages) {
+        setPage(totalPages)
+        return
+      }
       setItems(data.items || [])
-      setMeta(data.meta || { page: p, per_page: 50, total: 0 })
     } catch (err) {
       showError(err.message || t('acme.localOrdersLoadFailed'))
     } finally {
@@ -47,8 +54,13 @@ export default function LocalOrdersTab() {
 
   const handleDelete = async (row) => {
     const confirmed = await showConfirm(
-      t('acme.deleteLocalOrderConfirm'),
-      t('acme.deleteLocalOrderConfirmDesc', { domain: row.domain })
+      t('acme.deleteLocalOrderConfirmDesc', { domain: row.domain }),
+      {
+        title: t('acme.deleteLocalOrderConfirm'),
+        confirmText: t('common.delete'),
+        cancelText: t('common.cancel'),
+        variant: 'danger',
+      }
     )
     if (!confirmed) return
     try {
@@ -62,8 +74,13 @@ export default function LocalOrdersTab() {
 
   const handlePurge = async () => {
     const confirmed = await showConfirm(
-      t('acme.purgeLocalOrdersConfirm'),
-      t('acme.purgeLocalOrdersConfirmDesc')
+      t('acme.purgeLocalOrdersConfirmDesc'),
+      {
+        title: t('acme.purgeLocalOrdersConfirm'),
+        confirmText: t('acme.purgeLocalOrders'),
+        cancelText: t('common.cancel'),
+        variant: 'danger',
+      }
     )
     if (!confirmed) return
     try {
@@ -87,15 +104,21 @@ export default function LocalOrdersTab() {
       render: (v) => v ? formatDate(v) : '-' },
     { key: 'created_at', header: t('common.created'), priority: 3,
       render: (v) => v ? formatDate(v) : '-' },
-    ...(canDelete('acme') ? [{
+    ...(canDeleteOrders ? [{
       key: '_actions', header: '', priority: 1,
       render: (_v, row) => (
-        <Button type="button" size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); handleDelete(row) }}>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          aria-label={t('common.delete')}
+          onClick={(e) => { e.stopPropagation(); handleDelete(row) }}
+        >
           <Trash size={14} />
         </Button>
       ),
     }] : []),
-  ], [t, canDelete]) // eslint-disable-line react-hooks/exhaustive-deps
+  ], [t, canDeleteOrders]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-3">
@@ -113,7 +136,7 @@ export default function LocalOrdersTab() {
           <Button type="button" size="sm" variant="secondary" onClick={() => load()}>
             <ArrowsClockwise size={14} />
           </Button>
-          {canWrite('acme') && (
+          {canDeleteOrders && (
             <Button type="button" size="sm" variant="secondary" onClick={handlePurge}>
               <Broom size={14} />
               {t('acme.purgeLocalOrders')}

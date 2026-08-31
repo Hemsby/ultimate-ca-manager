@@ -40,7 +40,8 @@ class TestIsValidAddress:
         ('user@example.com', True),
         ('first.last+tag@sub.example.co', True),
         ('backup-server', False),          # "tag only" contact
-        ('user@localhost', False),         # no dot in domain
+        ('user@localhost', True),           # valid internal SMTP domain
+        ('user@[192.0.2.1]', True),         # valid address-literal domain
         ('user@@example.com', False),
         ('user @example.com', False),
         ('', False),
@@ -81,3 +82,10 @@ class TestSendTimeFiltering:
             ok, _msg = self._send(['a@example.com', 'b@example.org'])
         assert ok is True
         assert factory.call_count == 1
+
+    def test_internal_mailbox_is_sent(self, app, smtp_spy):
+        _factory, server = smtp_spy
+        with app.app_context():
+            ok, _msg = self._send(['alerts@mailhost'])
+        assert ok is True
+        assert server.sendmail.call_args[0][1] == ['alerts@mailhost']

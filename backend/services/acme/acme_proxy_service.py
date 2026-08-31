@@ -882,9 +882,10 @@ class AcmeProxyService:
         upstream_order['finalize'] = f"{self.base_url}/order/{order_id}/finalize"
         return upstream_order, order_id
 
-    def _client_txt_values(self, order, key_authz, upstream_value):
+    def _client_txt_values(self, order, key_authz, upstream_value,
+                           authz_url=None):
         """dns-01 TXT values computed with the CLIENT thumbprints of every
-        sibling order sharing this order's upstream authz (#306/#307), so
+        sibling order sharing the current upstream authz (#306/#307), so
         client-side propagation pre-checks can succeed. The upstream value is
         excluded; failures return an empty list (publishing the client values
         is best-effort)."""
@@ -893,8 +894,9 @@ class AcmeProxyService:
             token = key_authz.split('.', 1)[0]
             siblings = [order]
             urls = json.loads(order.upstream_authz_urls) if order.upstream_authz_urls else []
-            if urls:
-                siblings = self._orders_by_authz_url(urls[0]) or [order]
+            current_authz_url = authz_url or (urls[0] if urls else None)
+            if current_authz_url:
+                siblings = self._orders_by_authz_url(current_authz_url) or [order]
             seen = set()
             for sibling in siblings:
                 thumb = getattr(sibling, 'client_jwk_thumbprint', None)
@@ -1241,7 +1243,8 @@ class AcmeProxyService:
                         app = current_app._get_current_object()
                         thread = threading.Thread(
                             target=self._bg_respond_challenge,
-                            args=(app, chall_url, key_authz, domain, order.id)
+                            args=(app, chall_url, key_authz, domain, order.id,
+                                  authz_url)
                         )
                         thread.name = f"ACMEProxy-AutoDNS-{domain}"
                         thread.daemon = True
@@ -1387,7 +1390,7 @@ class AcmeProxyService:
         app = current_app._get_current_object()
         thread = threading.Thread(
             target=self._bg_respond_challenge,
-            args=(app, chall_url, key_authz, domain, order.id)
+            args=(app, chall_url, key_authz, domain, order.id, authz_url)
         )
         thread.name = f"ACMEProxy-DNS-{domain}"
         thread.daemon = True
@@ -1514,7 +1517,8 @@ class AcmeProxyService:
         """
         return AcmeProxyService(self.base_url, account_id=self._account_id)
 
-    def _bg_respond_challenge(self, app, chall_url, key_authz, domain, order_id):
+    def _bg_respond_challenge(self, app, chall_url, key_authz, domain, order_id,
+                              authz_url=None):
         """Background task for DNS setup and upstream validation trigger.
 
         Upstream signing runs on a thread-owned service instance built by
@@ -1557,7 +1561,9 @@ class AcmeProxyService:
                 # never see the value published above. The client thumbprints
                 # are known: publish their values too (extra TXT records on
                 # the same name are ignored by the upstream CA validator).
-                for extra_value in self._client_txt_values(order, key_authz, txt_value):
+                for extra_value in self._client_txt_values(
+                    order, key_authz, txt_value, authz_url=authz_url
+                ):
                     try:
                         provider.create_txt_record(zone, full_record_name, extra_value)
                         records = json.loads(order.dns_records_created) if order.dns_records_created else []
