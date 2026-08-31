@@ -206,9 +206,10 @@ def update_acme_account(account_id):
     """Admin edit of a local ACME account's contact e-mail (#303 major 4).
 
     Per RFC 8555 the ``contact`` field belongs to the ACME client, which may
-    silently overwrite this value on its next account update — the UI spells
-    that caveat out. An empty value clears the contact ("tag only" accounts
-    stay possible, nothing is validated beyond a minimal mailbox shape).
+    silently overwrite this value on its next account update; the UI spells
+    that caveat out. An empty value clears the contact. No shape validation
+    here: "tag only" values are legitimate, invalid addresses are skipped at
+    send time by the e-mail service.
     """
     account = resolve_acme_account(account_id)
     if not account:
@@ -218,12 +219,13 @@ def update_acme_account(account_id):
     if 'email' not in data:
         return error_response('email field required', 400)
     email = (data.get('email') or '').strip()
-    if email and ('@' not in email or ' ' in email):
-        return error_response('email does not look like a mailbox address', 400)
+    if len(email) > 254:
+        return error_response('contact value too long', 400)
 
     account.contact = json.dumps([f'mailto:{email}']) if email else None
-    if not safe_commit('acme_account_update'):
-        return error_response('Failed to update account', 500)
+    ok, err = safe_commit(logger, 'Failed to update ACME account')
+    if not ok:
+        return err
 
     AuditService.log_action(
         action='acme_account_update', resource_type='acme_account',

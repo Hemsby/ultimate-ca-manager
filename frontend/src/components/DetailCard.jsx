@@ -548,15 +548,18 @@ export function CompactField({
   value, 
   icon: IconProp,
   autoIcon,
-  mono, 
+  mono,
   copyable,
   hint,
-  className, 
-  colSpan 
+  className,
+  colSpan,
+  children
 }) {
   const [copied, setCopied] = useState(false)
-  
-  if (value === undefined || value === null || value === '') {
+  // children take precedence over value (rich content, e.g. value + action button)
+  const content = children ?? value
+
+  if (content === undefined || content === null || content === '') {
     return null // Don't render empty fields
   }
   
@@ -589,7 +592,7 @@ export function CompactField({
         <div className="min-w-0 flex-1">
           <div className="text-2xs text-text-tertiary uppercase tracking-wider" title={hint}>{label}</div>
           <div className="text-xs font-mono text-text-primary break-all">
-            {value}
+            {content}
           </div>
         </div>
         {copyable && (
@@ -622,7 +625,7 @@ export function CompactField({
     >
       <span className="text-text-tertiary" title={hint}>{label}:</span>
       <span className="ml-1 font-mono text-xs text-text-primary">
-        {value}
+        {content}
       </span>
       {copyable && (
         <span className="inline-flex ml-1 opacity-0 group-hover:opacity-100 transition-opacity">

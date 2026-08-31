@@ -1,0 +1,159 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+
+const mocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  delete: vi.fn(),
+  post: vi.fn(),
+  showConfirm: vi.fn(),
+  showSuccess: vi.fn(),
+  showError: vi.fn(),
+  canWrite: vi.fn(),
+  canDelete: vi.fn(),
+}))
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key, values) => values?.domain ? `${key}:${values.domain}` : key,
+  }),
+}))
+
+vi.mock('../../../services', () => ({
+  apiClient: {
+    get: mocks.get,
+    delete: mocks.delete,
+    post: mocks.post,
+  },
+}))
+
+vi.mock('../../../services/apiClient', () => ({
+  buildQueryString: (params) => {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined) query.set(key, String(value))
+    })
+    return `?${query.toString()}`
+  },
+}))
+
+vi.mock('../../../contexts', () => ({
+  useNotification: () => ({
+    showConfirm: mocks.showConfirm,
+    showSuccess: mocks.showSuccess,
+    showError: mocks.showError,
+  }),
+}))
+
+vi.mock('../../../hooks', () => ({
+  usePermission: () => ({
+    canWrite: mocks.canWrite,
+    canDelete: mocks.canDelete,
+  }),
+}))
+
+vi.mock('../../../components', () => ({
+  Badge: ({ children }) => <span>{children}</span>,
+  Button: ({ children, ...props }) => <button {...props}>{children}</button>,
+  EmptyState: ({ title }) => <div>{title}</div>,
+  FilterSelect: () => <div />,
+  ResponsiveDataTable: ({ columns, data }) => (
+    <div>
+      {data.map((row) => (
+        <div key={row.id}>
+          <span>{row.domain}</span>
+          {columns.map((column) => (
+            <span key={column.key}>
+              {column.render ? column.render(row[column.key], row) : row[column.key]}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  ),
+}))
+
+import LocalOrdersTab from '../LocalOrdersTab'
+
+const order = {
+  id: 7,
+  domain: 'example.com',
+  account: 'acct',
+  status: 'Pending',
+  method: 'DNS-01',
+  expires: '2026-09-01',
+  created_at: '2026-08-31T00:00:00Z',
+}
+
+const response = (items, page, total) => ({
+  data: { items, meta: { page, per_page: 50, total } },
+})
+
+describe('LocalOrdersTab', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.canWrite.mockReturnValue(true)
+    mocks.canDelete.mockReturnValue(true)
+    mocks.showConfirm.mockResolvedValue(true)
+    mocks.delete.mockResolvedValue({})
+    mocks.post.mockResolvedValue({ data: { orders: 1 } })
+    mocks.get.mockResolvedValue(response([order], 1, 1))
+  })
+
+  it('hides purge without delete:acme even when write:acme is granted', async () => {
+    mocks.canDelete.mockReturnValue(false)
+    render(<LocalOrdersTab />)
+    await screen.findAllByText('example.com')
+    expect(screen.queryByText('acme.purgeLocalOrders')).not.toBeInTheDocument()
+  })
+
+  it('passes translated scope and danger options to delete confirmation', async () => {
+    render(<LocalOrdersTab />)
+    await screen.findAllByText('example.com')
+    fireEvent.click(screen.getByRole('button', { name: 'common.delete' }))
+
+    await waitFor(() => expect(mocks.showConfirm).toHaveBeenCalledWith(
+      'acme.deleteLocalOrderConfirmDesc:example.com',
+      {
+        title: 'acme.deleteLocalOrderConfirm',
+        confirmText: 'common.delete',
+        cancelText: 'common.cancel',
+        variant: 'danger',
+      }
+    ))
+  })
+
+  it('passes translated scope and danger options to purge confirmation', async () => {
+    render(<LocalOrdersTab />)
+    await screen.findAllByText('example.com')
+    fireEvent.click(screen.getByText('acme.purgeLocalOrders'))
+
+    await waitFor(() => expect(mocks.showConfirm).toHaveBeenCalledWith(
+      'acme.purgeLocalOrdersConfirmDesc',
+      {
+        title: 'acme.purgeLocalOrdersConfirm',
+        confirmText: 'acme.purgeLocalOrders',
+        cancelText: 'common.cancel',
+        variant: 'danger',
+      }
+    ))
+  })
+
+  it('returns to the last valid page after deleting its final row', async () => {
+    mocks.get
+      .mockResolvedValueOnce(response([order], 1, 51))
+      .mockResolvedValueOnce(response([order], 2, 51))
+      .mockResolvedValueOnce(response([], 2, 50))
+      .mockResolvedValueOnce(response([order], 1, 50))
+
+    render(<LocalOrdersTab />)
+    await screen.findByText('1 / 2')
+    fireEvent.click(screen.getByRole('button', { name: '›' }))
+    await screen.findByText('2 / 2')
+    fireEvent.click(screen.getByRole('button', { name: 'common.delete' }))
+
+    await waitFor(() => {
+      const urls = mocks.get.mock.calls.map(([url]) => url)
+      expect(urls.filter((url) => url.includes('page=1')).length).toBeGreaterThan(1)
+    })
+  })
+})

@@ -112,6 +112,8 @@ export default function LetsEncryptTab({
         </div>
         {clientOrders.length === 0 ? (
           <p className="text-xs text-text-tertiary py-4 text-center">{t('acme.noCertificateOrders')}</p>
+        ) : visibleOrders.length === 0 ? (
+          <p className="text-xs text-text-tertiary py-4 text-center">{t('common.noResults')}</p>
         ) : (
           <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
             {visibleOrders.map((order) => (
