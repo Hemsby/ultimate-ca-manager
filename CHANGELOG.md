@@ -10,7 +10,12 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 ## [Unreleased]
 
 ### Added
+- Local ACME accounts: the contact e-mail can now be edited from the account detail (the piece of #303 that had been accepted but not shipped in 2.217). Per RFC 8555 the contact belongs to the ACME client and its next account update may overwrite the value; the edit form says so (#303, reported by @gb-123-git)
+- Settings > HTTPS now shows which certificate is bound to the web UI (renewals applied automatically) with a button to stop following renewals; the Let's Encrypt orders list gains the same status filter and naming as the Local orders view (#303, reported by @gb-123-git)
 - Dashboard surfacing for a near-expiry TSA signer: the System Health widget now has a **TSA** badge (disabled / signing with the CA certificate / dedicated signer, turning amber within 30 days of the signer's expiry and grey when the signer is expired, revoked or undecryptable and `/tsa` is therefore returning 503), and the Next Expirations widget tags the configured dedicated signer with a "TSA signer" chip so its expiry reads as an infrastructure event rather than one certificate among many. Service badges now render a distinct `warning` state and show their status message on hover. A dedicated signer is an ordinary certificate, so the existing email expiry alerts already cover it; this adds the at-a-glance view (#312, contributed by @Hemsby)
+
+### Fixed
+- ACME account detail: challenge status badges show valid in green and pending in yellow again (the API capitalizes statuses, the badge mapping compared lowercase, so everything rendered red); the scheduled purge and the purge button now also remove the leftover pending sibling challenges of authorizations validated before 2.217 (#303, reported by @gb-123-git)
 
 ## [2.217] - 2026-08-31
 

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Plus, Trash, CheckCircle, ArrowsClockwise, Key, Play, Warning,
@@ -5,7 +6,7 @@ import {
   LockKey, PlugsConnected, ClockCounterClockwise, Certificate, Gear, ShieldCheck
 } from '@phosphor-icons/react'
 import { ToggleSwitch } from '../../components/ui/ToggleSwitch'
-import { HelpCard, Button, Badge, CompactSection, Select, Input } from '../../components'
+import { HelpCard, Button, Badge, CompactSection, Select, Input, FilterSelect } from '../../components'
 import { useClipboard } from '../../hooks'
 import { formatDate, cn, publicBaseUrl } from '../../lib/utils'
 
@@ -49,6 +50,11 @@ export default function LetsEncryptTab({
   canWrite,
   canDelete,
 }) {
+  // #303 follow-up: same presentation as the Local orders tab
+  const [orderStatusFilter, setOrderStatusFilter] = useState('')
+  const visibleOrders = orderStatusFilter
+    ? clientOrders.filter(o => (o.status || '').toLowerCase() === orderStatusFilter)
+    : clientOrders
   const { t } = useTranslation()
   const { copy } = useClipboard()
 
@@ -94,12 +100,21 @@ export default function LetsEncryptTab({
       </HelpCard>
 
       {/* Client Orders */}
-      <CompactSection title={`${t('acme.orders')} (${clientOrders.length})`} icon={Certificate}>
+      <CompactSection title={`${t('acme.letsEncryptOrders')} (${visibleOrders.length}/${clientOrders.length})`} icon={Certificate}>
+        <div className="mb-2">
+          <FilterSelect
+            value={orderStatusFilter}
+            onChange={setOrderStatusFilter}
+            allLabel={t('common.allStatuses')}
+            options={['pending', 'processing', 'validating', 'ready', 'valid', 'issued', 'invalid'].map(sv => ({ value: sv, label: sv }))}
+            size="sm"
+          />
+        </div>
         {clientOrders.length === 0 ? (
           <p className="text-xs text-text-tertiary py-4 text-center">{t('acme.noCertificateOrders')}</p>
         ) : (
           <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-            {clientOrders.map((order) => (
+            {visibleOrders.map((order) => (
               <div
                 key={order.id}
                 className={cn(

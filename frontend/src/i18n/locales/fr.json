@@ -570,7 +570,11 @@
     "dnsPersistEnabled": "Proposer le challenge dns-persist-01 (draft-ietf-acme-dns-persist)",
     "dnsPersistEnabledDesc": "Validation via un enregistrement TXT persistant sous _validation-persist.<domaine> lié au compte ACME. Renouvellement sans écriture DNS.",
     "dnsPersistWarning": "Risque : la compromission de la clé du compte ACME permet d'émettre pour le domaine tant que le TXT existe (draft §7.2). À activer uniquement pour des comptes et zones maîtrisés.",
-    "dnsPersistIssuerNote": "Noms d'émetteur pour l'enregistrement TXT : {{domains}} (issus des identifiants CAA, ou du nom d'hôte ACME public sinon)."
+    "dnsPersistIssuerNote": "Noms d'émetteur pour l'enregistrement TXT : {{domains}} (issus des identifiants CAA, ou du nom d'hôte ACME public sinon).",
+    "editEmail": "Modifier l'e-mail",
+    "editEmailCaveat": "Selon la RFC 8555 le contact appartient au client ACME : sa prochaine mise à jour de compte peut écraser cette valeur.",
+    "emailUpdated": "E-mail du compte mis à jour",
+    "letsEncryptOrders": "Commandes Let's Encrypt"
   },
   "audit": {
     "event": "Événement",
@@ -2907,7 +2911,11 @@
     "crlAutoDeleteExpiredRevoked": "Supprimer automatiquement les certificats révoqués expirés",
     "crlAutoDeleteExpiredRevokedDesc": "Purge automatiquement les enregistrements de certificats révoqués (uniquement ceux expirés) lors de la génération de la CRL. Lorsque désactivé, les certificats révoqués expirés sont conservés comme enregistrements historiques.",
     "crlAutoPurgeStaleSerials": "Purger automatiquement les numéros de série révoqués obsolètes",
-    "crlAutoPurgeStaleSerialsDesc": "Supprime automatiquement les enregistrements de numéros de série révoqués (uniquement ceux expirés) lors de la génération de la CRL. Lorsque désactivé, les enregistrements obsolètes sont conservés comme historique des renouvellements."
+    "crlAutoPurgeStaleSerialsDesc": "Supprime automatiquement les enregistrements de numéros de série révoqués (uniquement ceux expirés) lors de la génération de la CRL. Lorsque désactivé, les enregistrements obsolètes sont conservés comme historique des renouvellements.",
+    "httpsBound": "Certificat lié",
+    "httpsBoundDesc": "Les renouvellements de ce certificat sont appliqués automatiquement au HTTPS (fichiers re-matérialisés, service redémarré).",
+    "httpsUnbind": "Ne plus suivre les renouvellements",
+    "httpsUnbindDone": "Liaison du certificat HTTPS supprimée"
   },
   "sso": {
     "subtitle": "Configurez des fournisseurs LDAP, OAuth2 ou SAML pour une authentification centralisée",

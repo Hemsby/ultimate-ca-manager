@@ -1670,7 +1670,11 @@
     "dnsPersistEnabled": "Offer dns-persist-01 challenge (draft-ietf-acme-dns-persist)",
     "dnsPersistEnabledDesc": "Validation via a persistent TXT record at _validation-persist.<domain> bound to the ACME account. Clients renew without writing DNS records.",
     "dnsPersistWarning": "Risk: a compromise of the ACME account key grants issuance capability for the domain until the TXT record is removed (draft §7.2). Enable only for accounts and zones you control.",
-    "dnsPersistIssuerNote": "Issuer domain names for the TXT record: {{domains}} (from CAA identifiers, or the ACME public hostname when unset)."
+    "dnsPersistIssuerNote": "Issuer domain names for the TXT record: {{domains}} (from CAA identifiers, or the ACME public hostname when unset).",
+    "editEmail": "Edit e-mail",
+    "editEmailCaveat": "Per RFC 8555 the contact belongs to the ACME client: its next account update may overwrite this value.",
+    "emailUpdated": "Account e-mail updated",
+    "letsEncryptOrders": "Let's Encrypt orders"
   },
   "scep": {
     "title": "SCEP Protocol",
@@ -2763,7 +2767,11 @@
     "crlAutoDeleteExpiredRevoked": "Auto-delete expired revoked certificates",
     "crlAutoDeleteExpiredRevokedDesc": "Automatically purge revoked certificate records (expired ones only) during CRL generation. When disabled, expired revoked certs are retained as historical records.",
     "crlAutoPurgeStaleSerials": "Auto-purge stale revoked serials",
-    "crlAutoPurgeStaleSerialsDesc": "Automatically delete revoked-serial records (expired ones only) during CRL generation. When disabled, stale records are kept as renewal history."
+    "crlAutoPurgeStaleSerialsDesc": "Automatically delete revoked-serial records (expired ones only) during CRL generation. When disabled, stale records are kept as renewal history.",
+    "httpsBound": "Bound certificate",
+    "httpsBoundDesc": "Renewals of this certificate are applied to HTTPS automatically (files re-materialized, service restarted).",
+    "httpsUnbind": "Stop following renewals",
+    "httpsUnbindDone": "HTTPS certificate binding cleared"
   },
   "account": {
     "profile": "Profile",

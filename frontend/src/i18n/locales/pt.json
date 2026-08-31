@@ -1669,7 +1669,11 @@
     "dnsPersistEnabled": "Oferecer desafio dns-persist-01 (draft-ietf-acme-dns-persist)",
     "dnsPersistEnabledDesc": "Validação via registro TXT persistente em _validation-persist.<domínio> vinculado à conta ACME. Renovações sem escrita em DNS.",
     "dnsPersistWarning": "Risco: uma chave de conta ACME comprometida permite emissão para o domínio enquanto o TXT existir (draft §7.2). Ative apenas para contas e zonas controladas.",
-    "dnsPersistIssuerNote": "Domínios de emissor para o registro TXT: {{domains}} (dos identificadores CAA, ou o hostname público ACME se vazio)."
+    "dnsPersistIssuerNote": "Domínios de emissor para o registro TXT: {{domains}} (dos identificadores CAA, ou o hostname público ACME se vazio).",
+    "editEmail": "Editar e-mail",
+    "editEmailCaveat": "Segundo a RFC 8555 o contacto pertence ao cliente ACME: a sua próxima atualização de conta pode sobrescrever este valor.",
+    "emailUpdated": "E-mail da conta atualizado",
+    "letsEncryptOrders": "Pedidos Let's Encrypt"
   },
   "scep": {
     "title": "Protocolo SCEP",
@@ -2761,7 +2765,11 @@
     "crlAutoDeleteExpiredRevoked": "Excluir automaticamente certificados revogados expirados",
     "crlAutoDeleteExpiredRevokedDesc": "Remove automaticamente os registros de certificados revogados (apenas os expirados) durante a geração da CRL. Quando desativado, os certificados revogados expirados são mantidos como registros históricos.",
     "crlAutoPurgeStaleSerials": "Remover automaticamente números de série revogados obsoletos",
-    "crlAutoPurgeStaleSerialsDesc": "Exclui automaticamente os registros de números de série revogados (apenas os expirados) durante a geração da CRL. Quando desativado, os registros obsoletos são mantidos como histórico de renovações."
+    "crlAutoPurgeStaleSerialsDesc": "Exclui automaticamente os registros de números de série revogados (apenas os expirados) durante a geração da CRL. Quando desativado, os registros obsoletos são mantidos como histórico de renovações.",
+    "httpsBound": "Certificado associado",
+    "httpsBoundDesc": "As renovações deste certificado são aplicadas automaticamente ao HTTPS (ficheiros regenerados, serviço reiniciado).",
+    "httpsUnbind": "Deixar de seguir as renovações",
+    "httpsUnbindDone": "Associação do certificado HTTPS removida"
   },
   "account": {
     "profile": "Perfil",

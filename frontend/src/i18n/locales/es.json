@@ -1669,7 +1669,11 @@
     "dnsPersistEnabled": "Ofrecer reto dns-persist-01 (draft-ietf-acme-dns-persist)",
     "dnsPersistEnabledDesc": "Validación mediante un registro TXT persistente en _validation-persist.<dominio> vinculado a la cuenta ACME. Renovaciones sin escribir registros DNS.",
     "dnsPersistWarning": "Riesgo: una clave de cuenta ACME comprometida permite emitir para el dominio hasta que se elimine el TXT (draft §7.2). Activar solo para cuentas y zonas controladas.",
-    "dnsPersistIssuerNote": "Dominios de emisor para el registro TXT: {{domains}} (de los identificadores CAA, o el hostname público ACME si está vacío)."
+    "dnsPersistIssuerNote": "Dominios de emisor para el registro TXT: {{domains}} (de los identificadores CAA, o el hostname público ACME si está vacío).",
+    "editEmail": "Editar correo",
+    "editEmailCaveat": "Según la RFC 8555 el contacto pertenece al cliente ACME: su próxima actualización de cuenta puede sobrescribir este valor.",
+    "emailUpdated": "Correo de la cuenta actualizado",
+    "letsEncryptOrders": "Pedidos de Let's Encrypt"
   },
   "scep": {
     "title": "Protocolo SCEP",
@@ -2761,7 +2765,11 @@
     "crlAutoDeleteExpiredRevoked": "Eliminar automáticamente certificados revocados expirados",
     "crlAutoDeleteExpiredRevokedDesc": "Purga automáticamente los registros de certificados revocados (solo los expirados) durante la generación de CRL. Cuando está desactivado, los certificados revocados expirados se conservan como registros históricos.",
     "crlAutoPurgeStaleSerials": "Purgar automáticamente números de serie revocados obsoletos",
-    "crlAutoPurgeStaleSerialsDesc": "Elimina automáticamente los registros de números de serie revocados (solo los expirados) durante la generación de CRL. Cuando está desactivado, los registros obsoletos se conservan como historial de renovaciones."
+    "crlAutoPurgeStaleSerialsDesc": "Elimina automáticamente los registros de números de serie revocados (solo los expirados) durante la generación de CRL. Cuando está desactivado, los registros obsoletos se conservan como historial de renovaciones.",
+    "httpsBound": "Certificado vinculado",
+    "httpsBoundDesc": "Las renovaciones de este certificado se aplican automáticamente a HTTPS (archivos regenerados, servicio reiniciado).",
+    "httpsUnbind": "Dejar de seguir las renovaciones",
+    "httpsUnbindDone": "Vinculación del certificado HTTPS eliminada"
   },
   "account": {
     "profile": "Perfil",
