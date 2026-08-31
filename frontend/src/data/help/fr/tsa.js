@@ -18,6 +18,7 @@ export default {
           { label: 'OID de politique', text: 'Identifiant d\'objet pour la politique TSA (par ex. 1.2.3.4.1) — inclus dans chaque réponse d\'horodatage' },
           { label: 'Activer/Désactiver', text: 'Basculer le point de terminaison TSA sans perdre la configuration' },
           { label: 'Exiger un certificat dédié', text: 'Opt-in : refuser de signer les horodatages avec le certificat de la CA lui-même — exige un certificat de signature d\'entité finale dédié avec une EKU timeStamping critique (RFC 3161)' },
+                  { label: 'Certificat de signature (v2.217)', text: 'Signez les jetons avec un certificat final dédié choisi parmi les certificats émis (EKU timeStamping, clé détenue par UCM). Les renouvellements sont suivis automatiquement ; un signeur expiré ou révoqué fait échouer les requêtes en 503, sans jamais retomber sur le certificat de la CA' },
         ]
       },
       {

@@ -18,6 +18,7 @@ export default {
           { label: 'OID de política', text: 'Identificador de objeto para la política TSA (ej., 1.2.3.4.1) — incluido en cada respuesta de marca de tiempo' },
           { label: 'Activar/Desactivar', text: 'Alternar el endpoint TSA sin perder la configuración' },
           { label: 'Requerir certificado dedicado', text: 'Opcional: rechaza firmar marcas de tiempo con el propio certificado de la CA — requiere un certificado de firma de entidad final dedicado con EKU timeStamping crítico (RFC 3161)' },
+                  { label: 'Certificado de firma (v2.217)', text: 'Firme los tokens con un certificado final dedicado elegido entre los certificados emitidos (EKU timeStamping, clave en poder de UCM). Las renovaciones se siguen automáticamente; un firmante caducado o revocado hace fallar las solicitudes con 503 y nunca recae en el certificado de la CA' },
         ]
       },
       {

@@ -18,6 +18,7 @@ export default {
           { label: 'Policy OID', text: 'Object Identifier per la policy TSA (es. 1.2.3.4.1) — incluso in ogni risposta timestamp' },
           { label: 'Abilita/Disabilita', text: 'Attiva o disattiva l\'endpoint TSA senza perdere la configurazione' },
           { label: 'Richiedi certificato dedicato', text: 'Opt-in: rifiuta di firmare le marche temporali con il certificato della CA stessa — richiede un certificato di firma end-entity dedicato con EKU timeStamping critico (RFC 3161)' },
+                  { label: 'Certificato di firma (v2.217)', text: 'Firma i token con un certificato finale dedicato scelto tra i certificati emessi (EKU timeStamping, chiave detenuta da UCM). I rinnovi vengono seguiti automaticamente; un firmatario scaduto o revocato fa fallire le richieste con 503 e non ricade mai sul certificato della CA' },
         ]
       },
       {

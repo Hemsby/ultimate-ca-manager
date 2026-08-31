@@ -34,6 +34,7 @@ export default {
           { label: 'Domínios Locais', text: 'Mapear domínios internos para CAs específicas para emissão multi-CA' },
           { label: 'Contas', text: 'Visualizar e gerenciar contas de clientes ACME registradas' },
           { label: 'Histórico', text: 'Rastrear todos os pedidos de emissão de certificados ACME' },
+                  { label: 'Pedidos locais (v2.217)', text: 'O separador Local orders lista os pedidos do servidor integrado com filtro de estado, eliminação unitária e purga; os pedidos expirados não emitidos são purgados automaticamente a cada 6 horas, e um digest de assinatura predefinido aplica-se aos pedidos sem perfil' },
         ]
       },
       {
@@ -46,6 +47,7 @@ export default {
           { label: 'Credenciais EAB', text: 'Credenciais de External Account Binding para CAs que as exigem (ex.: ZeroSSL, Google Trust)' },
           { label: 'Desafios DNS', text: 'O UCM lida com desafios DNS-01 em nome dos clientes usando os provedores DNS configurados' },
           { label: 'Podar certificados substituídos', text: 'Opção opt-in: quando um pedido proxy é finalizado, os certificados importados anteriormente por pedidos proxy para exatamente o mesmo conjunto de domínios são excluídos. Certificados revogados são sempre mantidos; certificados não-proxy nunca são tocados. Desativado por padrão' },
+                  { label: 'Pre-checks de clientes (v2.217)', text: 'O proxy também publica os valores TXT dns-01 calculados com a chave de conta de cada cliente: os pre-checks de propagação de lego/Traefik/Caddy passam sem serem desativados; um new-order repetido devolve o pedido ainda pendente da conta' },
         ]
       },
       {

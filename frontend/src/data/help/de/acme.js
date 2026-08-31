@@ -34,6 +34,7 @@ export default {
           { label: 'Lokale Domänen', text: 'Interne Domänen bestimmten CAs für Multi-CA-Ausstellung zuordnen' },
           { label: 'Konten', text: 'Registrierte ACME-Client-Konten anzeigen und verwalten' },
           { label: 'Verlauf', text: 'Alle ACME-Zertifikatsausstellungsaufträge verfolgen' },
+                  { label: 'Lokale Orders (v2.217)', text: 'Der Tab Local orders listet die Orders des eingebauten Servers mit Statusfilter, Einzellöschung und Bereinigung; abgelaufene, nicht ausgestellte Orders werden alle 6 Stunden automatisch bereinigt, und ein Standard-Signatur-Digest gilt für Orders ohne Profil' },
         ]
       },
       {
@@ -46,6 +47,7 @@ export default {
           { label: 'EAB-Zugangsdaten', text: 'External Account Binding-Zugangsdaten für CAs, die sie erfordern (z.B. ZeroSSL, Google Trust)' },
           { label: 'DNS-Herausforderungen', text: 'UCM bearbeitet DNS-01-Herausforderungen im Auftrag der Clients mit konfigurierten DNS-Anbietern' },
           { label: 'Ersetzte Zertifikate bereinigen', text: 'Opt-in-Schalter: Beim Abschluss einer Proxy-Order werden Zertifikate gelöscht, die zuvor von Proxy-Orders für exakt denselben Domänensatz importiert wurden. Widerrufene Zertifikate bleiben immer erhalten; Nicht-Proxy-Zertifikate werden nie angetastet. Standardmäßig aus' },
+                  { label: 'Client-Prechecks (v2.217)', text: 'Der Proxy veröffentlicht auch die mit dem Kontoschlüssel jedes Clients berechneten dns-01-TXT-Werte: die Propagation-Prechecks von lego/Traefik/Caddy bestehen, ohne deaktiviert zu werden; ein wiederholtes new-order liefert die noch ausstehende Order des Kontos zurück' },
         ]
       },
       {

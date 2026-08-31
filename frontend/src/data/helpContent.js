@@ -512,6 +512,7 @@ export const helpContent = {
           { label: 'Policy OID', text: 'Object Identifier for the TSA policy (e.g., 1.2.3.4.1) — included in every timestamp response' },
           { label: 'Enable/Disable', text: 'Toggle the TSA endpoint on or off without losing configuration' },
           { label: 'Require dedicated certificate', text: 'Opt-in: refuse to sign timestamps with the CA certificate itself — requires a dedicated end-entity signing certificate with a critical timeStamping EKU (RFC 3161)' },
+                  { label: 'Signing certificate (v2.217)', text: 'Sign tokens with a dedicated end-entity certificate picked from issued certificates (timeStamping EKU, key held by UCM). Renewals are followed automatically; an expired or revoked signer fails requests with 503 and never falls back to the CA certificate' },
         ]
       },
       {
@@ -575,6 +576,7 @@ export const helpContent = {
           { label: 'Local Domains', text: 'Map internal domains to specific CAs for multi-CA issuance' },
           { label: 'Accounts', text: 'View and manage registered ACME client accounts' },
           { label: 'History', text: 'Track all ACME certificate issuance orders' },
+                  { label: 'Local orders (v2.217)', text: 'The Local orders tab lists the built-in server orders with a status filter, per-order delete and a purge action; expired non-issued orders are purged automatically every 6 hours, and a default signing digest applies to orders without a profile' },
         ]
       },
       {
@@ -588,6 +590,7 @@ export const helpContent = {
           { label: 'EAB Credentials', text: 'External Account Binding credentials for CAs that require them (e.g., ZeroSSL, Google Trust)' },
           { label: 'DNS Challenges', text: 'UCM handles DNS-01 challenges on behalf of clients using configured DNS providers' },
           { label: 'Prune replaced certificates', text: 'Opt-in toggle: when a proxy order finalizes, certificates previously imported by proxy orders for the exact same domain set are deleted. Revoked certificates are always kept; non-proxy certificates are never touched. Off by default' },
+                  { label: 'Client pre-checks (v2.217)', text: 'The proxy also publishes the dns-01 TXT values computed with each client account key, so lego/Traefik/Caddy propagation pre-checks pass without being disabled; a retried new-order returns the account still-pending order' },
         ]
       },
       {

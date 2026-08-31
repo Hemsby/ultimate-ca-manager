@@ -34,6 +34,7 @@ export default {
           { label: '本地域名', text: '将内部域名映射到特定 CA 以实现多 CA 签发' },
           { label: '账户', text: '查看和管理已注册的 ACME 客户端账户' },
           { label: '历史', text: '跟踪所有 ACME 证书签发订单' },
+                  { label: '本地订单 (v2.217)', text: 'Local orders 标签页列出内置服务器的订单，支持状态过滤、单个删除和清理；过期未签发的订单每 6 小时自动清理，无配置文件的订单使用默认签名摘要' },
         ]
       },
       {
@@ -46,6 +47,7 @@ export default {
           { label: 'EAB凭据', text: '需要EAB的CA的External Account Binding凭据（如ZeroSSL、Google Trust）' },
           { label: 'DNS挑战', text: 'UCM使用配置的DNS提供商代表客户端处理DNS-01挑战' },
           { label: '清理被替换的证书', text: '可选开关：当代理订单 finalize 时，删除之前由代理订单为完全相同域名集合导入的证书。已吊销证书始终保留；非代理证书绝不受影响。默认关闭' },
+                  { label: '客户端预检 (v2.217)', text: '代理还会发布用每个客户端账户密钥计算的 dns-01 TXT 值：lego/Traefik/Caddy 的传播预检无需禁用即可通过；重试的 new-order 会返回该账户仍在等待的订单' },
         ]
       },
       {

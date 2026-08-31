@@ -18,6 +18,7 @@ export default {
           { label: 'Richtlinien-OID', text: 'Object Identifier für die TSA-Richtlinie (z.B. 1.2.3.4.1) — in jeder Zeitstempel-Antwort enthalten' },
           { label: 'Aktivieren/Deaktivieren', text: 'Den TSA-Endpunkt ein- oder ausschalten, ohne die Konfiguration zu verlieren' },
           { label: 'Dediziertes Zertifikat erforderlich', text: 'Opt-in: Zeitstempel nicht mit dem CA-Zertifikat selbst signieren — erfordert ein dediziertes End-Entity-Signaturzertifikat mit kritischer timeStamping-EKU (RFC 3161)' },
+                  { label: 'Signaturzertifikat (v2.217)', text: 'Signieren Sie Token mit einem dedizierten End-Entity-Zertifikat aus den ausgestellten Zertifikaten (timeStamping-EKU, Schlüssel bei UCM). Erneuerungen werden automatisch übernommen; ein abgelaufener oder widerrufener Signierer lässt Anfragen mit 503 fehlschlagen und fällt nie auf das CA-Zertifikat zurück' },
         ]
       },
       {
