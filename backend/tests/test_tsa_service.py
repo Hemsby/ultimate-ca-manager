@@ -592,5 +592,246 @@ class TestTsaDedicatedSignerApi:
                 db.session.commit()
 
 
+class TestTsaSignerOneClickIssuance:
+    """#312 follow-up: POST /api/v2/tsa/signer-certificate issues a purpose-built
+    RFC 3161 signer (critical, exclusive timeStamping EKU) the generic issue
+    path cannot produce."""
+
+    TS_OID = '1.3.6.1.5.5.7.3.8'
+
+    @staticmethod
+    def _parse(cert_str):
+        """Parse a certificate given either a raw PEM string or base64-of-PEM."""
+        from cryptography import x509
+        from cryptography.hazmat.backends import default_backend
+        if '-----BEGIN CERTIFICATE-----' in cert_str:
+            data = cert_str.encode()
+        else:
+            data = base64.b64decode(cert_str)
+        return x509.load_pem_x509_certificate(data, default_backend())
+
+    def _issue(self, auth_client, ca_id, **body):
+        body.setdefault('ca_id', ca_id)
+        return auth_client.post(
+            '/api/v2/tsa/signer-certificate',
+            data=json.dumps(body), content_type='application/json',
+        )
+
+    def _cleanup(self, app):
+        from models import SystemConfig, db
+        with app.app_context():
+            SystemConfig.query.filter(
+                SystemConfig.key.in_(['tsa_enabled', 'tsa_signer_cert_refid'])
+            ).delete(synchronize_session=False)
+            db.session.commit()
+
+    def test_issued_certificate_is_a_strict_rfc3161_signer(
+        self, app, auth_client, create_ca
+    ):
+        from cryptography import x509
+        from cryptography.x509.oid import ExtensionOID, ExtendedKeyUsageOID
+
+        ca = create_ca(cn='One-Click TSA CA 1')
+        try:
+            r = self._issue(auth_client, ca['id'], cn='ucm-oneclick-signer')
+            assert r.status_code == 200, r.data
+            data = json.loads(r.data)['data']
+            cert = self._parse(data['certificate']['pem'])
+
+            bc = cert.extensions.get_extension_for_oid(ExtensionOID.BASIC_CONSTRAINTS)
+            assert bc.value.ca is False and bc.critical is True
+
+            ku = cert.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE)
+            assert ku.critical is True
+            assert ku.value.digital_signature is True
+            assert ku.value.key_cert_sign is False
+            assert ku.value.key_encipherment is False
+
+            eku = cert.extensions.get_extension_for_oid(ExtensionOID.EXTENDED_KEY_USAGE)
+            assert eku.critical is True
+            assert set(eku.value) == {ExtendedKeyUsageOID.TIME_STAMPING}
+        finally:
+            self._cleanup(app)
+
+    def test_candidate_list_reports_it_as_critical_exclusive(
+        self, app, auth_client, create_ca
+    ):
+        ca = create_ca(cn='One-Click TSA CA 2')
+        try:
+            r = self._issue(auth_client, ca['id'], cn='ucm-oneclick-2')
+            refid = json.loads(r.data)['data']['certificate']['refid']
+
+            cands = json.loads(
+                auth_client.get('/api/v2/tsa/signer-candidates').data
+            )['data']
+            mine = next(c for c in cands if c['refid'] == refid)
+            assert mine['eku_critical_exclusive'] is True
+        finally:
+            self._cleanup(app)
+
+    def test_auto_selects_when_no_dedicated_signer_configured(
+        self, app, auth_client, create_ca
+    ):
+        ca = create_ca(cn='One-Click TSA CA 3')
+        try:
+            r = self._issue(auth_client, ca['id'], cn='ucm-oneclick-3')
+            data = json.loads(r.data)['data']
+            assert data['selected'] is True
+            assert data['signer']['configured'] is True
+            assert data['signer']['usable'] is True
+
+            cfg = json.loads(auth_client.get('/api/v2/tsa/config').data)['data']
+            assert cfg['signer_cert_refid'] == data['certificate']['refid']
+        finally:
+            self._cleanup(app)
+
+    def test_does_not_swap_a_healthy_signer_without_explicit_select(
+        self, app, auth_client, create_ca
+    ):
+        ca = create_ca(cn='One-Click TSA CA 4')
+        try:
+            first = json.loads(self._issue(auth_client, ca['id'],
+                                           cn='ucm-oneclick-4a').data)['data']
+            assert first['selected'] is True
+            keep = first['certificate']['refid']
+
+            second = json.loads(self._issue(auth_client, ca['id'],
+                                            cn='ucm-oneclick-4b').data)['data']
+            assert second['selected'] is False
+            cfg = json.loads(auth_client.get('/api/v2/tsa/config').data)['data']
+            assert cfg['signer_cert_refid'] == keep
+
+            third = json.loads(self._issue(auth_client, ca['id'], cn='ucm-oneclick-4c',
+                                           select=True).data)['data']
+            assert third['selected'] is True
+            cfg = json.loads(auth_client.get('/api/v2/tsa/config').data)['data']
+            assert cfg['signer_cert_refid'] == third['certificate']['refid']
+        finally:
+            self._cleanup(app)
+
+    def test_validity_is_clamped_to_ca_expiry_not_rejected(
+        self, app, auth_client, create_ca
+    ):
+        from models import CA, db
+
+        # Short-lived CA so its own expiry is the bound that fires, not the
+        # 3650-day issuance cap.
+        ca = create_ca(cn='One-Click TSA CA 5', validityYears=1)
+        try:
+            r = self._issue(auth_client, ca['id'], cn='ucm-oneclick-5',
+                            validity_days=3000)
+            assert r.status_code == 200, r.data
+            cert = self._parse(json.loads(r.data)['data']['certificate']['pem'])
+            with app.app_context():
+                ca_cert = self._parse(db.session.get(CA, ca['id']).crt)
+            assert cert.not_valid_after_utc <= ca_cert.not_valid_after_utc
+            # 3000 days was asked for; the ~1-year CA must have clamped it well short.
+            span_days = (cert.not_valid_after_utc - cert.not_valid_before_utc).days
+            assert span_days < 400
+        finally:
+            self._cleanup(app)
+
+    def test_full_tsa_roundtrip_with_the_generated_signer(
+        self, app, client, auth_client, create_ca
+    ):
+        from models import SystemConfig, db
+
+        ca = create_ca(cn='One-Click Roundtrip CA')
+        try:
+            data = json.loads(self._issue(auth_client, ca['id'],
+                                          cn='ucm-oneclick-roundtrip').data)['data']
+            assert data['selected'] is True
+            with app.app_context():
+                row = (SystemConfig.query.filter_by(key='tsa_enabled').first()
+                       or SystemConfig(key='tsa_enabled'))
+                row.value = 'true'
+                db.session.add(row)
+                db.session.commit()
+
+            resp = client.post(
+                '/tsa', data=_build_tsq(hashlib.sha256(b'one-click roundtrip').digest()),
+                content_type='application/timestamp-query',
+            )
+            assert resp.status_code == 200
+            assert _status_native(resp.data) == 'granted'
+            token = tsp.TimeStampResp.load(resp.data)['time_stamp_token']['content']
+            subjects = {
+                c.chosen.subject.native.get('common_name')
+                for c in token['certificates']
+            }
+            assert 'ucm-oneclick-roundtrip' in subjects
+        finally:
+            self._cleanup(app)
+
+    def test_requires_write_permissions(self, app, viewer_client, create_ca):
+        ca = create_ca(cn='One-Click TSA CA Perms')
+        try:
+            # Guard: confirm this client is genuinely restricted (conftest's
+            # viewer_client falls back to admin if viewer creation ever fails).
+            guard = viewer_client.patch(
+                '/api/v2/tsa/config',
+                data=json.dumps({'policy_oid': '1.2.3.4.9'}),
+                content_type='application/json',
+            )
+            assert guard.status_code == 403, 'viewer_client is not read-only'
+
+            r = viewer_client.post(
+                '/api/v2/tsa/signer-certificate',
+                data=json.dumps({'ca_id': ca['id']}),
+                content_type='application/json',
+            )
+            assert r.status_code == 403
+        finally:
+            self._cleanup(app)
+
+    def test_missing_ca_is_rejected(self, app, auth_client):
+        try:
+            r = auth_client.post(
+                '/api/v2/tsa/signer-certificate',
+                data=json.dumps({}), content_type='application/json',
+            )
+            assert r.status_code == 400
+        finally:
+            self._cleanup(app)
+
+    def test_non_boolean_select_is_rejected(self, app, auth_client, create_ca):
+        """#314 review: bool("false") is True, so a string must not reach the
+        select branch and swap a healthy signer."""
+        ca = create_ca(cn='One-Click TSA CA Select')
+        try:
+            r = self._issue(auth_client, ca['id'], cn='ucm-oneclick-selstr',
+                            select='false')
+            assert r.status_code == 400
+            assert b'select' in r.data.lower()
+        finally:
+            self._cleanup(app)
+
+    def test_non_string_cn_is_rejected_with_400_not_500(
+        self, app, auth_client, create_ca
+    ):
+        """#314 review: a non-string cn reached (cn or DEFAULT_CN).strip() and
+        raised AttributeError -> 500."""
+        ca = create_ca(cn='One-Click TSA CA Cn')
+        try:
+            r = self._issue(auth_client, ca['id'], cn=123)
+            assert r.status_code == 400
+        finally:
+            self._cleanup(app)
+
+    def test_explicit_zero_validity_is_rejected_not_defaulted(
+        self, app, auth_client, create_ca
+    ):
+        """#314 review: an explicit 0 must surface the backend's own error, not
+        silently become the 397-day default."""
+        ca = create_ca(cn='One-Click TSA CA Zero')
+        try:
+            r = self._issue(auth_client, ca['id'], cn='ucm-oneclick-zero',
+                            validity_days=0)
+            assert r.status_code == 400
+            assert b'positive' in r.data.lower()
+        finally:
+            self._cleanup(app)
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

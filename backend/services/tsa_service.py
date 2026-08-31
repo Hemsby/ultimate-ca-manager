@@ -569,6 +569,19 @@ def describe_configured_signer() -> dict:
 
     last = chain[-1] if chain else None
     chain_to_root = bool(last and last.subject == last.issuer)
+
+    # RFC 3161 §2.3 grade: a critical, exclusive timeStamping EKU. Mirrors the
+    # `eku_critical_exclusive` field the candidate list reports, so the TSA page
+    # can flag a signer that a strict verifier will accept.
+    eku_critical_exclusive = False
+    try:
+        eku = cert.extensions.get_extension_for_oid(ExtensionOID.EXTENDED_KEY_USAGE)
+        eku_critical_exclusive = bool(eku.critical) and set(eku.value) == {
+            ExtendedKeyUsageOID.TIME_STAMPING
+        }
+    except x509.ExtensionNotFound:
+        pass
+
     return {
         'configured': True,
         'refid': refid,
@@ -581,4 +594,5 @@ def describe_configured_signer() -> dict:
         'revoked': False,
         'chain_len': len(chain),
         'chain_to_root': chain_to_root,
+        'eku_critical_exclusive': eku_critical_exclusive,
     }

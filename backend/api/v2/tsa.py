@@ -3,7 +3,7 @@ TSA Management Routes v2.0
 /api/v2/tsa/* - TSA configuration and statistics
 """
 
-from flask import Blueprint, request
+from flask import Blueprint, request, g
 from auth.unified import require_auth
 from utils.response import success_response, error_response
 from models import db, SystemConfig, CA, Certificate, AuditLog
@@ -245,6 +245,97 @@ def list_signer_candidates():
     candidates = [v for v in (_signer_candidate_view(c) for c in rows) if v]
     candidates.sort(key=lambda v: (v['subject_cn'] or v['descr'] or '').lower())
     return success_response(data=candidates)
+
+
+@bp.route('/api/v2/tsa/signer-certificate', methods=['POST'])
+@require_auth(['write:settings', 'write:certificates'])
+def issue_signer_certificate():
+    """One-click issuance of a dedicated RFC 3161 TSA signing certificate (#312).
+
+    Builds an end-entity certificate with a critical, exclusive timeStamping EKU
+    (the generic issue path cannot), stores its key encrypted, and — when no
+    usable dedicated signer is configured yet — selects it as
+    ``tsa_signer_cert_refid`` in the same transaction.
+    """
+    from services.tsa_signer_cert import (
+        issue_tsa_signer_certificate, TsaSignerIssueError,
+    )
+
+    data = request.json or {}
+
+    # Reject wrong-typed inputs before they reach the issuer. bool() / .strip()
+    # on a coerced value is how {"select": "false"} swaps a healthy signer and
+    # {"cn": 123} 500s (#314 review).
+    if 'select' in data and not isinstance(data['select'], bool):
+        return error_response('select must be a boolean', 400)
+    if data.get('cn') is not None and not isinstance(data['cn'], str):
+        return error_response('cn must be a string', 400)
+
+    ca = None
+    if data.get('ca_refid'):
+        ca = CA.query.filter_by(refid=data['ca_refid']).first()
+    elif data.get('ca_id'):
+        ca = db.session.get(CA, data['ca_id'])
+    else:
+        default_refid = get_config('tsa_ca_refid', '')
+        if default_refid:
+            ca = CA.query.filter_by(refid=default_refid).first()
+    if ca is None:
+        return error_response(
+            'No issuing CA: pass ca_id / ca_refid or configure the TSA signing CA first',
+            400,
+        )
+
+    # Auto-select only when nothing usable is configured. An explicit boolean
+    # from the caller always wins, so the live signer is never swapped silently.
+    current = describe_configured_signer()
+    if 'select' in data:
+        want_select = data['select']  # validated bool above
+    else:
+        want_select = not current.get('usable', False)
+
+    actor = getattr(g, 'current_user', None)
+    try:
+        cert = issue_tsa_signer_certificate(
+            ca=ca,
+            cn=data.get('cn'),
+            validity_days=data.get('validity_days'),
+            key_type=data.get('key_type'),
+            key_size=data.get('key_size'),
+            curve=data.get('curve'),
+            actor=getattr(actor, 'username', 'system'),
+            actor_user_id=getattr(actor, 'id', None),
+        )
+    except TsaSignerIssueError as exc:
+        return error_response(exc.message, exc.status)
+
+    selected = False
+    if want_select:
+        set_config('tsa_signer_cert_refid', cert.refid)
+        try:
+            db.session.commit()
+            selected = True
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Issued TSA signer {cert.refid} but failed to select it: {e}")
+
+    AuditService.log_action(
+        action='tsa_config_update',
+        resource_type='tsa',
+        resource_name='TSA Configuration',
+        details=(f'Issued TSA signing certificate {cert.refid}'
+                 + (' and selected it as the dedicated signer' if selected else '')),
+        success=True,
+    )
+
+    return success_response(
+        data={
+            'certificate': cert.to_dict(),
+            'selected': selected,
+            'signer': describe_configured_signer(),
+        },
+        message='TSA signing certificate issued',
+    )
 
 
 @bp.route('/api/v2/tsa/stats', methods=['GET'])
