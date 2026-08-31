@@ -79,6 +79,14 @@ _LINK_REL_UP_RE = re.compile(
 )
 
 _cache_lock = threading.Lock()
+
+
+def _dns01_txt_value(key_authorization: str) -> str:
+    """RFC 8555 section 8.4: TXT value = b64url(SHA-256(key authorization))."""
+    import base64
+    import hashlib
+    digest = hashlib.sha256(key_authorization.encode()).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b'=').decode()
 _directory_cache = {}        # upstream directory URL -> (stored_at, directory)
 _finalize_url_cache = {}     # upstream order URL     -> (stored_at, finalize URL)
 _challenge_order_cache = {}  # per-requester challenge key -> (stored_at, (order id, domain))
@@ -874,6 +882,33 @@ class AcmeProxyService:
         upstream_order['finalize'] = f"{self.base_url}/order/{order_id}/finalize"
         return upstream_order, order_id
 
+    def _client_txt_values(self, order, key_authz, upstream_value):
+        """dns-01 TXT values computed with the CLIENT thumbprints of every
+        sibling order sharing this order's upstream authz (#306/#307), so
+        client-side propagation pre-checks can succeed. The upstream value is
+        excluded; failures return an empty list (publishing the client values
+        is best-effort)."""
+        values = []
+        try:
+            token = key_authz.split('.', 1)[0]
+            siblings = [order]
+            urls = json.loads(order.upstream_authz_urls) if order.upstream_authz_urls else []
+            if urls:
+                siblings = self._orders_by_authz_url(urls[0]) or [order]
+            seen = set()
+            for sibling in siblings:
+                thumb = getattr(sibling, 'client_jwk_thumbprint', None)
+                if not thumb or thumb in seen:
+                    continue
+                seen.add(thumb)
+                value = _dns01_txt_value(f"{token}.{thumb}")
+                if value != upstream_value:
+                    values.append(value)
+        except Exception as exc:
+            logger.warning(f"Could not compute client TXT values: {exc}")
+            return []
+        return values
+
     def _find_reusable_pending_order(self, domains, client_thumbprint):
         """Return the rewritten still-pending order of this requester for the
         exact same identifier set, or None (#303 minor 4).
@@ -1515,6 +1550,27 @@ class AcmeProxyService:
 
                 logger.info(f"[ACME Proxy BG] Creating DNS TXT record for {domain} in zone {zone}: {full_record_name}")
                 provider.create_txt_record(zone, full_record_name, txt_value)
+
+                # Client-side pre-check support (#306/#307): lego/Caddy compute
+                # the expected TXT value from THEIR account key, not from the
+                # proxy's upstream account, so their propagation check could
+                # never see the value published above. The client thumbprints
+                # are known: publish their values too (extra TXT records on
+                # the same name are ignored by the upstream CA validator).
+                for extra_value in self._client_txt_values(order, key_authz, txt_value):
+                    try:
+                        provider.create_txt_record(zone, full_record_name, extra_value)
+                        records = json.loads(order.dns_records_created) if order.dns_records_created else []
+                        records.append({
+                            'domain': zone,
+                            'record_name': full_record_name,
+                            'value': extra_value,
+                            'provider_id': provider_model.id
+                        })
+                        order.dns_records_created = json.dumps(records)
+                        db.session.commit()
+                    except Exception as exc:
+                        logger.warning(f"[ACME Proxy BG] Client TXT value not published: {exc}")
 
                 # Active DNS self-check instead of fixed sleep.
                 timeout = dns_propagation_timeout('acme.client.dns_propagation_timeout')

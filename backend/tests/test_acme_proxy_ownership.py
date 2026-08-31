@@ -727,3 +727,58 @@ class TestSameAccountPendingOrderReuse:
             }))
             assert svc._find_reusable_pending_order(
                 ['reuse.example.com'], 'thumb-reuse') is None
+
+
+class TestClientTxtValues:
+    """#306/#307: the proxy also publishes the dns-01 TXT values computed with
+    the client thumbprints, so lego/Caddy pre-checks can pass without
+    disabling propagation checks."""
+
+    def test_rfc8555_hash(self):
+        import base64
+        import hashlib
+        from services.acme.acme_proxy_service import _dns01_txt_value
+        ka = 'token123.thumbABC'
+        expected = base64.urlsafe_b64encode(
+            hashlib.sha256(ka.encode()).digest()).rstrip(b'=').decode()
+        assert _dns01_txt_value(ka) == expected
+
+    def test_sibling_client_values_deduped_and_upstream_excluded(self, app, monkeypatch):
+        import json as _json
+        from services.acme.acme_proxy_service import _dns01_txt_value
+        authz = f'{UPSTREAM}/acme/authz-v3/txt-shared'
+        with app.app_context():
+            a = _seed_order(
+                account_id='acct-txt-a', client_jwk_thumbprint='thumb-txt-a',
+                order_url=f'{UPSTREAM}/acme/order/txt/1',
+                upstream_order_url=f'{UPSTREAM}/acme/order/txt/1',
+                upstream_authz_urls=json.dumps([authz]),
+                certificate_url=f'{UPSTREAM}/acme/cert/txt1',
+            )
+            _seed_order(
+                account_id='acct-txt-b', client_jwk_thumbprint='thumb-txt-b',
+                order_url=f'{UPSTREAM}/acme/order/txt/2',
+                upstream_order_url=f'{UPSTREAM}/acme/order/txt/2',
+                upstream_authz_urls=json.dumps([authz]),
+                certificate_url=f'{UPSTREAM}/acme/cert/txt2',
+            )
+            svc = _make_svc(app, monkeypatch)
+            upstream_value = _dns01_txt_value('tok.upstream-thumb')
+            values = svc._client_txt_values(a, 'tok.upstream-thumb', upstream_value)
+            assert sorted(values) == sorted([
+                _dns01_txt_value('tok.thumb-txt-a'),
+                _dns01_txt_value('tok.thumb-txt-b'),
+            ])
+            assert upstream_value not in values
+
+    def test_no_thumbprint_returns_empty(self, app, monkeypatch):
+        with app.app_context():
+            order = _seed_order(
+                account_id=None, client_jwk_thumbprint=None,
+                order_url=f'{UPSTREAM}/acme/order/txt/3',
+                upstream_order_url=f'{UPSTREAM}/acme/order/txt/3',
+                upstream_authz_urls=json.dumps([f'{UPSTREAM}/acme/authz-v3/txt-lonely']),
+                certificate_url=f'{UPSTREAM}/acme/cert/txt3',
+            )
+            svc = _make_svc(app, monkeypatch)
+            assert svc._client_txt_values(order, 'tok.x', 'zzz') == []

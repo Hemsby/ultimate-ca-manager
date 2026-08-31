@@ -10,6 +10,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 ## [Unreleased]
 
 ### Fixed
+- ACME proxy: the dns-01 TXT values computed with the CLIENT account keys are now published next to the upstream CA's value (the proxy knows every client thumbprint), so the propagation pre-checks of lego, Traefik and Caddy find the value they expect and no longer need to be disabled; the extra records are cleaned up with the others (#306, #307)
 - ACME proxy: a client retrying new-order for the same identifiers now gets its still-pending order back (checked against the upstream CA) instead of opening a new upstream order on every attempt, mirroring upstream behavior and stopping order accumulation under retry-happy clients (#303, reported by @gb-123-git)
 - Email notifications skip recipients that are not valid mailbox addresses at send time (one log line names them) instead of handing them to SMTP and bouncing; nothing changes at input time, so "tag only" account contacts keep working (#303, reported by @gb-123-git)
 - Local ACME server: once an authorization is validated, the unused sibling challenges are deprovisioned and no longer listed (RFC 8555 section 7.1.6, matching Let's Encrypt), so clients like Caddy stop seeing leftover pending http-01/tls-alpn-01 challenges next to the validated one; authorizations validated before this change also stop listing their leftover siblings (#303, reported by @gb-123-git)

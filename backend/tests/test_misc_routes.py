@@ -775,5 +775,7 @@ class TestOPNsense:
             'api_secret': 'test',
             'verify_ssl': False
         })
-        # Should fail — unreachable host (408 timeout, 400, or 500)
-        assert r.status_code in (400, 408, 500)
+        # Should fail — unreachable host. Depending on the network, the
+        # connection to 192.0.2.1 either times out (408) or is refused
+        # immediately, which the route maps to 503 (ConnectionError).
+        assert r.status_code in (400, 408, 500, 503)
