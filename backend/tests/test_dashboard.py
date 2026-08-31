@@ -187,6 +187,113 @@ class TestExpiringCerts:
         for cert in data:
             assert 'valid_to' in cert
 
+    def test_expiring_certs_flags_the_configured_tsa_signer(
+        self, app, auth_client, create_cert
+    ):
+        """#312: the row for the configured dedicated signer carries is_tsa_signer."""
+        from models import SystemConfig, db
+
+        signer = create_cert(cn='dash-tsa-signer', validity_days=25,
+                             extra_ekus=['1.3.6.1.5.5.7.3.8'])
+        plain = create_cert(cn='dash-plain-cert', validity_days=25)
+        try:
+            with app.app_context():
+                row = (SystemConfig.query.filter_by(key='tsa_signer_cert_refid').first()
+                       or SystemConfig(key='tsa_signer_cert_refid'))
+                row.value = signer['refid']
+                db.session.add(row)
+                db.session.commit()
+
+            data = assert_success(auth_client.get(f'{DASH}/expiring-certs?limit=100'))
+            by_refid = {c['refid']: c for c in data}
+            assert by_refid[signer['refid']]['is_tsa_signer'] is True
+            assert by_refid[plain['refid']]['is_tsa_signer'] is False
+        finally:
+            with app.app_context():
+                SystemConfig.query.filter_by(
+                    key='tsa_signer_cert_refid'
+                ).delete(synchronize_session=False)
+                db.session.commit()
+
+
+class TestTsaSystemStatus:
+    """GET /api/v2/dashboard/system-status — the `tsa` service entry (#312)."""
+
+    TS_OID = '1.3.6.1.5.5.7.3.8'
+
+    def _set(self, app, **cfg):
+        from models import SystemConfig, db
+        with app.app_context():
+            for k, v in cfg.items():
+                row = SystemConfig.query.filter_by(key=k).first() or SystemConfig(key=k)
+                row.value = v
+                db.session.add(row)
+            db.session.commit()
+
+    def _clear(self, app):
+        from models import SystemConfig, db
+        with app.app_context():
+            SystemConfig.query.filter(
+                SystemConfig.key.in_(['tsa_enabled', 'tsa_signer_cert_refid'])
+            ).delete(synchronize_session=False)
+            db.session.commit()
+
+    def _tsa(self, auth_client):
+        return assert_success(auth_client.get(f'{DASH}/system-status'))['tsa']
+
+    def test_disabled_when_tsa_not_enabled(self, app, auth_client):
+        self._set(app, tsa_enabled='false')
+        try:
+            assert self._tsa(auth_client)['status'] == 'offline'
+        finally:
+            self._clear(app)
+
+    def test_online_ca_certificate_when_no_dedicated_signer(self, app, auth_client):
+        self._set(app, tsa_enabled='true', tsa_signer_cert_refid='')
+        try:
+            tsa = self._tsa(auth_client)
+            assert tsa['status'] == 'online'
+            assert 'CA certificate' in tsa['message']
+        finally:
+            self._clear(app)
+
+    def test_warning_when_signer_is_near_expiry(self, app, auth_client, create_cert):
+        signer = create_cert(cn='status-tsa-near', validity_days=10,
+                             extra_ekus=[self.TS_OID])
+        self._set(app, tsa_enabled='true', tsa_signer_cert_refid=signer['refid'])
+        try:
+            tsa = self._tsa(auth_client)
+            assert tsa['status'] == 'warning'
+            assert 'expires' in tsa['message']
+        finally:
+            self._clear(app)
+
+    def test_online_when_signer_is_healthy(self, app, auth_client, create_cert):
+        signer = create_cert(cn='status-tsa-ok', validity_days=365,
+                             extra_ekus=[self.TS_OID])
+        self._set(app, tsa_enabled='true', tsa_signer_cert_refid=signer['refid'])
+        try:
+            assert self._tsa(auth_client)['status'] == 'online'
+        finally:
+            self._clear(app)
+
+    def test_offline_when_signer_is_revoked(self, app, auth_client, create_cert):
+        from models import Certificate, db
+
+        signer = create_cert(cn='status-tsa-revoked', validity_days=200,
+                             extra_ekus=[self.TS_OID])
+        self._set(app, tsa_enabled='true', tsa_signer_cert_refid=signer['refid'])
+        try:
+            with app.app_context():
+                row = Certificate.query.filter_by(refid=signer['refid']).first()
+                row.revoked = True
+                db.session.commit()
+            tsa = self._tsa(auth_client)
+            assert tsa['status'] == 'offline'
+            assert 'unusable' in tsa['message'].lower()
+        finally:
+            self._clear(app)
+
 
 # ============================================================
 # Activity Log

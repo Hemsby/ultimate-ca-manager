@@ -673,6 +673,11 @@ export default function DashboardPage() {
                               <span className="text-xs font-medium text-text-primary truncate flex-1 group-hover:text-accent-primary transition-colors">
                                 {cert.common_name || cert.descr || cert.subject || '—'}
                               </span>
+                              {cert.is_tsa_signer && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap bg-status-info-op10 text-status-info">
+                                  {t('dashboard.tsaSigner')}
+                                </span>
+                              )}
                               {daysLeft !== null && daysLeft <= 30 ? (
                                 <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${
                                   daysLeft <= 7
@@ -916,6 +921,7 @@ export default function DashboardPage() {
                     <ServiceBadge name="EST" status={systemStatus?.est} />
                     <ServiceBadge name="OCSP" status={systemStatus?.ocsp} />
                     <ServiceBadge name="CRL" status={systemStatus?.crl} />
+                    <ServiceBadge name="TSA" status={systemStatus?.tsa} />
                     <ServiceBadge name={t('acme.autoRenewal')} status={systemStatus?.auto_renewal} />
                     <ServiceBadge name="SMTP" status={systemStatus?.smtp} />
                     <ServiceBadge name="Webhooks" status={systemStatus?.webhooks} />
@@ -1207,6 +1213,7 @@ export default function DashboardPage() {
                   <ServiceBadge name="EST" status={systemStatus?.est} />
                   <ServiceBadge name="OCSP" status={systemStatus?.ocsp} />
                   <ServiceBadge name="CRL" status={systemStatus?.crl} />
+                  <ServiceBadge name="TSA" status={systemStatus?.tsa} />
                   <ServiceBadge name={t('acme.autoRenewal')} status={systemStatus?.auto_renewal} />
                   <ServiceBadge name="SMTP" status={systemStatus?.smtp} />
                   <ServiceBadge name="Webhooks" status={systemStatus?.webhooks} />
@@ -1477,16 +1484,30 @@ function SystemStat({ icon: Icon, label, value, status }) {
 
 // Service Badge Component
 function ServiceBadge({ name, status }) {
-  const isOnline = status?.status === 'online' || status?.enabled
+  const state = status?.status === 'online' || status?.enabled
+    ? 'online'
+    : status?.status === 'warning'
+      ? 'warning'
+      : 'offline'
+  const box = {
+    online: 'stat-card-success',
+    warning: 'status-warning-bg status-warning-border',
+    offline: 'bg-bg-tertiary border-border hover:border-tertiary-op30',
+  }[state]
+  const dot = {
+    online: 'status-success-bg-solid animate-pulse',
+    warning: 'status-warning-bg-solid animate-pulse',
+    offline: 'bg-text-tertiary',
+  }[state]
+  const label = state === 'offline' ? 'text-text-secondary' : 'text-text-primary'
   return (
-    <div className={`px-2.5 py-2 rounded-lg border text-center transition-all duration-200 group cursor-default ${
-      isOnline 
-        ? 'stat-card-success' 
-        : 'bg-bg-tertiary border-border hover:border-tertiary-op30'
-    }`}>
+    <div
+      title={status?.message || undefined}
+      className={`px-2.5 py-2 rounded-lg border text-center transition-all duration-200 group cursor-default ${box}`}
+    >
       <div className="flex items-center justify-center gap-1.5">
-        <div className={`w-2 h-2 rounded-full transition-transform duration-300 group-hover:scale-125 ${isOnline ? 'status-success-bg-solid animate-pulse' : 'bg-text-tertiary'}`} />
-        <span className={`text-xs font-semibold ${isOnline ? 'text-text-primary' : 'text-text-secondary'}`}>{name}</span>
+        <div className={`w-2 h-2 rounded-full transition-transform duration-300 group-hover:scale-125 ${dot}`} />
+        <span className={`text-xs font-semibold ${label}`}>{name}</span>
       </div>
     </div>
   )

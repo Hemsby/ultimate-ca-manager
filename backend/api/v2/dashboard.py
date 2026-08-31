@@ -13,11 +13,15 @@ from utils.response import success_response
 from models import db, CA, Certificate
 from models.ssh import SSHCertificateAuthority, SSHCertificate
 from sqlalchemy import text
-from utils.datetime_utils import utc_now, utc_isoformat
+from utils.datetime_utils import utc_now, utc_isoformat, to_naive_utc
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint('dashboard_v2', __name__)
+
+# A dedicated TSA signer within this many days of expiry shows as `warning` on
+# the System Health widget. Matches the auto-renewal window used further down.
+TSA_SIGNER_WARN_DAYS = 30
 
 
 @bp.route('/api/v2/stats/overview', methods=['GET'])
@@ -173,7 +177,13 @@ def get_expiring_certificates():
         Certificate.valid_to > utc_now(),
         Certificate.revoked == False
     ).order_by(Certificate.valid_to.asc()).limit(limit).all()
-    
+
+    # Flag the configured dedicated TSA signer so the widget can mark it as
+    # infrastructure — its expiry means /tsa starts returning 503.
+    tsa_signer_refid = db.session.execute(
+        text("SELECT value FROM system_config WHERE key = 'tsa_signer_cert_refid'")
+    ).scalar() or None
+
     return success_response(data=[{
         'id': cert.id,
         'refid': cert.refid,
@@ -181,7 +191,8 @@ def get_expiring_certificates():
         'common_name': cert.common_name,
         'subject': cert.subject,
         'valid_from': utc_isoformat(cert.valid_from),
-        'valid_to': utc_isoformat(cert.valid_to)
+        'valid_to': utc_isoformat(cert.valid_to),
+        'is_tsa_signer': bool(tsa_signer_refid) and cert.refid == tsa_signer_refid,
     } for cert in certs])
 
 
@@ -464,7 +475,42 @@ def get_system_status():
     except Exception:
         status['webhooks'] = {'status': 'offline', 'message': 'Not configured'}
     
+    # TSA (RFC 3161). A configured dedicated signer is a single point of failure:
+    # /tsa returns 503 the moment it expires, is revoked, or its key stops
+    # decrypting, with no CA fallback. Surface its health before that happens.
+    try:
+        tsa_enabled = db.session.execute(
+            text("SELECT value FROM system_config WHERE key = 'tsa_enabled'")
+        ).scalar()
+        if str(tsa_enabled).lower() != 'true':
+            status['tsa'] = {'status': 'offline', 'message': 'Disabled'}
+        else:
+            from services.tsa_service import describe_configured_signer
+            signer = describe_configured_signer()
+            if not signer.get('configured'):
+                status['tsa'] = {'status': 'online',
+                                 'message': 'Signing with CA certificate'}
+            elif not signer.get('usable'):
+                reason = (signer.get('error') or 'signer unusable').strip()
+                status['tsa'] = {'status': 'offline',
+                                 'message': f'Signer unusable: {reason}'}
+            else:
+                dt = to_naive_utc(
+                    datetime.fromisoformat(signer['not_after'])
+                ) if signer.get('not_after') else None
+                days_left = (dt - utc_now()).days if dt else None
+                if days_left is not None and days_left <= TSA_SIGNER_WARN_DAYS:
+                    status['tsa'] = {
+                        'status': 'warning',
+                        'message': f'Signer expires in {max(days_left, 0)} day(s)',
+                    }
+                else:
+                    status['tsa'] = {'status': 'online', 'message': 'Dedicated signer'}
+    except Exception:
+        logger.debug('TSA status check failed', exc_info=True)
+        status['tsa'] = {'status': 'online', 'message': 'Status unknown'}
+
     # Core is online if we can respond
     status['core'] = {'status': 'online', 'message': 'Operational'}
-    
+
     return success_response(data=status)

@@ -7,6 +7,11 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
+## [Unreleased]
+
+### Added
+- Dashboard surfacing for a near-expiry TSA signer: the System Health widget now has a **TSA** badge (disabled / signing with the CA certificate / dedicated signer, turning amber within 30 days of the signer's expiry and grey when the signer is expired, revoked or undecryptable and `/tsa` is therefore returning 503), and the Next Expirations widget tags the configured dedicated signer with a "TSA signer" chip so its expiry reads as an infrastructure event rather than one certificate among many. Service badges now render a distinct `warning` state and show their status message on hover. A dedicated signer is an ordinary certificate, so the existing email expiry alerts already cover it; this adds the at-a-glance view (#312, contributed by @Hemsby)
+
 ## [2.217] - 2026-08-31
 
 ### Fixed

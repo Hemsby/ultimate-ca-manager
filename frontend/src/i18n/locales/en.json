@@ -626,6 +626,7 @@
     "widgetNextExpirations": "Next Expirations",
     "nextExpirations": "Next Expirations",
     "noExpirations": "No certificates to expire",
+    "tsaSigner": "TSA signer",
     "daysRemaining": "{{count}} days",
     "editLayout": "Edit Layout",
     "doneEditing": "Done",
