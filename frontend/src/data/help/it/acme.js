@@ -17,6 +17,7 @@ export default {
         title: 'Client ACME',
         items: [
           { label: 'Client', text: 'Richiedi certificati da qualsiasi CA ACME — Let\'s Encrypt, ZeroSSL, Buypass, HARICA o personalizzata' },
+          { label: 'Elenco ordini (v2.218)', text: 'La sezione degli ordini Let\'s Encrypt mostra un conteggio visibili/totale e un filtro di stato, rispecchiando la vista Local orders' },
           { label: 'Account CA esterni', text: 'Uno o più account per CA — più account possono condividere lo stesso URL di directory (es. due account Let\'s Encrypt per separazione amministrativa); un URL di directory vuoto equivale a Let\'s Encrypt Production' },
           { label: 'Server personalizzato', text: 'Imposta un URL directory ACME personalizzato per utilizzare qualsiasi CA conforme a RFC 8555' },
           { label: 'EAB', text: 'Supporto External Account Binding per CA che richiedono la pre-registrazione (ZeroSSL, HARICA, ecc.)' },
@@ -33,8 +34,9 @@ export default {
           { label: 'Configurazione', text: 'Abilita/disabilita il server ACME integrato, seleziona la CA predefinita' },
           { label: 'Domini locali', text: 'Mappa i domini interni a CA specifiche per l\'emissione multi-CA' },
           { label: 'Account', text: 'Visualizza e gestisci gli account client ACME registrati' },
+          { label: 'E-mail dell\'account (v2.218)', text: 'L\'e-mail di contatto di un account locale può essere modificata dal suo pannello di dettaglio. Secondo la RFC 8555 il contatto appartiene al client ACME, quindi il suo prossimo aggiornamento dell\'account può sovrascrivere il valore' },
           { label: 'Cronologia', text: 'Traccia tutti gli ordini di emissione certificati ACME' },
-                  { label: 'Ordini locali (v2.217)', text: 'La scheda Local orders elenca gli ordini del server integrato con filtro di stato, eliminazione singola e pulizia; gli ordini scaduti non emessi vengono eliminati automaticamente ogni 6 ore, e un digest di firma predefinito si applica agli ordini senza profilo' },
+                  { label: 'Ordini locali (v2.217)', text: 'La scheda Local orders elenca gli ordini del server integrato con filtro di stato, eliminazione singola e pulizia; gli ordini scaduti non emessi vengono eliminati automaticamente ogni 6 ore, e un digest di firma predefinito si applica agli ordini senza profilo. Dalla v2.218 la pulizia rimuove anche le sfide sorelle rimaste in attesa delle autorizzazioni già convalidate' },
         ]
       },
       {

@@ -84,7 +84,7 @@ export default {
           { label: 'Respaldo', text: 'Copias de seguridad manuales y programadas de la base de datos' },
           { label: 'Auditoría', text: 'Retención de registros, reenvío a syslog, verificación de integridad' },
           { label: 'Base de datos', text: 'Backend activo (SQLite o PostgreSQL), tamaño, número de tablas, probar/cambiar/migrar entre backends' },
-          { label: 'HTTPS', text: 'Certificado TLS para la interfaz web de UCM' },
+          { label: 'HTTPS', text: 'Certificado TLS para la interfaz web de UCM. El certificado aplicado se recuerda y se vuelve a aplicar cuando se renueva (v2.217); el certificado vinculado se muestra con un botón para desvincularlo y dejar de seguir las renovaciones (v2.218)' },
           { label: 'Actualizaciones', text: 'Buscar nuevas versiones, ver registro de cambios, comprobación diaria programada con instalación desatendida opcional (DEB/RPM)' },
           { label: 'Webhooks', text: 'Webhooks HTTP para eventos de certificados (emisión, revocación, expiración). Autenticación saliente opcional: Bearer, Basic, API key o encabezado personalizado' },
           { label: 'Despliegue', text: 'Destinos de despliegue: hosts remotos a los que se envían los certificados por SSH/SFTP en la emisión y renovación, con un comando de recarga fijo (solo administradores, v2.215)' },

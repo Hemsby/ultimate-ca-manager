@@ -17,6 +17,7 @@ export default {
         title: 'Client ACME',
         items: [
           { label: 'Client', text: 'Demander des certificats depuis tout CA ACME — Let\'s Encrypt, ZeroSSL, Buypass, HARICA ou personnalisé' },
+          { label: 'Liste des orders (v2.218)', text: 'La section des orders Let\'s Encrypt affiche un compteur visibles/total et un filtre de statut, à l\'image de la vue Local orders' },
           { label: 'Comptes CA externes', text: 'Un ou plusieurs comptes par CA — plusieurs comptes peuvent partager la même URL de répertoire (ex. deux comptes Let\'s Encrypt pour une séparation administrative) ; une URL de répertoire vide vaut Let\'s Encrypt Production' },
           { label: 'Serveur personnalisé', text: 'Définir une URL de répertoire ACME personnalisée pour utiliser tout CA conforme RFC 8555' },
           { label: 'EAB', text: 'Prise en charge de la liaison de compte externe pour les CA nécessitant une pré-inscription (ZeroSSL, HARICA, etc.)' },
@@ -33,8 +34,9 @@ export default {
           { label: 'Configuration', text: 'Activer/désactiver le serveur ACME intégré, sélectionner la CA par défaut' },
           { label: 'Domaines locaux', text: 'Associer des domaines internes à des CA spécifiques pour l\'émission multi-CA' },
           { label: 'Comptes', text: 'Voir et gérer les comptes clients ACME enregistrés' },
+          { label: 'E-mail du compte (v2.218)', text: 'L\'e-mail de contact d\'un compte local peut être modifié depuis son panneau de détails. Selon la RFC 8555, le contact appartient au client ACME : sa prochaine mise à jour de compte peut donc écraser la valeur' },
           { label: 'Historique', text: 'Suivre toutes les commandes d\'émission de certificats ACME' },
-                  { label: 'Orders locaux (v2.217)', text: 'L\'onglet Local orders liste les orders du serveur intégré avec filtre de statut, suppression unitaire et purge ; les orders expirés non émis sont purgés automatiquement toutes les 6 h, et un digest de signature par défaut s\'applique aux orders sans profil' },
+                  { label: 'Orders locaux (v2.217)', text: 'L\'onglet Local orders liste les orders du serveur intégré avec filtre de statut, suppression unitaire et purge ; les orders expirés non émis sont purgés automatiquement toutes les 6 h, et un digest de signature par défaut s\'applique aux orders sans profil. Depuis la v2.218, la purge supprime aussi les défis frères résiduels encore pending des autorisations déjà validées' },
         ]
       },
       {

@@ -17,6 +17,7 @@ export default {
         title: 'ACME 客户端',
         items: [
           { label: '客户端', text: '从任何 ACME CA 请求证书——Let\'s Encrypt、ZeroSSL、Buypass、HARICA 或自定义' },
+          { label: '订单列表 (v2.218)', text: 'Let\'s Encrypt 订单区块显示可见/总数计数和状态过滤器，与 Local orders 视图保持一致' },
           { label: '外部 CA 账户', text: '每个 CA 可以有多个账户 —— 多个账户可以共享同一个目录 URL（例如两个 Let\'s Encrypt 账户用于管理分离）；目录 URL 留空默认为 Let\'s Encrypt 生产环境' },
           { label: '自定义服务器', text: '设置自定义 ACME 目录 URL 以使用任何符合 RFC 8555 的 CA' },
           { label: 'EAB', text: '支持外部账户绑定，用于需要预注册的 CA（ZeroSSL、HARICA 等）' },
@@ -33,8 +34,9 @@ export default {
           { label: '配置', text: '启用/禁用内置 ACME 服务器，选择默认 CA' },
           { label: '本地域名', text: '将内部域名映射到特定 CA 以实现多 CA 签发' },
           { label: '账户', text: '查看和管理已注册的 ACME 客户端账户' },
+          { label: '账户邮箱 (v2.218)', text: '本地账户的联系邮箱可在其详情面板中编辑。根据 RFC 8555，联系信息归 ACME 客户端所有，因此客户端下一次更新账户时可能会覆盖该值' },
           { label: '历史', text: '跟踪所有 ACME 证书签发订单' },
-                  { label: '本地订单 (v2.217)', text: 'Local orders 标签页列出内置服务器的订单，支持状态过滤、单个删除和清理；过期未签发的订单每 6 小时自动清理，无配置文件的订单使用默认签名摘要' },
+                  { label: '本地订单 (v2.217)', text: 'Local orders 标签页列出内置服务器的订单，支持状态过滤、单个删除和清理；过期未签发的订单每 6 小时自动清理，无配置文件的订单使用默认签名摘要。自 v2.218 起，清理还会移除已验证授权中残留的 pending 同级质询' },
         ]
       },
       {

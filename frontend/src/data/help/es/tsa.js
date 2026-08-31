@@ -19,6 +19,7 @@ export default {
           { label: 'Activar/Desactivar', text: 'Alternar el endpoint TSA sin perder la configuración' },
           { label: 'Requerir certificado dedicado', text: 'Opcional: rechaza firmar marcas de tiempo con el propio certificado de la CA — requiere un certificado de firma de entidad final dedicado con EKU timeStamping crítico (RFC 3161)' },
                   { label: 'Certificado de firma (v2.217)', text: 'Firme los tokens con un certificado final dedicado elegido entre los certificados emitidos (EKU timeStamping, clave en poder de UCM). Las renovaciones se siguen automáticamente; un firmante caducado o revocado hace fallar las solicitudes con 503 y nunca recae en el certificado de la CA' },
+                  { label: 'Generar un certificado de firma (v2.218)', text: 'Emisión en un clic de un firmante RFC 3161 hecho a medida: CA:FALSE, KeyUsage digitalSignature únicamente y un EKU timeStamping exclusivo y crítico, la forma que exigen los verificadores estrictos (openssl ts -verify). Se emite desde la CA TSA configurada y se selecciona automáticamente cuando no hay ningún firmante utilizable definido. El certificado tiene origen "manual": añada "manual" a los orígenes de renovación automática o renuévelo usted mismo antes de que caduque' },
         ]
       },
       {

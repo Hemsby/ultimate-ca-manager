@@ -84,7 +84,7 @@ export default {
           { label: '备份', text: '手动和计划的数据库备份' },
           { label: '审计', text: '日志保留、syslog 转发、完整性验证' },
           { label: '数据库', text: '活动后端（SQLite 或 PostgreSQL）、大小、表数量、在后端之间测试/切换/迁移' },
-          { label: 'HTTPS', text: 'UCM Web 界面的 TLS 证书' },
+          { label: 'HTTPS', text: 'UCM Web 界面的 TLS 证书。已应用的证书会被记住，并在其续期后自动重新应用（v2.217）；界面会显示当前绑定的证书及一个解除绑定按钮，用于停止跟随续期（v2.218）' },
           { label: '更新', text: '检查新版本、查看变更日志、每日计划检查并可选启用无人值守安装（DEB/RPM）' },
           { label: 'Webhook', text: '证书事件（签发、吊销、过期）的 HTTP Webhook — 允许内部 LAN URL；阻止云元数据 IP。可选出站认证：Bearer、Basic、API 密钥或自定义标头' },
           { label: '部署', text: '部署目标：在签发和续期时通过 SSH/SFTP 将证书推送到的远程主机，并附带一条固定的重载命令（仅管理员，v2.215）' },
