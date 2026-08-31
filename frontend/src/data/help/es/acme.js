@@ -17,6 +17,7 @@ export default {
         title: 'Cliente ACME',
         items: [
           { label: 'Cliente', text: 'Solicita certificados de cualquier CA ACME — Let\'s Encrypt, ZeroSSL, Buypass, HARICA o personalizada' },
+          { label: 'Lista de pedidos (v2.218)', text: 'La sección de pedidos de Let\'s Encrypt muestra un recuento visibles/total y un filtro de estado, reflejando la vista Local orders' },
           { label: 'Cuentas CA externas', text: 'Una o varias cuentas por CA — varias cuentas pueden compartir la misma URL de directorio (p. ej. dos cuentas de Let\'s Encrypt para separación administrativa); una URL de directorio vacía equivale a Let\'s Encrypt Production' },
           { label: 'Servidor personalizado', text: 'Establece una URL de directorio ACME personalizada para usar cualquier CA compatible con RFC 8555' },
           { label: 'EAB', text: 'Soporte de External Account Binding para CAs que requieren pre-registro (ZeroSSL, HARICA, etc.)' },
@@ -33,8 +34,9 @@ export default {
           { label: 'Configuración', text: 'Activa/desactiva el servidor ACME integrado, selecciona la CA predeterminada' },
           { label: 'Dominios locales', text: 'Mapea dominios internos a CAs específicas para emisión multi-CA' },
           { label: 'Cuentas', text: 'Visualiza y gestiona las cuentas de clientes ACME registradas' },
+          { label: 'Correo de la cuenta (v2.218)', text: 'El correo de contacto de una cuenta local puede editarse desde su panel de detalle. Según la RFC 8555 el contacto pertenece al cliente ACME, por lo que su próxima actualización de cuenta puede sobrescribir el valor' },
           { label: 'Historial', text: 'Rastrea todas las órdenes de emisión de certificados ACME' },
-                  { label: 'Pedidos locales (v2.217)', text: 'La pestaña Local orders lista los pedidos del servidor integrado con filtro de estado, borrado unitario y purga; los pedidos caducados no emitidos se purgan automáticamente cada 6 horas, y un digest de firma por defecto se aplica a los pedidos sin perfil' },
+                  { label: 'Pedidos locales (v2.217)', text: 'La pestaña Local orders lista los pedidos del servidor integrado con filtro de estado, borrado unitario y purga; los pedidos caducados no emitidos se purgan automáticamente cada 6 horas, y un digest de firma por defecto se aplica a los pedidos sin perfil. Desde la v2.218 la purga elimina también los desafíos hermanos pendientes que quedan en autorizaciones ya validadas' },
         ]
       },
       {

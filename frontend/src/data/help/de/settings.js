@@ -84,7 +84,7 @@ export default {
           { label: 'Sicherung', text: 'Manuelle und geplante Datenbanksicherungen' },
           { label: 'Audit', text: 'Protokollaufbewahrung, Syslog-Weiterleitung, Integritätsüberprüfung' },
           { label: 'Datenbank', text: 'Aktives Backend (SQLite oder PostgreSQL), Größe, Tabellenanzahl, testen/wechseln/migrieren zwischen Backends' },
-          { label: 'HTTPS', text: 'TLS-Zertifikat für die UCM-Weboberfläche' },
+          { label: 'HTTPS', text: 'TLS-Zertifikat für die UCM-Weboberfläche. Das angewendete Zertifikat wird gespeichert und bei seiner Erneuerung automatisch erneut angewendet (v2.217); das gebundene Zertifikat wird mit einer Schaltfläche zum Aufheben der Bindung angezeigt, um Erneuerungen nicht mehr zu folgen (v2.218)' },
           { label: 'Updates', text: 'Nach neuen Versionen suchen, Änderungsprotokoll anzeigen, geplante tägliche Prüfung mit optionaler unbeaufsichtigter Installation (DEB/RPM)' },
           { label: 'Webhooks', text: 'HTTP-Webhooks für Zertifikatsereignisse (Ausstellung, Widerruf, Ablauf)' },
           { label: 'Bereitstellung', text: 'Deploy-Ziele: entfernte Hosts, auf die Zertifikate bei Ausstellung und Erneuerung per SSH/SFTP übertragen werden, mit einem festen Reload-Befehl (nur Admins, v2.215)' },

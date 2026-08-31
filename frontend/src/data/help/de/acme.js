@@ -17,6 +17,7 @@ export default {
         title: 'ACME-Client',
         items: [
           { label: 'Client', text: 'Zertifikate von jeder ACME-CA anfordern — Let\'s Encrypt, ZeroSSL, Buypass, HARICA oder benutzerdefiniert' },
+          { label: 'Order-Liste (v2.218)', text: 'Der Abschnitt der Let\'s-Encrypt-Orders zeigt einen Zähler sichtbar/gesamt und einen Statusfilter, analog zur Ansicht Local orders' },
           { label: 'Externe CA-Konten', text: 'Ein oder mehrere Konten pro CA — mehrere Konten können dieselbe Verzeichnis-URL teilen (z. B. zwei Let\'s-Encrypt-Konten zur administrativen Trennung); eine leere Verzeichnis-URL steht für Let\'s Encrypt Production' },
           { label: 'Benutzerdefinierter Server', text: 'Eine benutzerdefinierte ACME-Directory-URL festlegen, um eine beliebige RFC 8555-konforme CA zu verwenden' },
           { label: 'EAB', text: 'External Account Binding-Unterstützung für CAs, die eine Vorregistrierung erfordern (ZeroSSL, HARICA, usw.)' },
@@ -33,8 +34,9 @@ export default {
           { label: 'Konfiguration', text: 'Den integrierten ACME-Server aktivieren/deaktivieren, Standard-CA auswählen' },
           { label: 'Lokale Domänen', text: 'Interne Domänen bestimmten CAs für Multi-CA-Ausstellung zuordnen' },
           { label: 'Konten', text: 'Registrierte ACME-Client-Konten anzeigen und verwalten' },
+          { label: 'Konto-E-Mail (v2.218)', text: 'Die Kontakt-E-Mail eines lokalen Kontos kann über seine Detailansicht bearbeitet werden. Gemäß RFC 8555 gehört der Kontakt dem ACME-Client, sodass dessen nächste Kontoaktualisierung den Wert überschreiben kann' },
           { label: 'Verlauf', text: 'Alle ACME-Zertifikatsausstellungsaufträge verfolgen' },
-                  { label: 'Lokale Orders (v2.217)', text: 'Der Tab Local orders listet die Orders des eingebauten Servers mit Statusfilter, Einzellöschung und Bereinigung; abgelaufene, nicht ausgestellte Orders werden alle 6 Stunden automatisch bereinigt, und ein Standard-Signatur-Digest gilt für Orders ohne Profil' },
+                  { label: 'Lokale Orders (v2.217)', text: 'Der Tab Local orders listet die Orders des eingebauten Servers mit Statusfilter, Einzellöschung und Bereinigung; abgelaufene, nicht ausgestellte Orders werden alle 6 Stunden automatisch bereinigt, und ein Standard-Signatur-Digest gilt für Orders ohne Profil. Seit v2.218 entfernt die Bereinigung auch übrig gebliebene ausstehende Geschwister-Challenges bereits validierter Autorisierungen' },
         ]
       },
       {

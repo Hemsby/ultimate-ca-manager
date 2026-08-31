@@ -84,7 +84,7 @@ export default {
           { label: 'Backup', text: 'Backups manuais e agendados do banco de dados' },
           { label: 'Auditoria', text: 'Retenção de logs, encaminhamento syslog, verificação de integridade' },
           { label: 'Banco de Dados', text: 'Backend ativo (SQLite ou PostgreSQL), tamanho, número de tabelas, testar/alternar/migrar entre backends' },
-          { label: 'HTTPS', text: 'Certificado TLS para a interface web do UCM' },
+          { label: 'HTTPS', text: 'Certificado TLS para a interface web do UCM. O certificado aplicado é lembrado e reaplicado quando é renovado (v2.217); o certificado vinculado é exibido com um botão de desvinculação para deixar de seguir as renovações (v2.218)' },
           { label: 'Atualizações', text: 'Verificar novas versões, visualizar changelog, verificação diária agendada com instalação não assistida opcional (DEB/RPM)' },
           { label: 'Webhooks', text: 'Webhooks HTTP para eventos de certificado (emissão, revogação, expiração). Autenticação de saída opcional: Bearer, Basic, API key ou cabeçalho personalizado' },
           { label: 'Implantação', text: 'Alvos de implantação: hosts remotos para onde os certificados são enviados via SSH/SFTP na emissão e renovação, com um comando de recarga fixo (somente admin, v2.215)' },

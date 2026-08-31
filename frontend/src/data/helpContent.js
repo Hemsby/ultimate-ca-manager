@@ -28,8 +28,8 @@ export const helpContent = {
           { label: 'Statistics', text: 'Total CAs, active certificates, pending CSRs, and expiring soon counts' },
           { label: 'Certificate Trend', text: 'Issuance history chart over time' },
           { label: 'Status Distribution', text: 'Pie chart breakdown: valid / expiring / expired / revoked' },
-          { label: 'Next Expiry', text: 'Certificates expiring within 30 days' },
-          { label: 'System Status', text: 'Service health: ACME, SCEP, EST, OCSP, CRL/CDP, auto-renewal status' },
+          { label: 'Next Expiry', text: 'Certificates expiring within 30 days; the configured dedicated TSA signer is tagged with a "TSA signer" chip (v2.218)' },
+          { label: 'System Status', text: 'Service health: ACME, SCEP, EST, OCSP, CRL/CDP, TSA (v2.218), auto-renewal, SMTP and webhooks. Badges show a distinct amber warning state (near-expiry TSA signer, SMTP configured but disabled) and their status message on hover' },
           { label: 'Recent Activity', text: 'Latest operations across the system' },
           { label: 'Recent Certificates', text: 'Recently issued or imported certificates' },
           { label: 'Certificate Authorities', text: 'CA list with chain information' },
@@ -513,6 +513,7 @@ export const helpContent = {
           { label: 'Enable/Disable', text: 'Toggle the TSA endpoint on or off without losing configuration' },
           { label: 'Require dedicated certificate', text: 'Opt-in: refuse to sign timestamps with the CA certificate itself — requires a dedicated end-entity signing certificate with a critical timeStamping EKU (RFC 3161)' },
                   { label: 'Signing certificate (v2.217)', text: 'Sign tokens with a dedicated end-entity certificate picked from issued certificates (timeStamping EKU, key held by UCM). Renewals are followed automatically; an expired or revoked signer fails requests with 503 and never falls back to the CA certificate' },
+                  { label: 'Generate a signing certificate (v2.218)', text: 'One-click issuance of a purpose-built RFC 3161 signer: CA:FALSE, KeyUsage digitalSignature only, and a critical exclusive timeStamping EKU, the shape strict verifiers (openssl ts -verify) require. Issued from the configured TSA CA and selected automatically when no usable signer is set. The certificate has source "manual": add "manual" to the auto-renewal sources or renew it yourself before expiry' },
         ]
       },
       {
@@ -558,6 +559,7 @@ export const helpContent = {
         icon: Globe,
         items: [
           { label: 'Client', text: 'Request certificates from any ACME CA — Let\'s Encrypt, ZeroSSL, Buypass, HARICA, or custom' },
+          { label: 'Orders list (v2.218)', text: 'The Let\'s Encrypt orders section shows a visible/total count and a status filter, mirroring the Local orders view' },
           { label: 'External CA Accounts', text: 'One or more accounts per CA — several accounts can share the same CA directory URL (e.g. two Let\'s Encrypt accounts for administrative separation); an empty Directory URL defaults to Let\'s Encrypt Production' },
           { label: 'Custom Server', text: 'Set a custom ACME directory URL to use any RFC 8555-compliant CA' },
           { label: 'EAB', text: 'External Account Binding support for CAs that require pre-registration (ZeroSSL, HARICA, etc.)' },
@@ -575,8 +577,9 @@ export const helpContent = {
           { label: 'Configuration', text: 'Enable/disable the built-in ACME server, select default CA' },
           { label: 'Local Domains', text: 'Map internal domains to specific CAs for multi-CA issuance' },
           { label: 'Accounts', text: 'View and manage registered ACME client accounts' },
+          { label: 'Account e-mail (v2.218)', text: 'The contact e-mail of a local account can be edited from its detail panel. Per RFC 8555 the contact belongs to the ACME client, so its next account update may overwrite the value' },
           { label: 'History', text: 'Track all ACME certificate issuance orders' },
-                  { label: 'Local orders (v2.217)', text: 'The Local orders tab lists the built-in server orders with a status filter, per-order delete and a purge action; expired non-issued orders are purged automatically every 6 hours, and a default signing digest applies to orders without a profile' },
+                  { label: 'Local orders (v2.217)', text: 'The Local orders tab lists the built-in server orders with a status filter, per-order delete and a purge action; expired non-issued orders are purged automatically every 6 hours, and a default signing digest applies to orders without a profile. Since v2.218 the purge also removes leftover pending sibling challenges of already-validated authorizations' },
         ]
       },
       {
@@ -917,7 +920,7 @@ export const helpContent = {
           { label: 'Backup', text: 'Manual and scheduled database backups' },
           { label: 'Audit', text: 'Log retention, syslog forwarding, integrity verification' },
           { label: 'Database', text: 'Active backend (SQLite or native PostgreSQL), size, table count, bidirectional migration UI with safety checks' },
-          { label: 'HTTPS', text: 'TLS certificate for the UCM web interface' },
+          { label: 'HTTPS', text: 'TLS certificate for the UCM web interface. The applied certificate is remembered and re-applied when it is renewed (v2.217); the bound certificate is shown with an unbind button to stop following renewals (v2.218)' },
           { label: 'Updates', text: 'Check for new versions, view changelog, scheduled daily check with opt-in unattended install (DEB/RPM)' },
           { label: 'Webhooks', text: 'HTTP webhooks for certificate events (issue, revoke, expire) — internal LAN URLs allowed; cloud-metadata IPs blocked. Optional outbound auth: Bearer, Basic, API key, or custom header' },
           { label: 'Deployment', text: 'Deploy targets: remote hosts certificates are pushed to over SSH/SFTP on issuance and renewal, with a fixed reload command (admin-only, v2.215)' },

@@ -19,6 +19,7 @@ export default {
           { label: 'Aktivieren/Deaktivieren', text: 'Den TSA-Endpunkt ein- oder ausschalten, ohne die Konfiguration zu verlieren' },
           { label: 'Dediziertes Zertifikat erforderlich', text: 'Opt-in: Zeitstempel nicht mit dem CA-Zertifikat selbst signieren — erfordert ein dediziertes End-Entity-Signaturzertifikat mit kritischer timeStamping-EKU (RFC 3161)' },
                   { label: 'Signaturzertifikat (v2.217)', text: 'Signieren Sie Token mit einem dedizierten End-Entity-Zertifikat aus den ausgestellten Zertifikaten (timeStamping-EKU, Schlüssel bei UCM). Erneuerungen werden automatisch übernommen; ein abgelaufener oder widerrufener Signierer lässt Anfragen mit 503 fehlschlagen und fällt nie auf das CA-Zertifikat zurück' },
+          { label: 'Signaturzertifikat erzeugen (v2.218)', text: 'Ausstellung eines speziell zugeschnittenen RFC 3161-Signierers mit einem Klick: CA:FALSE, KeyUsage nur digitalSignature und eine kritische, exklusive timeStamping-EKU — genau die Form, die strenge Prüfprogramme (openssl ts -verify) verlangen. Wird von der konfigurierten TSA-CA ausgestellt und automatisch ausgewählt, wenn kein verwendbarer Signierer gesetzt ist. Das Zertifikat hat die Quelle "manual": Fügen Sie "manual" zu den Auto-Erneuerungsquellen hinzu oder erneuern Sie es selbst vor Ablauf' },
         ]
       },
       {

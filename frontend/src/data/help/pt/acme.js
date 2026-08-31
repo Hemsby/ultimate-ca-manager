@@ -17,6 +17,7 @@ export default {
         title: 'Cliente ACME',
         items: [
           { label: 'Cliente', text: 'Solicitar certificados de qualquer CA ACME — Let\'s Encrypt, ZeroSSL, Buypass, HARICA ou personalizada' },
+          { label: 'Lista de pedidos (v2.218)', text: 'A seção de pedidos Let\'s Encrypt mostra uma contagem visíveis/total e um filtro de estado, espelhando a vista dos pedidos locais' },
           { label: 'Contas CA externas', text: 'Uma ou mais contas por CA — várias contas podem partilhar o mesmo URL de diretório (ex.: duas contas Let\'s Encrypt para separação administrativa); um URL de diretório vazio equivale a Let\'s Encrypt Production' },
           { label: 'Servidor Personalizado', text: 'Definir uma URL de diretório ACME personalizada para usar qualquer CA compatível com RFC 8555' },
           { label: 'EAB', text: 'Suporte a External Account Binding para CAs que requerem pré-registro (ZeroSSL, HARICA, etc.)' },
@@ -33,8 +34,9 @@ export default {
           { label: 'Configuração', text: 'Ativar/desativar o servidor ACME integrado, selecionar CA padrão' },
           { label: 'Domínios Locais', text: 'Mapear domínios internos para CAs específicas para emissão multi-CA' },
           { label: 'Contas', text: 'Visualizar e gerenciar contas de clientes ACME registradas' },
+          { label: 'E-mail da conta (v2.218)', text: 'O e-mail de contato de uma conta local pode ser editado a partir do seu painel de detalhes. Conforme a RFC 8555, o contato pertence ao cliente ACME, portanto a próxima atualização da conta pode sobrescrever o valor' },
           { label: 'Histórico', text: 'Rastrear todos os pedidos de emissão de certificados ACME' },
-                  { label: 'Pedidos locais (v2.217)', text: 'O separador Local orders lista os pedidos do servidor integrado com filtro de estado, eliminação unitária e purga; os pedidos expirados não emitidos são purgados automaticamente a cada 6 horas, e um digest de assinatura predefinido aplica-se aos pedidos sem perfil' },
+                  { label: 'Pedidos locais (v2.217)', text: 'O separador Local orders lista os pedidos do servidor integrado com filtro de estado, eliminação unitária e purga; os pedidos expirados não emitidos são purgados automaticamente a cada 6 horas, e um digest de assinatura predefinido aplica-se aos pedidos sem perfil. Desde a v2.218, a purga também remove os desafios irmãos pendentes remanescentes de autorizações já validadas' },
         ]
       },
       {
