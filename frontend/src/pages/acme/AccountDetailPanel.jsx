@@ -100,14 +100,15 @@ export default function AccountDetailPanel({ account, orders, challenges, detail
         <div className="space-y-3">
           <CompactSection title={t('common.accountInformation')}>
             <CompactGrid>
-              <CompactField autoIcon="email" label={t('common.email')}>
+              <CompactField autoIcon="email" label={t('common.email')} colSpan={2}>
                 <span className="flex items-center gap-1.5 min-w-0">
-                  <span className="truncate">{currentEmail || '-'}</span>
+                  <span className="truncate" title={currentEmail}>{currentEmail || '-'}</span>
                   {canEditEmail && (
                     <Button
                       type="button"
                       variant="ghost"
                       size="xs"
+                      className="shrink-0 whitespace-nowrap"
                       aria-expanded={editingEmail}
                       onClick={() => { setEmailDraft(currentEmail); setEditingEmail(!editingEmail) }}
                     >
