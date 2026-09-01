@@ -108,7 +108,7 @@ export default function AccountDetailPanel({ account, orders, challenges, detail
                       type="button"
                       variant="ghost"
                       size="xs"
-                      className="shrink-0 whitespace-nowrap"
+                      className="shrink-0 whitespace-nowrap text-accent-primary hover:text-accent-primary"
                       aria-expanded={editingEmail}
                       onClick={() => { setEmailDraft(currentEmail); setEditingEmail(!editingEmail) }}
                     >
