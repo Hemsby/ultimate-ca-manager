@@ -702,7 +702,7 @@ def new_account():
             account_url = f"{service.base_url}/acme/acct/{existing.account_id}"
             response_data = {
                 "status": existing.status,
-                "contact": json.loads(existing.contact) if existing.contact else [],
+                "contact": existing.contact_list,
                 "termsOfServiceAgreed": existing.terms_of_service_agreed,
                 "orders": f"{account_url}/orders"
             }
@@ -769,7 +769,7 @@ def new_account():
         
         response_data = {
             "status": account.status,
-            "contact": json.loads(account.contact) if account.contact else [],
+            "contact": account.contact_list,
             "termsOfServiceAgreed": account.terms_of_service_agreed,
             "orders": f"{account_url}/orders"
         }
@@ -841,7 +841,7 @@ def account_info(account_id: str):
     
     response_data = {
         "status": account.status,
-        "contact": json.loads(account.contact) if account.contact else [],
+        "contact": account.contact_list,
         "orders": f"{account_url}/orders"
     }
     
@@ -1989,7 +1989,7 @@ def key_change():
         account_url_full = f"{service.base_url}/acme/acct/{account.account_id}"
         response_data = {
             "status": account.status,
-            "contact": json.loads(account.contact) if account.contact else [],
+            "contact": account.contact_list,
             "orders": f"{account_url_full}/orders"
         }
         

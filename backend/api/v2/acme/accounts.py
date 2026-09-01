@@ -125,7 +125,7 @@ def create_acme_account():
             jwk=json.dumps(jwk_dict),
             jwk_thumbprint=jwk_thumbprint,
             status='valid',
-            contact=email,
+            contact=json.dumps([f'mailto:{email}']),
             terms_of_service_agreed=agree_tos,
         )
         db.session.add(account)
