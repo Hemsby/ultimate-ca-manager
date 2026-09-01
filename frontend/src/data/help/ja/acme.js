@@ -17,7 +17,7 @@ export default {
         title: 'ACMEクライアント',
         items: [
           { label: 'クライアント', text: '任意のACME CAから証明書を要求 — Let\'s Encrypt、ZeroSSL、Buypass、HARICA、またはカスタム' },
-          { label: '注文一覧 (v2.218)', text: 'Let\'s Encrypt の注文セクションには表示件数/総数のカウントとステータスフィルタが表示され、Local orders ビューと同じ構成です' },
+          { label: '注文タブ (v2.219)', text: 'クライアントの注文はサイドバーの専用タブ「Let\'s Encrypt orders」に表示され、表示件数/総数のカウントとステータスフィルタを備え、Local orders ビューと同じ構成です' },
           { label: '外部 CA アカウント', text: 'CA ごとに複数のアカウントを登録可能 — 同じディレクトリ URL を共有できます（例: 管理分離のための 2 つの Let\'s Encrypt アカウント）。ディレクトリ URL が空欄の場合は Let\'s Encrypt Production になります' },
           { label: 'カスタムサーバー', text: 'カスタムACMEディレクトリURLを設定して、任意のRFC 8555準拠CAを使用します' },
           { label: 'EAB', text: '事前登録が必要なCA（ZeroSSL、HARICAなど）のための外部アカウントバインディングサポート' },

@@ -559,7 +559,7 @@ export const helpContent = {
         icon: Globe,
         items: [
           { label: 'Client', text: 'Request certificates from any ACME CA — Let\'s Encrypt, ZeroSSL, Buypass, HARICA, or custom' },
-          { label: 'Orders list (v2.218)', text: 'The Let\'s Encrypt orders section shows a visible/total count and a status filter, mirroring the Local orders view' },
+          { label: 'Orders tab (v2.219)', text: 'The client orders have their own "Let\'s Encrypt orders" sidebar tab with a visible/total count and a status filter, mirroring the Local orders view' },
           { label: 'External CA Accounts', text: 'One or more accounts per CA — several accounts can share the same CA directory URL (e.g. two Let\'s Encrypt accounts for administrative separation); an empty Directory URL defaults to Let\'s Encrypt Production' },
           { label: 'Custom Server', text: 'Set a custom ACME directory URL to use any RFC 8555-compliant CA' },
           { label: 'EAB', text: 'External Account Binding support for CAs that require pre-registration (ZeroSSL, HARICA, etc.)' },

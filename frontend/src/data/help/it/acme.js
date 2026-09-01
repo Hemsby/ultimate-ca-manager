@@ -17,7 +17,7 @@ export default {
         title: 'Client ACME',
         items: [
           { label: 'Client', text: 'Richiedi certificati da qualsiasi CA ACME — Let\'s Encrypt, ZeroSSL, Buypass, HARICA o personalizzata' },
-          { label: 'Elenco ordini (v2.218)', text: 'La sezione degli ordini Let\'s Encrypt mostra un conteggio visibili/totale e un filtro di stato, rispecchiando la vista Local orders' },
+          { label: 'Scheda ordini (v2.219)', text: 'Gli ordini del client hanno una scheda dedicata "Let\'s Encrypt orders" nella barra laterale, con conteggio visibili/totale e filtro di stato, rispecchiando la vista Local orders' },
           { label: 'Account CA esterni', text: 'Uno o più account per CA — più account possono condividere lo stesso URL di directory (es. due account Let\'s Encrypt per separazione amministrativa); un URL di directory vuoto equivale a Let\'s Encrypt Production' },
           { label: 'Server personalizzato', text: 'Imposta un URL directory ACME personalizzato per utilizzare qualsiasi CA conforme a RFC 8555' },
           { label: 'EAB', text: 'Supporto External Account Binding per CA che richiedono la pre-registrazione (ZeroSSL, HARICA, ecc.)' },

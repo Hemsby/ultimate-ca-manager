@@ -17,7 +17,7 @@ export default {
         title: 'ACME 客户端',
         items: [
           { label: '客户端', text: '从任何 ACME CA 请求证书——Let\'s Encrypt、ZeroSSL、Buypass、HARICA 或自定义' },
-          { label: '订单列表 (v2.218)', text: 'Let\'s Encrypt 订单区块显示可见/总数计数和状态过滤器，与 Local orders 视图保持一致' },
+          { label: '订单标签页 (v2.219)', text: '客户端订单现在有专属的侧边栏标签页「Let\'s Encrypt orders」，带有可见/总数计数和状态过滤器，与 Local orders 视图保持一致' },
           { label: '外部 CA 账户', text: '每个 CA 可以有多个账户 —— 多个账户可以共享同一个目录 URL（例如两个 Let\'s Encrypt 账户用于管理分离）；目录 URL 留空默认为 Let\'s Encrypt 生产环境' },
           { label: '自定义服务器', text: '设置自定义 ACME 目录 URL 以使用任何符合 RFC 8555 的 CA' },
           { label: 'EAB', text: '支持外部账户绑定，用于需要预注册的 CA（ZeroSSL、HARICA 等）' },
