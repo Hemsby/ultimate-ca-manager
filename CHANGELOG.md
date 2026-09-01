@@ -10,6 +10,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 ## [Unreleased]
 
 ### Fixed
+- Local ACME accounts created from the admin UI now store their contact e-mail in the RFC 8555 format, so the address shows up in the accounts list and detail panel instead of a bare "Account #N"; accounts created before this fix keep displaying their address through a legacy-format fallback, and editing the e-mail also normalizes the stored value
 - The 2.218 ACME and HTTPS quality-of-life additions are now actually discoverable: the account e-mail edit is a labeled button spanning the detail grid (it rendered as a cryptic icon squeezed against the address), the client orders got their own "Let's Encrypt orders" sidebar tab mirroring Local orders (the in-section list was easy to miss), and Settings > HTTPS states explicitly when no certificate is bound instead of showing nothing (#303, reported by @gb-123-git)
 
 ## [2.218] - 2026-08-31

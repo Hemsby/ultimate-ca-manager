@@ -29,13 +29,22 @@ class AcmeAccount(db.Model):
     
     @property
     def contact_list(self):
-        """Parse contact JSON to list"""
+        """Parse contact JSON to list.
+
+        Admin-created accounts used to store the bare e-mail instead of the
+        RFC 8555 JSON array; treat any non-JSON value as that legacy format
+        so those accounts keep showing their address.
+        """
         if not self.contact:
             return []
         try:
-            return json.loads(self.contact)
+            parsed = json.loads(self.contact)
         except Exception:
-            return []
+            return [f'mailto:{self.contact}']
+        if isinstance(parsed, list):
+            return parsed
+        # json.loads accepts bare scalars; a legacy plain e-mail is not a list
+        return [f'mailto:{self.contact}']
     
     def to_dict(self):
         """Convert to ACME account object"""

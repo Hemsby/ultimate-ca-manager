@@ -56,3 +56,30 @@ class TestAccountEmailPatch:
 
     def test_unknown_account_404(self, auth_client):
         assert self._patch(auth_client, 'nope', {'email': 'a@b.c'}).status_code == 404
+
+
+class TestAdminCreatedAccountContact:
+    def test_create_stores_rfc8555_contact_array(self, app, auth_client):
+        r = auth_client.post('/api/v2/acme/accounts', json={
+            'email': f'created-{uuid.uuid4().hex[:8]}@example.com',
+            'key_type': 'EC-P256', 'agree_tos': True,
+        })
+        assert r.status_code in (200, 201)
+        data = r.get_json()['data']
+        email = data['contact'][0]
+        assert email.startswith('mailto:') and '@example.com' in email
+        with app.app_context():
+            row = AcmeAccount.query.filter_by(account_id=data['account_id']).first()
+            assert json.loads(row.contact) == [email]
+
+    def test_legacy_bare_email_contact_still_lists(self, app):
+        # accounts created by the admin route before this fix stored the bare
+        # address; contact_list must keep exposing it as a mailto URI
+        with app.app_context():
+            a = AcmeAccount(jwk='{}',
+                            jwk_thumbprint=f'legacy-{uuid.uuid4().hex[:12]}',
+                            status='valid',
+                            contact='legacy@example.com')
+            db.session.add(a)
+            db.session.commit()
+            assert a.contact_list == ['mailto:legacy@example.com']
