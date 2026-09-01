@@ -7,7 +7,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
-## [Unreleased]
+## [2.219] - 2026-09-01
 
 ### Fixed
 - Local ACME accounts created from the admin UI now store their contact e-mail in the RFC 8555 format, so the address shows up in the accounts list and detail panel instead of a bare "Account #N"; accounts created before this fix keep displaying their address through a legacy-format fallback, and editing the e-mail also normalizes the stored value
