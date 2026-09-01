@@ -45,9 +45,9 @@ describe('HttpsSection bound certificate indicator (#303 follow-up)', () => {
     expect(onUnbind).toHaveBeenCalled()
   })
 
-  it('renders nothing about binding when no certificate is bound', () => {
+  it('makes the unbound state explicit', () => {
     renderSection({ type: 'Self-Signed' })
-    expect(screen.queryByText(/settings\.httpsBound/)).not.toBeInTheDocument()
+    expect(screen.getByText('settings.httpsNotBound')).toBeInTheDocument()
     expect(screen.queryByText('settings.httpsUnbind')).not.toBeInTheDocument()
   })
 })

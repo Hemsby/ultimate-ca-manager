@@ -2770,6 +2770,7 @@
     "crlAutoPurgeStaleSerialsDesc": "在 CRL 生成期间自动删除已吊销序列号记录（仅限已过期的）。禁用时，过期记录将作为续期历史保留。",
     "httpsBound": "绑定的证书",
     "httpsBoundDesc": "该证书续期后会自动应用到 HTTPS（重新生成文件并重启服务）。",
+    "httpsNotBound": "当前没有托管证书绑定到 HTTPS。请选择并应用 UCM 证书，以便自动跟随其续期。",
     "httpsUnbind": "停止跟随续期",
     "httpsUnbindDone": "已解除 HTTPS 证书绑定"
   },

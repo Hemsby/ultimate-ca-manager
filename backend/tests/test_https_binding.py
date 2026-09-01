@@ -11,7 +11,8 @@ import pytest
 
 import services.https_binding as https_binding
 from services.https_binding import (
-    get_bound_refid, on_certificate_renewed, set_bound_refid,
+    backfill_legacy_https_binding, get_bound_refid, on_certificate_renewed,
+    set_bound_refid,
 )
 
 
@@ -32,6 +33,35 @@ class TestBindingStore:
             assert get_bound_refid() == 'cert-ref-1'
             set_bound_refid('')
             assert get_bound_refid() == ''
+
+
+class TestLegacyBindingBackfill:
+    def test_matches_installed_leaf_to_managed_certificate(
+        self, app, clean_binding, monkeypatch, tmp_path, create_cert,
+    ):
+        cert_data = create_cert(cn='legacy-https.example.com')
+        cert_path = tmp_path / 'https_cert.pem'
+        key_path = tmp_path / 'https_key.pem'
+        with app.app_context():
+            from models import Certificate, db
+            row = db.session.get(Certificate, cert_data['id'])
+            cert_path.write_bytes(base64.b64decode(row.crt))
+
+        monkeypatch.setattr(https_binding, '_paths', lambda: (cert_path, key_path))
+        with app.app_context():
+            assert backfill_legacy_https_binding() == cert_data['refid']
+            assert get_bound_refid() == cert_data['refid']
+
+    def test_never_overrides_an_explicit_binding(
+        self, app, clean_binding, monkeypatch, tmp_path,
+    ):
+        cert_path = tmp_path / 'https_cert.pem'
+        cert_path.write_text('not inspected when already bound')
+        monkeypatch.setattr(https_binding, '_paths', lambda: (cert_path, tmp_path / 'key.pem'))
+        with app.app_context():
+            set_bound_refid('already-bound')
+            assert backfill_legacy_https_binding() == 'already-bound'
+            assert get_bound_refid() == 'already-bound'
 
 
 class TestMaterialization:

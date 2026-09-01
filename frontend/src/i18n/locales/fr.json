@@ -2916,6 +2916,7 @@
     "crlAutoPurgeStaleSerialsDesc": "Supprime automatiquement les enregistrements de numéros de série révoqués (uniquement ceux expirés) lors de la génération de la CRL. Lorsque désactivé, les enregistrements obsolètes sont conservés comme historique des renouvellements.",
     "httpsBound": "Certificat lié",
     "httpsBoundDesc": "Les renouvellements de ce certificat sont appliqués automatiquement au HTTPS (fichiers re-matérialisés, service redémarré).",
+    "httpsNotBound": "Aucun certificat géré n’est lié au HTTPS. Sélectionnez et appliquez un certificat UCM pour suivre automatiquement ses renouvellements.",
     "httpsUnbind": "Ne plus suivre les renouvellements",
     "httpsUnbindDone": "Liaison du certificat HTTPS supprimée"
   },

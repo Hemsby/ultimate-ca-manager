@@ -2,7 +2,7 @@
  * Page Rendering Tests — Protocol pages (ACME, SCEP, CRL/OCSP)
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import './pageRenderingSetup.jsx'
 
@@ -20,6 +20,11 @@ describe('Page Rendering — Protocol pages', () => {
   it('ACMEPage renders without crashing', () => {
     const { container } = render(<TestWrapper route="/acme"><ACMEPage /></TestWrapper>)
     expect(container.firstChild).toBeTruthy()
+  })
+
+  it('ACMEPage exposes a dedicated Let’s Encrypt orders tab', async () => {
+    render(<TestWrapper route="/acme"><ACMEPage /></TestWrapper>)
+    expect(await screen.findByText('acme.letsEncryptOrders')).toBeInTheDocument()
   })
 
   it('SCEPPage renders without crashing', () => {

@@ -18,10 +18,15 @@ export default function AccountDetailPanel({ account, orders, challenges, detail
   const currentEmail = account.contact?.[0]?.replace('mailto:', '') || account.email || ''
   const saveEmail = async () => {
     try {
-      await apiClient.patch(`/acme/accounts/${account.account_id || account.id}`, { email: emailDraft.trim() })
+      const response = await apiClient.patch(
+        `/acme/accounts/${account.account_id || account.id}`,
+        { email: emailDraft.trim() }
+      )
+      const contact = response?.data?.contact
+        ?? (emailDraft.trim() ? [`mailto:${emailDraft.trim()}`] : [])
+      onChanged?.({ ...account, contact })
       showSuccess(t('acme.emailUpdated'))
       setEditingEmail(false)
-      onChanged?.()
     } catch (err) {
       showError(err.message || t('messages.errors.updateFailed.settings'))
     }
@@ -99,9 +104,15 @@ export default function AccountDetailPanel({ account, orders, challenges, detail
                 <span className="flex items-center gap-1.5 min-w-0">
                   <span className="truncate">{currentEmail || '-'}</span>
                   {canEditEmail && (
-                    <Button type="button" variant="ghost" size="xs" aria-label={t('acme.editEmail')}
-                      onClick={() => { setEmailDraft(currentEmail); setEditingEmail(!editingEmail) }}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      aria-expanded={editingEmail}
+                      onClick={() => { setEmailDraft(currentEmail); setEditingEmail(!editingEmail) }}
+                    >
                       <PencilSimple size={12} />
+                      {t('acme.editEmail')}
                     </Button>
                   )}
                 </span>

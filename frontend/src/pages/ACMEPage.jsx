@@ -17,6 +17,7 @@ import { usePermission } from '../hooks'
 import { formatDate, downloadBlob, publicBaseUrl } from '../lib/utils'
 import AccountDetailPanel from './acme/AccountDetailPanel'
 import LetsEncryptTab from './acme/LetsEncryptTab'
+import LetsEncryptOrdersTab from './acme/LetsEncryptOrdersTab'
 import ConfigTab from './acme/ConfigTab'
 import DnsProvidersTab from './acme/DnsProvidersTab'
 import DomainsTab from './acme/DomainsTab'
@@ -904,6 +905,7 @@ export default function ACMEPage() {
   // Main tabs
   const tabs = [
     { id: 'letsencrypt', label: t('acme.letsEncrypt'), icon: Globe },
+    { id: 'letsencryptorders', label: t('acme.letsEncryptOrders'), icon: ClockCounterClockwise, count: clientOrders.length },
     { id: 'dns', label: t('acme.dnsProviders'), icon: PlugsConnected, count: dnsProviders.length },
     { id: 'domains', label: t('acme.domains'), icon: GlobeHemisphereWest, count: acmeDomains.length },
     { id: 'config', label: t('acme.server'), icon: Gear },
@@ -1038,7 +1040,7 @@ export default function ACMEPage() {
         tabLayout="sidebar"
         sidebarContentClass=""
         tabGroups={[
-          { labelKey: 'acme.groups.letsEncrypt', tabs: ['letsencrypt', 'dns', 'domains'], color: 'icon-bg-emerald' },
+          { labelKey: 'acme.groups.letsEncrypt', tabs: ['letsencrypt', 'letsencryptorders', 'dns', 'domains'], color: 'icon-bg-emerald' },
           { labelKey: 'acme.groups.localAcme', tabs: ['config', 'localdomains', 'localorders', 'accounts', 'eab'], color: 'icon-bg-violet' },
           { labelKey: 'acme.groups.history', tabs: ['history'], color: 'icon-bg-blue' },
         ]}
@@ -1052,22 +1054,22 @@ export default function ACMEPage() {
         actions={headerActions}
         helpPageKey="acme"
         
-        // Split view for letsencrypt, accounts and history tabs
-        splitView={activeTab === 'letsencrypt' || activeTab === 'accounts' || activeTab === 'history'}
+        // Split view for client orders, local accounts and certificate history
+        splitView={activeTab === 'letsencryptorders' || activeTab === 'accounts' || activeTab === 'history'}
         slideOverOpen={
-          activeTab === 'letsencrypt' ? !!selectedClientOrder :
-          activeTab === 'accounts' ? !!selectedAccount : 
+          activeTab === 'letsencryptorders' ? !!selectedClientOrder :
+          activeTab === 'accounts' ? !!selectedAccount :
           !!selectedCert
         }
         slideOverTitle={
-          activeTab === 'letsencrypt'
+          activeTab === 'letsencryptorders'
             ? (selectedClientOrder?.primary_domain || t('acme.orderDetails'))
-            : activeTab === 'accounts' 
+            : activeTab === 'accounts'
               ? (selectedAccount?.email || t('common.details'))
               : (selectedCert?.common_name || t('common.certificateDetails'))
         }
         slideOverContent={
-          activeTab === 'letsencrypt' ? (
+          activeTab === 'letsencryptorders' ? (
             <OrderDetailPanel
               order={selectedClientOrder}
               onDownloadCert={handleDownloadCertificate}
@@ -1087,14 +1089,17 @@ export default function ACMEPage() {
               onDetailTabChange={setActiveDetailTab}
               orders={orders}
               challenges={challenges}
-              onChanged={() => { loadData(); if (selectedAccount) selectAccount(selectedAccount) }}
+              onChanged={(updatedAccount) => {
+                setSelectedAccount(updatedAccount)
+                loadData()
+              }}
             />
           ) : (
             <CertDetailPanel cert={selectedCert} />
           )
         }
         onSlideOverClose={() => {
-          if (activeTab === 'letsencrypt') {
+          if (activeTab === 'letsencryptorders') {
             setSelectedClientOrder(null)
           } else if (activeTab === 'accounts') {
             setSelectedAccount(null)
@@ -1106,9 +1111,6 @@ export default function ACMEPage() {
         {activeTab === 'letsencrypt' && (
           <>
           <LetsEncryptTab
-            clientOrders={clientOrders}
-            selectedClientOrder={selectedClientOrder}
-            onSelectOrder={setSelectedClientOrder}
             clientSettings={clientSettings}
             localContactEmail={localContactEmail}
             onLocalContactEmailChange={setLocalContactEmail}
@@ -1141,15 +1143,7 @@ export default function ACMEPage() {
             onTestConnection={handleTestConnection}
             onRequestCertificate={() => setShowRequestModal(true)}
             onRefresh={loadData}
-            onCheckOrderStatus={handleCheckOrderStatus}
-            onVerifyChallenge={handleVerifyChallenge}
-            onFinalizeOrder={handleFinalizeOrder}
-            onViewCertificate={handleViewCertificate}
-            onDownloadCertificate={handleDownloadCertificate}
-            onRenewCertificate={handleRenewCertificate}
-            onDeleteOrder={handleDeleteClientOrder}
             canWrite={canWrite('acme')}
-            canDelete={canDelete('acme')}
           />
           <div className="px-4 pb-4">
             <CaAccountsManager
@@ -1166,6 +1160,22 @@ export default function ACMEPage() {
             />
           </div>
           </>
+        )}
+        {activeTab === 'letsencryptorders' && (
+          <LetsEncryptOrdersTab
+            clientOrders={clientOrders}
+            selectedClientOrder={selectedClientOrder}
+            onSelectOrder={setSelectedClientOrder}
+            onRefresh={loadData}
+            onCheckOrderStatus={handleCheckOrderStatus}
+            onVerifyChallenge={handleVerifyChallenge}
+            onFinalizeOrder={handleFinalizeOrder}
+            onViewCertificate={handleViewCertificate}
+            onDownloadCertificate={handleDownloadCertificate}
+            onRenewCertificate={handleRenewCertificate}
+            onDeleteOrder={handleDeleteClientOrder}
+            canDelete={canDelete('acme')}
+          />
         )}
         {activeTab === 'dns' && (
           <DnsProvidersTab

@@ -91,7 +91,70 @@ def set_bound_refid(refid):
                            description='Certificate bound to the HTTPS listener')
         db.session.add(row)
     row.value = refid or ''
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.error("Failed to update HTTPS certificate binding", exc_info=True)
+        raise
+
+
+def backfill_legacy_https_binding():
+    """Bind a managed certificate that was applied before bindings existed.
+
+    Versions before 2.217 copied the selected certificate to the HTTPS files
+    without remembering its refid. On the first boot after upgrading, compare
+    the installed leaf certificate with locally managed certificates and store
+    the unique match. Existing explicit bindings always win; ambiguous matches
+    are left untouched rather than guessing which row should follow renewals.
+    """
+    existing = get_bound_refid()
+    if existing:
+        return existing
+
+    cert_path, _key_path = _paths()
+    if not cert_path.exists():
+        return ''
+
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes
+        from models import Certificate
+
+        installed = x509.load_pem_x509_certificate(cert_path.read_bytes())
+        installed_fingerprint = installed.fingerprint(hashes.SHA256())
+        candidates = (
+            Certificate.query
+            .filter(Certificate.crt.isnot(None), Certificate.prv.isnot(None))
+            .filter(Certificate.revoked.isnot(True), Certificate.archived.isnot(True))
+            .all()
+        )
+        matches = []
+        for candidate in candidates:
+            try:
+                managed = x509.load_pem_x509_certificate(
+                    _decode(candidate.crt).encode('utf-8')
+                )
+                if managed.fingerprint(hashes.SHA256()) == installed_fingerprint:
+                    matches.append(candidate.refid)
+            except Exception:
+                continue
+
+        if len(matches) == 1:
+            set_bound_refid(matches[0])
+            logger.info(
+                "Detected legacy HTTPS certificate binding to managed certificate %s",
+                matches[0],
+            )
+            return matches[0]
+        if len(matches) > 1:
+            logger.warning(
+                "Could not backfill HTTPS certificate binding: installed certificate "
+                "matches multiple managed rows"
+            )
+    except Exception as exc:
+        logger.warning("Could not detect legacy HTTPS certificate binding: %s", exc)
+    return ''
 
 
 def on_certificate_renewed(event_type, payload, ca_refid, meta):
@@ -140,4 +203,5 @@ def register_https_binding_subscriber():
     if getattr(register_https_binding_subscriber, '_done', False):
         return
     event_bus.subscribe('certificate.renewed', on_certificate_renewed)
+    backfill_legacy_https_binding()
     register_https_binding_subscriber._done = True

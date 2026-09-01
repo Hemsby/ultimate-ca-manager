@@ -2770,6 +2770,7 @@
     "crlAutoPurgeStaleSerialsDesc": "Elimina automáticamente los registros de números de serie revocados (solo los expirados) durante la generación de CRL. Cuando está desactivado, los registros obsoletos se conservan como historial de renovaciones.",
     "httpsBound": "Certificado vinculado",
     "httpsBoundDesc": "Las renovaciones de este certificado se aplican automáticamente a HTTPS (archivos regenerados, servicio reiniciado).",
+    "httpsNotBound": "No hay ningún certificado administrado vinculado a HTTPS. Seleccione y aplique un certificado de UCM para seguir sus renovaciones automáticamente.",
     "httpsUnbind": "Dejar de seguir las renovaciones",
     "httpsUnbindDone": "Vinculación del certificado HTTPS eliminada"
   },

@@ -2770,6 +2770,7 @@
     "crlAutoPurgeStaleSerialsDesc": "CRL生成時に失効シリアル番号レコード（期限切れのもののみ）を自動的に削除します。無効にすると、古いレコードは更新履歴として保持されます。",
     "httpsBound": "紐付けられた証明書",
     "httpsBoundDesc": "この証明書の更新は自動的に HTTPS に適用されます（ファイル再生成、サービス再起動）。",
+    "httpsNotBound": "HTTPS に紐付けられた管理対象証明書はありません。UCM 証明書を選択して適用すると、更新が自動的に反映されます。",
     "httpsUnbind": "更新の追従を停止",
     "httpsUnbindDone": "HTTPS 証明書の紐付けを解除しました"
   },

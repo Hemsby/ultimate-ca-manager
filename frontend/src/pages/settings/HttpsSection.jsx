@@ -43,7 +43,7 @@ export default function HttpsSection({ httpsInfo, selectedHttpsCert, setSelected
             fullWidth
           />
         </DetailGrid>
-        {httpsInfo?.bound_certificate && (
+        {httpsInfo?.bound_certificate ? (
           <div className="mt-3 p-3 rounded-lg border border-border bg-bg-tertiary flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-sm font-medium text-text-primary truncate">
@@ -56,6 +56,10 @@ export default function HttpsSection({ httpsInfo, selectedHttpsCert, setSelected
                 {t('settings.httpsUnbind')}
               </Button>
             )}
+          </div>
+        ) : (
+          <div className="mt-3 p-3 rounded-lg border border-border bg-bg-tertiary">
+            <p className="text-xs text-text-secondary">{t('settings.httpsNotBound')}</p>
           </div>
         )}
       </DetailSection>

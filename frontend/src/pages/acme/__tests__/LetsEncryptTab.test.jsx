@@ -79,28 +79,26 @@ const renderTab = (props = {}) => render(
   />
 )
 
-describe('LetsEncryptTab orders filter (#303 follow-up)', () => {
+describe('LetsEncryptTab settings view', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('titles the section with the visible/total count', () => {
+  it('keeps orders out of the settings tab', () => {
     renderTab()
-    expect(screen.getByText('acme.letsEncryptOrders (2/2)')).toBeInTheDocument()
-    expect(screen.getByText('a.example.com')).toBeInTheDocument()
-    expect(screen.getByText('b.example.com')).toBeInTheDocument()
+    expect(screen.queryByText('a.example.com')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('status-filter')).not.toBeInTheDocument()
   })
 
-  it('filters the list by status', () => {
-    renderTab()
-    fireEvent.change(screen.getByLabelText('status-filter'), { target: { value: 'valid' } })
-    expect(screen.getByText('acme.letsEncryptOrders (1/2)')).toBeInTheDocument()
-    expect(screen.getByText('a.example.com')).toBeInTheDocument()
-    expect(screen.queryByText('b.example.com')).not.toBeInTheDocument()
+  it('opens the certificate request flow', () => {
+    const onRequestCertificate = vi.fn()
+    renderTab({ onRequestCertificate })
+    fireEvent.click(screen.getByText('acme.requestCertificate'))
+    expect(onRequestCertificate).toHaveBeenCalledOnce()
   })
 
-  it('shows a no-results state when the filter matches nothing', () => {
-    renderTab()
-    fireEvent.change(screen.getByLabelText('status-filter'), { target: { value: 'invalid' } })
-    expect(screen.getByText('acme.letsEncryptOrders (0/2)')).toBeInTheDocument()
-    expect(screen.getByText('common.noResults')).toBeInTheDocument()
+  it('refreshes client settings', () => {
+    const onRefresh = vi.fn()
+    renderTab({ onRefresh })
+    fireEvent.click(screen.getByText('common.refresh'))
+    expect(onRefresh).toHaveBeenCalledOnce()
   })
 })

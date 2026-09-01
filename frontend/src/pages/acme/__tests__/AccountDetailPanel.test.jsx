@@ -84,32 +84,39 @@ describe('AccountDetailPanel email edit', () => {
     expect(screen.getAllByText('old@example.com').length).toBeGreaterThanOrEqual(2)
   })
 
-  it('saves the new email through the API and notifies the parent', async () => {
-    mocks.patch.mockResolvedValue({})
+  it('shows an explicit edit action instead of an icon-only control', () => {
+    renderPanel()
+    expect(screen.getByRole('button', { name: 'acme.editEmail' })).toHaveTextContent('acme.editEmail')
+  })
+
+  it('saves the new email through the API and notifies the parent immediately', async () => {
+    mocks.patch.mockResolvedValue({ data: { contact: ['mailto:new@example.com'] } })
     const onChanged = vi.fn()
     renderPanel({ onChanged })
 
-    fireEvent.click(screen.getByLabelText('acme.editEmail'))
+    fireEvent.click(screen.getByRole('button', { name: 'acme.editEmail' }))
     fireEvent.change(screen.getByLabelText('email-draft'), { target: { value: 'new@example.com' } })
     fireEvent.click(screen.getByText('common.save'))
 
     await vi.waitFor(() => expect(mocks.patch).toHaveBeenCalledWith(
       '/acme/accounts/acme-1234567890abcdef', { email: 'new@example.com' }
     ))
-    expect(onChanged).toHaveBeenCalled()
+    expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({
+      contact: ['mailto:new@example.com'],
+    }))
     expect(mocks.showSuccess).toHaveBeenCalled()
   })
 
   it('hides the edit button without write:acme', () => {
     mocks.hasPermission.mockImplementation((p) => p !== 'write:acme')
     renderPanel()
-    expect(screen.queryByLabelText('acme.editEmail')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'acme.editEmail' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('email-draft')).not.toBeInTheDocument()
   })
 
   it('shows the RFC 8555 caveat while editing', () => {
     renderPanel()
-    fireEvent.click(screen.getByLabelText('acme.editEmail'))
+    fireEvent.click(screen.getByRole('button', { name: 'acme.editEmail' }))
     expect(screen.getByText('acme.editEmailCaveat')).toBeInTheDocument()
   })
 })

@@ -2770,6 +2770,7 @@
     "crlAutoPurgeStaleSerialsDesc": "Datensätze widerrufener Seriennummern (nur abgelaufene) bei der CRL-Generierung automatisch löschen. Wenn deaktiviert, bleiben veraltete Datensätze als Erneuerungsverlauf erhalten.",
     "httpsBound": "Gebundenes Zertifikat",
     "httpsBoundDesc": "Erneuerungen dieses Zertifikats werden automatisch auf HTTPS angewendet (Dateien neu geschrieben, Dienst neu gestartet).",
+    "httpsNotBound": "Kein verwaltetes Zertifikat ist an HTTPS gebunden. Wählen Sie ein UCM-Zertifikat aus und wenden Sie es an, damit Erneuerungen automatisch übernommen werden.",
     "httpsUnbind": "Erneuerungen nicht mehr folgen",
     "httpsUnbindDone": "HTTPS-Zertifikatsbindung entfernt"
   },

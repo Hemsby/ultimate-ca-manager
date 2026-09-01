@@ -2771,6 +2771,7 @@
     "crlAutoPurgeStaleSerialsDesc": "Automatically delete revoked-serial records (expired ones only) during CRL generation. When disabled, stale records are kept as renewal history.",
     "httpsBound": "Bound certificate",
     "httpsBoundDesc": "Renewals of this certificate are applied to HTTPS automatically (files re-materialized, service restarted).",
+    "httpsNotBound": "No managed certificate is bound to HTTPS. Select and apply a UCM certificate to follow its renewals automatically.",
     "httpsUnbind": "Stop following renewals",
     "httpsUnbindDone": "HTTPS certificate binding cleared"
   },
