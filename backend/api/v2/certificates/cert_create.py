@@ -135,14 +135,21 @@ def create_certificate():
 
         key_type_in = data.get('key_type') or data.get('keyType')
         key_size_in = data.get('key_size') or data.get('keySize')
-        # Template key_type ("RSA-2048", "EC-P384") is the default when the
-        # request doesn't pick a key — API parity with the UI, which prefills
-        # these fields from the template (issue #226 follow-up).
-        if not key_type_in and template and template.key_type:
+        # Fill unset key params from the template ("RSA-2048", "EC-P384"): API
+        # parity with the UI, which prefills both from the template (issue #226
+        # follow-up). key_type and key_size are filled independently, so a
+        # request that sends key_type but leaves key_size empty still inherits
+        # the curve/size, as long as the algorithm still matches (an explicit
+        # key_type=rsa never inherits an EC curve) (#318).
+        if template and template.key_type:
             tpl_algo, _, tpl_size = template.key_type.partition('-')
-            key_type_in = tpl_algo
-            if not key_size_in:
-                key_size_in = tpl_size
+            if not key_type_in:
+                key_type_in = tpl_algo
+            if not key_size_in and tpl_size:
+                tpl_is_ec = tpl_algo.strip().lower() in ('ec', 'ecdsa')
+                req_is_ec = (key_type_in or 'rsa').strip().lower() in ('ec', 'ecdsa')
+                if tpl_is_ec == req_is_ec:
+                    key_size_in = tpl_size
         key_type_in = key_type_in or 'rsa'
         key_size_in = key_size_in or '2048'
         try:

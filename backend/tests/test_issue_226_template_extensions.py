@@ -222,6 +222,47 @@ class TestTemplateDefaultsAtIssuance:
         days = (cert.not_valid_after_utc - cert.not_valid_before_utc).days
         assert 29 <= days <= 31
 
+    def test_ec_template_curve_used_when_key_size_blank(self, app, auth_client, create_ca):
+        """#318: the issue form sends key_type='ecdsa' with an empty key_size
+        when an EC template is picked; the curve must still come from the
+        template instead of falling back to an (invalid for EC) 2048."""
+        from cryptography.hazmat.primitives.asymmetric import ec
+        ca = create_ca(cn='Issue318 EC Curve CA')
+        tpl = _create_template(
+            auth_client, name='issue318-ec-blank-size',
+            key_type='EC-P256',
+            extensions_template={'extended_key_usage': ['serverAuth']})
+
+        r = self._issue_raw(auth_client, {
+            'cn': 'ec-blank-size.test', 'ca_id': ca['id'], 'template_id': tpl['id'],
+            'key_type': 'ecdsa', 'key_size': ''})
+        assert r.status_code in (200, 201), r.data
+        cert = _issued_cert_obj(app, get_json(r)['data']['id'])
+
+        pub = cert.public_key()
+        assert isinstance(pub, ec.EllipticCurvePublicKey)
+        assert pub.curve.name == 'secp256r1'
+
+    def test_rsa_request_ignores_ec_template_size(self, app, auth_client, create_ca):
+        """An explicit key_type=rsa with a blank key_size must not inherit the
+        template's EC curve; it falls back to the RSA default."""
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        ca = create_ca(cn='Issue318 RSA Mismatch CA')
+        tpl = _create_template(
+            auth_client, name='issue318-rsa-mismatch',
+            key_type='EC-P384',
+            extensions_template={'extended_key_usage': ['serverAuth']})
+
+        r = self._issue_raw(auth_client, {
+            'cn': 'rsa-mismatch.test', 'ca_id': ca['id'], 'template_id': tpl['id'],
+            'key_type': 'rsa', 'key_size': ''})
+        assert r.status_code in (200, 201), r.data
+        cert = _issued_cert_obj(app, get_json(r)['data']['id'])
+
+        pub = cert.public_key()
+        assert isinstance(pub, rsa.RSAPublicKey)
+        assert pub.key_size == 2048
+
     def test_no_template_keeps_current_defaults(self, app, auth_client, create_ca):
         from cryptography.hazmat.primitives.asymmetric import rsa
         ca = create_ca(cn='Issue226 Plain Defaults CA')

@@ -7,6 +7,11 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- Certificate issue form: picking an EC certificate template (or switching Key Type from RSA to ECDSA) filled Key Type but left Key Size blank, so issuance failed with "EC curve must be P-256, P-384, or P-521". The Key Size dropdown swaps its options when the key type changes, and the shared Select wrapper was forwarding the reset event the list swap triggers as a real selection, wiping the value; it now ignores a change to a value that is not one of its current options. The same latent problem in the Create CA wizard's key size field is fixed by the same change. The issue API also fills the key size from the template when the request sends a key type but no size (#318, reported by @JoseGoncalves, contributed by @Hemsby)
+
 ## [2.219] - 2026-09-01
 
 ### Fixed
