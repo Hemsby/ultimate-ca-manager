@@ -7,6 +7,11 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
+## [Unreleased]
+
+### Added
+- Name constraints can now be set when creating a CA. The Create CA wizard's Advanced Constraints section gained permitted and excluded subtree fields (DNS, IP range, email), and `POST /api/v2/cas` accepts `nameConstraintsPermitted` / `nameConstraintsExcluded` as `{type, value}` lists and emits them as the critical NameConstraints extension. The request validation previously required plain strings while the extension builder expected objects, so no payload actually produced a constrained CA; malformed entries (unknown type, IP network with host bits set, empty value) are now rejected with 400 instead of being silently dropped. Constraints entered for an external-CSR CA are refused, since the signing CA applies them there. They still cannot be changed after creation, as the extension is part of the signed certificate (#316, reported by @JoseGoncalves)
+
 ## [2.219] - 2026-09-01
 
 ### Fixed

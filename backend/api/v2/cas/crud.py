@@ -5,6 +5,7 @@ CAs CRUD Operations
 from . import bp
 from flask import request, g
 import base64
+import ipaddress
 import re
 import logging
 from datetime import datetime, timezone
@@ -87,6 +88,59 @@ def _normalize_url_list(value, field):
             return None, err
         if u:
             cleaned.append(u)
+    return cleaned, None
+
+
+_NAME_CONSTRAINT_TYPES = ('dns', 'ip', 'email')
+
+
+def _normalize_name_constraints(value, field):
+    """Validate a NameConstraints subtree list for CA creation.
+
+    Accepts a list of ``{"type": "dns|ip|email", "value": "..."}`` objects, the
+    shape stored on the CA and consumed by
+    ``ConstraintsMixin._build_general_subtrees``. Returns
+    ``(list_or_none, error_str_or_none)``. Entries are rejected rather than
+    silently skipped: a dropped entry would yield a CA with no NameConstraints
+    extension at all, which is the opposite of what the caller asked for.
+    """
+    if value is None:
+        return None, None
+    if not isinstance(value, list):
+        return None, f'{field} must be an array of {{type, value}} objects'
+    if len(value) > _MAX_NAME_CONSTRAINTS:
+        return None, f'{field} accepts at most {_MAX_NAME_CONSTRAINTS} entries'
+    cleaned = []
+    for item in value:
+        if not isinstance(item, dict):
+            return None, (
+                f'{field} entries must be objects like '
+                '{"type": "dns|ip|email", "value": "example.com"}'
+            )
+        ctype = str(item.get('type', '')).strip().lower()
+        cval = item.get('value', '')
+        if not isinstance(cval, str):
+            return None, f'{field} entry value must be a string'
+        cval = cval.strip()
+        if ctype not in _NAME_CONSTRAINT_TYPES:
+            return None, f'{field} entry type must be one of dns, ip, email'
+        if not cval:
+            return None, f'{field} entry value must not be empty'
+        if len(cval) > _MAX_NAME_CONSTRAINT_LEN:
+            return None, (
+                f'{field} entry value too long (max {_MAX_NAME_CONSTRAINT_LEN} chars)'
+            )
+        if ctype == 'ip':
+            try:
+                # Same call the extension builder makes; a host with mask bits
+                # set (e.g. 10.0.0.5/8) raises here rather than 500ing later.
+                ipaddress.ip_network(cval)
+            except ValueError:
+                return None, (
+                    f'{field} entry "{cval}" is not a valid IP network '
+                    '(e.g. 10.0.0.0/8 or 2001:db8::/32)'
+                )
+        cleaned.append({'type': ctype, 'value': cval})
     return cleaned, None
 
 
@@ -326,22 +380,24 @@ def create_ca():
                     )
                 data[pc_field] = pc_int
 
-        # Cap NameConstraints lists (count + per-item length)
-        for nc_field in ('nameConstraintsPermitted', 'nameConstraintsExcluded'):
-            nc_val = data.get(nc_field)
-            if nc_val is None:
-                continue
-            if not isinstance(nc_val, list):
-                return error_response(f'{nc_field} must be an array', 400)
-            if len(nc_val) > _MAX_NAME_CONSTRAINTS:
-                return error_response(
-                    f'{nc_field} accepts at most {_MAX_NAME_CONSTRAINTS} entries', 400
-                )
-            for item in nc_val:
-                if not isinstance(item, str) or len(item) > _MAX_NAME_CONSTRAINT_LEN:
-                    return error_response(
-                        f'{nc_field} entries must be strings ≤ {_MAX_NAME_CONSTRAINT_LEN} chars', 400
-                    )
+        # Validate NameConstraints subtree lists ({type, value} objects, the
+        # shape stored on the CA and turned into the critical extension).
+        nc_permitted, nc_err = _normalize_name_constraints(
+            data.get('nameConstraintsPermitted'), 'nameConstraintsPermitted'
+        )
+        if nc_err:
+            return error_response(nc_err, 400)
+        nc_excluded, nc_err = _normalize_name_constraints(
+            data.get('nameConstraintsExcluded'), 'nameConstraintsExcluded'
+        )
+        if nc_err:
+            return error_response(nc_err, 400)
+        if (nc_permitted or nc_excluded) and data.get('type') == 'external':
+            return error_response(
+                'Name constraints cannot be set on an external-CSR CA; they '
+                'are applied by the signing CA when it issues the certificate',
+                400,
+            )
 
         # Validate SIA URLs (same rules as AIA/CDP/OCSP)
         sia_urls_validated, sia_err = _normalize_url_list(data.get('siaUrls'), 'siaUrls')
@@ -411,8 +467,8 @@ def create_ca():
             caref=caref,
             username=username,
             path_length=path_length,
-            name_constraints_permitted=data.get('nameConstraintsPermitted'),
-            name_constraints_excluded=data.get('nameConstraintsExcluded'),
+            name_constraints_permitted=nc_permitted,
+            name_constraints_excluded=nc_excluded,
             policy_constraints_require=data.get('policyConstraintsRequire'),
             policy_constraints_inhibit=data.get('policyConstraintsInhibit'),
             inhibit_any_policy=inhibit_any_policy,

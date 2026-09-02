@@ -9,7 +9,7 @@
  */
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CaretRight, CaretDown } from '@phosphor-icons/react'
+import { CaretRight, CaretDown, X, Plus } from '@phosphor-icons/react'
 import { Modal, Input, Select, Button } from '../../components'
 import { casService, hsmService } from '../../services'
 import { useNotification } from '../../contexts'
@@ -19,6 +19,63 @@ import { extractData, cn, downloadBlob } from '../../lib/utils'
 const ROOT_KEY_USAGE = ['keyCertSign', 'cRLSign']
 const INTERMEDIATE_KEY_USAGE = ['digitalSignature', 'keyCertSign', 'cRLSign']
 const CA_KU_OPTIONS = ['digitalSignature', 'keyCertSign', 'cRLSign']
+
+const NC_TYPE_OPTIONS = [
+  { value: 'dns', labelKey: 'cas.nameConstraintTypeDns' },
+  { value: 'ip', labelKey: 'cas.nameConstraintTypeIp' },
+  { value: 'email', labelKey: 'cas.nameConstraintTypeEmail' },
+]
+
+/**
+ * Repeatable {type, value} rows for a NameConstraints subtree list.
+ * Mirrors the SAN editor in IssueCertificateForm.
+ */
+function NameConstraintRows({ label, hint, addLabel, rows, onChange }) {
+  const { t } = useTranslation()
+  const typeOptions = NC_TYPE_OPTIONS.map((o) => ({ value: o.value, label: t(o.labelKey) }))
+  const update = (idx, key, val) =>
+    onChange(rows.map((r, i) => (i === idx ? { ...r, [key]: val } : r)))
+  const add = () => onChange([...rows, { type: 'dns', value: '' }])
+  const remove = (idx) => onChange(rows.filter((_, i) => i !== idx))
+
+  return (
+    <fieldset className="space-y-2">
+      <legend className="text-xs font-medium text-text-secondary">{label}</legend>
+      {rows.map((row, idx) => (
+        <div key={idx} className="flex items-center gap-2">
+          <div className="w-28 flex-shrink-0">
+            <Select
+              value={row.type}
+              onChange={(val) => update(idx, 'type', val)}
+              options={typeOptions}
+            />
+          </div>
+          <div className="flex-1">
+            <Input
+              placeholder={t('cas.nameConstraintValuePlaceholder')}
+              value={row.value}
+              onChange={(e) => update(idx, 'value', e.target.value)}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => remove(idx)}
+            className="flex-shrink-0 text-text-tertiary hover:text-accent-danger"
+            aria-label={t('common.remove')}
+          >
+            <X size={14} />
+          </Button>
+        </div>
+      ))}
+      <Button type="button" variant="ghost" size="sm" onClick={add} className="text-xs">
+        <Plus size={12} /> {addLabel}
+      </Button>
+      {hint && <p className="text-xs text-text-tertiary">{hint}</p>}
+    </fieldset>
+  )
+}
 
 function suggestedDigest(keyAlgo, keySize) {
   if (keyAlgo === 'ECDSA') {
@@ -41,6 +98,8 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
   const [showAdvanced, setShowAdvanced] = useState(false)
   const [createFormPathLength, setCreateFormPathLength] = useState('')
   const [createFormNamedUrls, setCreateFormNamedUrls] = useState(false)
+  const [createFormNCPermitted, setCreateFormNCPermitted] = useState([])
+  const [createFormNCExcluded, setCreateFormNCExcluded] = useState([])
   const [createFormDigest, setCreateFormDigest] = useState('auto')
   const [createFormKeyUsage, setCreateFormKeyUsage] = useState(ROOT_KEY_USAGE)
   const [createFormEkuServerAuth, setCreateFormEkuServerAuth] = useState(false)
@@ -117,6 +176,10 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
     setCreateFormEkuServerAuth(false)
     setShowCertProfile(false)
     setShowAdvanced(false)
+    setCreateFormPathLength('')
+    setCreateFormNamedUrls(false)
+    setCreateFormNCPermitted([])
+    setCreateFormNCExcluded([])
   }, [open])
 
   // Reset HSM form state when modal closes
@@ -137,6 +200,14 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
     setCreating(true)
     try {
       const formData = new FormData(e.target)
+      // NameConstraints: drop blank rows, trim values. External-CSR CAs get
+      // their constraints from the signing CA, so never send them there.
+      const cleanNC = (rows) =>
+        rows
+          .map((r) => ({ type: r.type, value: (r.value || '').trim() }))
+          .filter((r) => r.value)
+      const ncPermitted = createFormType === 'external' ? [] : cleanNC(createFormNCPermitted)
+      const ncExcluded = createFormType === 'external' ? [] : cleanNC(createFormNCExcluded)
       const data = {
         commonName: formData.get('commonName'),
         organization: formData.get('organization'),
@@ -160,6 +231,8 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
         ...(createFormType === 'intermediate' && {
           extendedKeyUsage: createFormEkuServerAuth ? ['serverAuth'] : [],
         }),
+        ...(ncPermitted.length && { nameConstraintsPermitted: ncPermitted }),
+        ...(ncExcluded.length && { nameConstraintsExcluded: ncExcluded }),
       }
 
       // HSM key storage — replaces local key fields
@@ -550,6 +623,26 @@ export function CreateCAModal({ open, onClose, cas, onSuccess }) {
                 onChange={(e) => setCreateFormPathLength(e.target.value)}
                 placeholder={t('cas.pathLengthPlaceholder')}
               />
+              {createFormType === 'external' ? (
+                <p className="text-xs text-text-tertiary">{t('cas.nameConstraintsExternalNote')}</p>
+              ) : (
+                <>
+                  <NameConstraintRows
+                    label={t('cas.nameConstraintsPermitted')}
+                    hint={t('cas.nameConstraintsPermittedHint')}
+                    addLabel={t('cas.nameConstraintAddPermitted')}
+                    rows={createFormNCPermitted}
+                    onChange={setCreateFormNCPermitted}
+                  />
+                  <NameConstraintRows
+                    label={t('cas.nameConstraintsExcluded')}
+                    hint={t('cas.nameConstraintsExcludedHint')}
+                    addLabel={t('cas.nameConstraintAddExcluded')}
+                    rows={createFormNCExcluded}
+                    onChange={setCreateFormNCExcluded}
+                  />
+                </>
+              )}
               <label className="flex items-start gap-2 text-sm text-text-secondary cursor-pointer">
                 <input
                   type="checkbox"
