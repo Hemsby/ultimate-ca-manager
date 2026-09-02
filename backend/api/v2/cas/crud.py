@@ -93,6 +93,30 @@ def _normalize_url_list(value, field):
 
 _NAME_CONSTRAINT_TYPES = ('dns', 'ip', 'email')
 
+# One or more LDH labels ("host", "host.example.com"); no leading/trailing dot,
+# no empty labels, no scheme, path, space, underscore or wildcard.
+_LDH_LABELS_RE = re.compile(
+    r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?'
+    r'(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'
+)
+
+
+def _valid_dns_name_constraint(v):
+    """RFC 5280 §4.2.1.10 dnsName constraint: LDH labels, an optional leading
+    dot for the subtree form. Rejects schemes, paths, wildcards, empty labels."""
+    return _LDH_LABELS_RE.match(v[1:] if v.startswith('.') else v) is not None
+
+
+def _valid_email_name_constraint(v):
+    """RFC 5280 §4.2.1.10 rfc822Name constraint: a full ``local@domain`` mailbox,
+    a bare ``domain`` (all mailboxes on that host), or ``.domain`` (the subtree)."""
+    if '@' in v:
+        local, _, domain = v.partition('@')
+        if not local or not domain or '@' in domain or any(c.isspace() for c in local):
+            return False
+        return _LDH_LABELS_RE.match(domain) is not None
+    return _valid_dns_name_constraint(v)
+
 
 def _normalize_name_constraints(value, field):
     """Validate a NameConstraints subtree list for CA creation.
@@ -139,6 +163,24 @@ def _normalize_name_constraints(value, field):
                 return None, (
                     f'{field} entry "{cval}" is not a valid IP network '
                     '(e.g. 10.0.0.0/8 or 2001:db8::/32)'
+                )
+        elif ctype in ('dns', 'email'):
+            # These land verbatim in the critical, permanent extension. An
+            # unvalidated value (URL, path, wildcard, non-ASCII) makes the CA
+            # either unusable (permitted subtree nothing matches) or the
+            # constraint inert (excluded subtree nothing matches).
+            if not cval.isascii():
+                return None, (
+                    f'{field} entry "{cval}" must be ASCII '
+                    '(IDNA-encode internationalized domains)'
+                )
+            ok = (_valid_dns_name_constraint(cval) if ctype == 'dns'
+                  else _valid_email_name_constraint(cval))
+            if not ok:
+                return None, (
+                    f'{field} entry "{cval}" is not a valid {ctype} name constraint'
+                    + (' (e.g. example.com or .example.com)' if ctype == 'dns'
+                       else ' (e.g. user@example.com, example.com, or .example.com)')
                 )
         cleaned.append({'type': ctype, 'value': cval})
     return cleaned, None

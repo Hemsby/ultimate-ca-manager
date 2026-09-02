@@ -15,8 +15,10 @@ from services.trust_store import TrustStoreService
 from tests.conftest import get_json
 
 
-def _ca_with_name_constraints(app, ca_id):
+def _ca_with_name_constraints(app, ca_id, permitted=None, excluded=None):
     """Replace a fixture CA certificate with one using the same key plus constraints."""
+    if permitted is None and excluded is None:
+        excluded = [x509.DNSName('.blocked.example')]
     with app.app_context():
         ca = db.session.get(CA, ca_id)
         key = get_ca_signing_key(ca)
@@ -39,8 +41,8 @@ def _ca_with_name_constraints(app, ca_id):
             )
             .add_extension(
                 x509.NameConstraints(
-                    permitted_subtrees=None,
-                    excluded_subtrees=[x509.DNSName('.blocked.example')],
+                    permitted_subtrees=permitted,
+                    excluded_subtrees=excluded,
                 ),
                 critical=True,
             )
@@ -118,6 +120,96 @@ class TestDirectCertificateNameConstraints:
         assert 'NameConstraints' in message
         assert 'first.blocked.example' in message
         assert 'second.blocked.example' in message
+
+
+class TestSubjectEmailNameConstraints:
+    """rfc822Name constraints apply to the subject DN emailAddress attribute,
+    not only SAN e-mail (RFC 5280 §4.2.1.10)."""
+
+    def test_dn_email_outside_permitted_is_rejected(self, app, auth_client, create_ca):
+        ca = create_ca(cn='DN Email Constraint CA')
+        _ca_with_name_constraints(
+            app, ca['id'], permitted=[x509.RFC822Name('example.com')]
+        )
+
+        response = auth_client.post(
+            '/api/v2/certificates',
+            data=json.dumps({
+                'cn': 'John Doe',
+                'ca_id': ca['id'],
+                'email': 'user@outside.test',
+                'validity_days': 30,
+            }),
+            content_type='application/json',
+        )
+
+        assert response.status_code == 400
+        assert 'user@outside.test' in get_json(response).get('message', '')
+
+    def test_dn_email_inside_permitted_is_issued(self, app, auth_client, create_ca):
+        ca = create_ca(cn='DN Email OK CA')
+        _ca_with_name_constraints(
+            app, ca['id'], permitted=[x509.RFC822Name('example.com')]
+        )
+
+        response = auth_client.post(
+            '/api/v2/certificates',
+            data=json.dumps({
+                'cn': 'John Doe',
+                'ca_id': ca['id'],
+                'email': 'user@example.com',
+                'validity_days': 30,
+            }),
+            content_type='application/json',
+        )
+
+        assert response.status_code in (200, 201), response.data
+
+    def test_renewal_at_par_graces_carried_dn_email(self):
+        """A cert whose DN e-mail predates the constraint stays renewable."""
+        from services.trust_store.constraints_mixin import validate_name_constraints
+
+        ca_cert, ca_key = _test_ca()
+        now = datetime.now(timezone.utc)
+        subject = x509.Name([
+            x509.NameAttribute(NameOID.COMMON_NAME, 'Jane Roe'),
+            x509.NameAttribute(NameOID.EMAIL_ADDRESS, 'jane@legacy.test'),
+        ])
+        leaf_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        old_cert = (
+            x509.CertificateBuilder()
+            .subject_name(subject)
+            .issuer_name(ca_cert.subject)
+            .public_key(leaf_key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - timedelta(days=200))
+            .not_valid_after(now + timedelta(days=165))
+            .sign(ca_key, hashes.SHA256())
+        )
+        constrained_ca = (
+            x509.CertificateBuilder()
+            .subject_name(ca_cert.subject)
+            .issuer_name(ca_cert.subject)
+            .public_key(ca_key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - timedelta(days=1))
+            .not_valid_after(now + timedelta(days=3650))
+            .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+            .add_extension(
+                x509.NameConstraints(
+                    permitted_subtrees=[x509.RFC822Name('corp.test')],
+                    excluded_subtrees=None,
+                ),
+                critical=True,
+            )
+            .sign(ca_key, hashes.SHA256())
+        )
+
+        # New issuance of the same DN e-mail is refused...
+        with pytest.raises(ValueError, match='jane@legacy.test'):
+            validate_name_constraints(constrained_ca, subject, None)
+        # ...but a renewal carrying it over is graced (logged, not raised).
+        validate_name_constraints(constrained_ca, subject, None, renewal_of=old_cert)
 
 
 class TestCsrConstraintExtensionPolicy:

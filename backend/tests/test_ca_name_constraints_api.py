@@ -10,6 +10,7 @@ survived.
 import ipaddress
 import json
 
+import pytest
 from cryptography import x509
 from cryptography.x509.oid import ExtensionOID
 
@@ -141,3 +142,49 @@ class TestCreateCaRejectsBadNameConstraints:
         )
         assert resp.status_code == 400
         assert 'at most' in get_json(resp).get('message', '')
+
+    @pytest.mark.parametrize('bad', [
+        'https://example.com', 'example.com/path', 'foo bar',
+        'example..com', '-bad.example.com', 'exa_mple.com', '*.example.com',
+    ])
+    def test_malformed_dns_value_is_rejected(self, auth_client, bad):
+        resp = _create_ca(
+            auth_client, nameConstraintsPermitted=[{'type': 'dns', 'value': bad}]
+        )
+        assert resp.status_code == 400, resp.data
+        assert 'dns name constraint' in get_json(resp).get('message', '')
+
+    @pytest.mark.parametrize('bad', ['not an email', 'https://x', '@example.com', 'a@b@c'])
+    def test_malformed_email_value_is_rejected(self, auth_client, bad):
+        resp = _create_ca(
+            auth_client, nameConstraintsExcluded=[{'type': 'email', 'value': bad}]
+        )
+        assert resp.status_code == 400, resp.data
+        assert 'email name constraint' in get_json(resp).get('message', '')
+
+    def test_non_ascii_value_is_rejected(self, auth_client):
+        resp = _create_ca(
+            auth_client,
+            nameConstraintsPermitted=[{'type': 'dns', 'value': 'münchen.example'}],
+        )
+        assert resp.status_code == 400
+        assert 'ASCII' in get_json(resp).get('message', '')
+
+
+class TestCreateCaAcceptsValidNameConstraintForms:
+    @pytest.mark.parametrize('ctype,value', [
+        ('dns', 'example.com'),
+        ('dns', '.example.com'),
+        ('email', 'user@example.com'),
+        ('email', 'example.com'),
+        ('email', '.example.com'),
+    ])
+    def test_accepted_forms_land_in_the_extension(self, auth_client, ctype, value):
+        resp = _create_ca(
+            auth_client,
+            commonName=f'NC OK {ctype} {value}',
+            nameConstraintsPermitted=[{'type': ctype, 'value': value}],
+        )
+        assert resp.status_code in (200, 201), resp.data
+        data = get_json(resp).get('data', get_json(resp))
+        assert data['name_constraints_permitted'] == [{'type': ctype, 'value': value}]
