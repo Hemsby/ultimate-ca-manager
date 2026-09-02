@@ -169,6 +169,24 @@ class TestApprovalHonorsTemplate:
         assert ku.digital_signature and not ku.key_encipherment
         assert row_tpl is None
 
+    def test_ec_template_curve_used_when_key_size_blank(self, app, create_ca):
+        """#318: the issue form stores key_type='ecdsa' with a blank key_size
+        for an EC template; the approval path must resolve the curve from the
+        template instead of the old curve_map fallback to SECP256R1."""
+        ca = create_ca(cn='ApprEC318 CA')
+        tpl_id = _mk_template(app, key_type='EC-P384')
+
+        cert, (_, row_tpl, overrides, _) = _issue_from_request(
+            app, create_ca, {
+                'cn': 'appr-ec318.test', 'ca_id': ca['id'],
+                'cert_type': 'server', 'template_id': tpl_id,
+                'key_type': 'ecdsa', 'key_size': '',
+            })
+
+        assert cert.public_key().curve.name == 'secp384r1'
+        assert row_tpl == tpl_id
+        assert 'key_type' not in overrides
+
     def test_missing_template_raises(self, app, create_ca):
         ca = create_ca(cn='ApprNoTpl CA')
         with app.app_context():

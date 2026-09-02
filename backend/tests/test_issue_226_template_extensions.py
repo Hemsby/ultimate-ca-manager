@@ -263,6 +263,21 @@ class TestTemplateDefaultsAtIssuance:
         assert isinstance(pub, rsa.RSAPublicKey)
         assert pub.key_size == 2048
 
+    def test_non_string_key_type_rejected_with_400(self, auth_client, create_ca):
+        """The template fill coerces key_type for its algorithm check; a
+        non-string value in the payload must still surface as a 400, not a 500
+        from calling .strip() on an int (#318)."""
+        ca = create_ca(cn='Issue318 Bad KeyType CA')
+        tpl = _create_template(
+            auth_client, name='issue318-bad-keytype', key_type='EC-P256',
+            extensions_template={'extended_key_usage': ['serverAuth']})
+
+        r = self._issue_raw(auth_client, {
+            'cn': 'bad-keytype.test', 'ca_id': ca['id'], 'template_id': tpl['id'],
+            'key_type': 1, 'key_size': ''})
+        assert r.status_code == 400, r.data
+        assert 'key type' in get_json(r)['message'].lower()
+
     def test_no_template_keeps_current_defaults(self, app, auth_client, create_ca):
         from cryptography.hazmat.primitives.asymmetric import rsa
         ca = create_ca(cn='Issue226 Plain Defaults CA')

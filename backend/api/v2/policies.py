@@ -135,28 +135,31 @@ def _issue_approved_certificate(approval):
     from services.hsm.ca_key_loader import get_ca_signing_key
     ca_key = get_ca_signing_key(ca)
     
-    # Generate key pair — the template's key_type is the default when the
-    # request didn't pick one (API parity with the UI prefill, #226).
+    # Generate key pair. The stored request is the raw payload (the approval is
+    # created before cert_create fills key params), so this path has to run the
+    # same template fill and key parse the direct route does. Without it an EC
+    # template with a blank key_size silently fell back to SECP256R1 via the old
+    # curve_map default (#226, #318).
+    from utils.key_type import parse_issue_key_type, fill_key_params_from_template
+
     key_type = data.get('key_type') or data.get('keyType')
     key_size = data.get('key_size') or data.get('keySize')
-    if not key_type and template and template.key_type:
-        tpl_algo, _, tpl_size = template.key_type.partition('-')
-        key_type = tpl_algo
-        if not key_size:
-            key_size = tpl_size
+    if template:
+        key_type, key_size = fill_key_params_from_template(
+            key_type, key_size, template.key_type)
     key_type = key_type or 'RSA'
     key_size = key_size or '2048'
-    
-    if key_type.upper() in ('EC', 'ECDSA'):
-        curve_map = {
-            '256': ec.SECP256R1(), 'secp256r1': ec.SECP256R1(),
-            '384': ec.SECP384R1(), 'secp384r1': ec.SECP384R1(),
-            '521': ec.SECP521R1(), 'secp521r1': ec.SECP521R1(),
-        }
-        curve = curve_map.get(str(key_size), curve_map.get(str(key_size).lstrip('Pp'), ec.SECP256R1()))
-        new_key = ec.generate_private_key(curve, default_backend())
+
+    normalized_key = parse_issue_key_type(key_type, key_size, curve=data.get('curve'))
+    EC_CURVES = {
+        'prime256v1': ec.SECP256R1(),
+        'secp384r1': ec.SECP384R1(),
+        'secp521r1': ec.SECP521R1(),
+    }
+    if normalized_key in EC_CURVES:
+        new_key = ec.generate_private_key(EC_CURVES[normalized_key], default_backend())
     else:
-        new_key = rsa.generate_private_key(65537, int(key_size), default_backend())
+        new_key = rsa.generate_private_key(65537, int(normalized_key), default_backend())
     
     # Build subject
     subject_attrs = [x509.NameAttribute(NameOID.COMMON_NAME, data['cn'])]
