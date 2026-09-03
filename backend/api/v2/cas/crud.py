@@ -100,22 +100,31 @@ _LDH_LABELS_RE = re.compile(
     r'(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$'
 )
 
+# RFC 5322 dot-atom local part: atext runs joined by single dots, no leading,
+# trailing or doubled dot. Quoted local parts are deliberately unsupported.
+_EMAIL_LOCAL_RE = re.compile(
+    r"^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+"
+    r"(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*$"
+)
+
 
 def _valid_dns_name_constraint(v):
-    """RFC 5280 §4.2.1.10 dnsName constraint: LDH labels, an optional leading
-    dot for the subtree form. Rejects schemes, paths, wildcards, empty labels."""
-    return _LDH_LABELS_RE.match(v[1:] if v.startswith('.') else v) is not None
+    """RFC 5280 §4.2.1.10 dnsName constraint: plain LDH labels. A bare
+    "example.com" already covers the host and every subdomain; RFC 5280 has no
+    leading-dot form for dnsName (OpenSSL rejects it), so neither do we."""
+    return _LDH_LABELS_RE.match(v) is not None
 
 
 def _valid_email_name_constraint(v):
     """RFC 5280 §4.2.1.10 rfc822Name constraint: a full ``local@domain`` mailbox,
-    a bare ``domain`` (all mailboxes on that host), or ``.domain`` (the subtree)."""
+    a bare ``domain`` (mailboxes on that host), or ``.domain`` (the domain
+    subtree). The leading dot IS valid here, unlike dnsName."""
     if '@' in v:
         local, _, domain = v.partition('@')
-        if not local or not domain or '@' in domain or any(c.isspace() for c in local):
+        if '@' in domain or len(local) > 64 or not _EMAIL_LOCAL_RE.match(local):
             return False
         return _LDH_LABELS_RE.match(domain) is not None
-    return _valid_dns_name_constraint(v)
+    return _LDH_LABELS_RE.match(v[1:] if v.startswith('.') else v) is not None
 
 
 def _normalize_name_constraints(value, field):

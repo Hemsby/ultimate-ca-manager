@@ -146,6 +146,8 @@ class TestCreateCaRejectsBadNameConstraints:
     @pytest.mark.parametrize('bad', [
         'https://example.com', 'example.com/path', 'foo bar',
         'example..com', '-bad.example.com', 'exa_mple.com', '*.example.com',
+        # RFC 5280 has no leading-dot form for dnsName (OpenSSL rejects it)
+        '.example.com',
     ])
     def test_malformed_dns_value_is_rejected(self, auth_client, bad):
         resp = _create_ca(
@@ -154,7 +156,11 @@ class TestCreateCaRejectsBadNameConstraints:
         assert resp.status_code == 400, resp.data
         assert 'dns name constraint' in get_json(resp).get('message', '')
 
-    @pytest.mark.parametrize('bad', ['not an email', 'https://x', '@example.com', 'a@b@c'])
+    @pytest.mark.parametrize('bad', [
+        'not an email', 'https://x', '@example.com', 'a@b@c',
+        # RFC 5322 dot-atom local part: no leading/trailing/doubled dot, atext only
+        'a..b@example.com', '.a@example.com', 'a.@example.com', 'a:@example.com',
+    ])
     def test_malformed_email_value_is_rejected(self, auth_client, bad):
         resp = _create_ca(
             auth_client, nameConstraintsExcluded=[{'type': 'email', 'value': bad}]
@@ -174,7 +180,7 @@ class TestCreateCaRejectsBadNameConstraints:
 class TestCreateCaAcceptsValidNameConstraintForms:
     @pytest.mark.parametrize('ctype,value', [
         ('dns', 'example.com'),
-        ('dns', '.example.com'),
+        ('dns', 'sub.example.com'),
         ('email', 'user@example.com'),
         ('email', 'example.com'),
         ('email', '.example.com'),
