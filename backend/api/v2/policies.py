@@ -336,19 +336,11 @@ def _issue_approved_certificate(approval):
     # template link and record the issued divergences from its defaults (#258).
     prv_encoded = encrypt_private_key(base64.b64encode(key_pem.encode()).decode())
 
-    _curve_to_pnum = {
-        'prime256v1': '256', 'secp256r1': '256',
-        'secp384r1': '384', 'secp521r1': '521',
-    }
-    _size_digits = str(
-        _curve_to_pnum.get(str(key_size).lower(), key_size)
-    ).lstrip('Pp')
-    effective_key_label = (
-        f"EC-P{_size_digits}" if key_type.upper() in ('EC', 'ECDSA')
-        else f"{key_type.upper()}-{_size_digits}"
-    )
+    # normalized_key is what was actually generated (RSA size or OpenSSL curve
+    # name), so it reflects a `curve` override too; compute_template_overrides
+    # normalizes it to the template's label form for the divergence check.
     template_overrides = compute_template_overrides(
-        template, key_type=effective_key_label, validity_days=validity_days,
+        template, key_type=normalized_key, validity_days=validity_days,
         digest=template.digest if template else None,
     ) if template else None
     db_cert = Certificate(

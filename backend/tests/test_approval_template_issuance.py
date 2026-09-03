@@ -187,6 +187,23 @@ class TestApprovalHonorsTemplate:
         assert row_tpl == tpl_id
         assert 'key_type' not in overrides
 
+    def test_curve_override_recorded_as_divergence(self, app, create_ca):
+        """A `curve` override diverges from the template's key_type and must be
+        recorded, same as key_size would be (#318 review)."""
+        ca = create_ca(cn='ApprCurveOvr CA')
+        tpl_id = _mk_template(app, key_type='EC-P384')
+
+        cert, (_, row_tpl, overrides, _) = _issue_from_request(
+            app, create_ca, {
+                'cn': 'appr-curve-ovr.test', 'ca_id': ca['id'],
+                'cert_type': 'server', 'template_id': tpl_id,
+                'key_type': 'ecdsa', 'curve': 'P-521',
+            })
+
+        assert cert.public_key().curve.name == 'secp521r1'
+        assert row_tpl == tpl_id
+        assert 'key_type' in overrides
+
     def test_missing_template_raises(self, app, create_ca):
         ca = create_ca(cn='ApprNoTpl CA')
         with app.app_context():
