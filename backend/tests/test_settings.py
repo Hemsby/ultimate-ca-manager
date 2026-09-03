@@ -753,3 +753,24 @@ class TestWebhooks:
         r = post_json(auth_client, f"/api/v2/settings/webhooks/{data['id']}/test", {})
         assert_success(r, 200)
         mock_post.assert_called_once()
+
+
+class TestEmailAuthMethodNone:
+    """#322: authentication off is reported as 'none', not the stored default."""
+
+    def test_none_round_trips(self, auth_client):
+        r = patch_json(auth_client, '/api/v2/settings/email',
+                       {'smtp_host': 'smtp.example.com', 'smtp_port': 25,
+                        'smtp_auth': False, 'smtp_auth_method': 'none'})
+        assert r.status_code == 200
+        data = assert_success(auth_client.get('/api/v2/settings/email'))
+        assert data['smtp_auth'] is False
+        assert data['smtp_auth_method'] == 'none'
+
+    def test_password_turns_auth_back_on(self, auth_client):
+        r = patch_json(auth_client, '/api/v2/settings/email',
+                       {'smtp_auth_method': 'password'})
+        assert r.status_code == 200
+        data = assert_success(auth_client.get('/api/v2/settings/email'))
+        assert data['smtp_auth'] is True
+        assert data['smtp_auth_method'] == 'password'

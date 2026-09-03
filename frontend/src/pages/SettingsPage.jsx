@@ -293,7 +293,9 @@ export default function SettingsPage() {
         smtp_from_name: emailSettings.from_name,
         smtp_auth: emailSettings.smtp_auth !== false,
         smtp_content_type: emailSettings.smtp_content_type || 'html',
-        smtp_auth_method: emailSettings.smtp_auth_method || 'password',
+        // Authentication off is reported as 'none' by the API; derive the
+        // highlighted method from it rather than from the stored default (#322)
+        smtp_auth_method: emailSettings.smtp_auth === false ? 'none' : (emailSettings.smtp_auth_method || 'password'),
         smtp_oauth_provider: emailSettings.smtp_oauth_provider || 'google',
         smtp_oauth_tenant_id: emailSettings.smtp_oauth_tenant_id || '',
         smtp_oauth_client_id: emailSettings.smtp_oauth_client_id || '',

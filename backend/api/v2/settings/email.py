@@ -49,7 +49,9 @@ def get_email_settings():
         'from_name': smtp.smtp_from_name or 'UCM Certificate Manager',
         'from_email': smtp.smtp_from or '',
         # OAuth2 (XOAUTH2) fields — secrets/tokens never returned, only flags
-        'smtp_auth_method': smtp.smtp_auth_method or 'password',
+        # 'none' when SMTP authentication is off, so the UI does not show the
+        # stored default method as if it were active (#322)
+        'smtp_auth_method': 'none' if smtp.smtp_auth is False else (smtp.smtp_auth_method or 'password'),
         'smtp_oauth_provider': smtp.smtp_oauth_provider or '',
         'smtp_oauth_tenant_id': smtp.smtp_oauth_tenant_id or '',
         'smtp_oauth_client_id': smtp.smtp_oauth_client_id or '',
@@ -101,8 +103,16 @@ def update_email_settings():
 
     # OAuth2 fields — admin-supplied client_id / urls / etc.
     # Secrets are only written when explicitly provided (avoids wiping on save).
-    if 'smtp_auth_method' in data and data['smtp_auth_method'] in ('password', 'oauth2'):
-        smtp.smtp_auth_method = data['smtp_auth_method']
+    if 'smtp_auth_method' in data:
+        method = data['smtp_auth_method']
+        if method == 'none':
+            # Authentication off; the stored method is irrelevant until it is
+            # turned back on (#322)
+            smtp.smtp_auth = False
+        elif method in ('password', 'oauth2'):
+            smtp.smtp_auth_method = method
+            if 'smtp_auth' not in data:
+                smtp.smtp_auth = True
     if 'smtp_oauth_provider' in data:
         smtp.smtp_oauth_provider = (data['smtp_oauth_provider'] or '').lower() or None
     if 'smtp_oauth_tenant_id' in data:
