@@ -660,7 +660,7 @@ const TEMPLATE_TYPE_OPTIONS = [
   'web_server', 'email', 'vpn_server', 'vpn_client',
   'code_signing', 'client_auth', 'ocsp_signing', 'custom'
 ]
-const KEY_TYPE_OPTIONS = ['RSA-2048', 'RSA-4096', 'EC-P256', 'EC-P384']
+const KEY_TYPE_OPTIONS = ['RSA-2048', 'RSA-3072', 'RSA-4096', 'EC-P256', 'EC-P384', 'EC-P521']
 const DIGEST_OPTIONS = ['sha256', 'sha384', 'sha512']
 const KEY_USAGE_OPTIONS = [
   'digitalSignature', 'keyEncipherment', 'contentCommitment',

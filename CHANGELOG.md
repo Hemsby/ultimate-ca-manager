@@ -7,6 +7,11 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
+## [Unreleased]
+
+### Added
+- The certificate template editor's Key Type dropdown now offers `RSA-3072` and `EC-P521`. Both were already accepted by the template API and produced working certificates at issuance; only the dropdown was missing them (#318 follow-up)
+
 ## [2.219] - 2026-09-01
 
 ### Fixed
