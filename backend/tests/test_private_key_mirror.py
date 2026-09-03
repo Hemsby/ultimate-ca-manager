@@ -2,7 +2,7 @@
 import uuid
 
 from models import CA, Certificate, db
-from services.file_regen_service import mirror_private_key
+from services.file_regen_service import mirror_private_key, purge_private_key_files
 from utils.file_naming import ca_cert_path, ca_key_path, cert_cert_path, cert_key_path
 
 
@@ -48,6 +48,129 @@ def test_mirror_private_key_returns_false_on_write_error(
     assert mirror_private_key(path, KEY_PEM, context='test certificate') is False
     assert not path.exists()
     assert 'test certificate' in caplog.text
+
+
+def test_purge_removes_keyed_and_orphan_files_but_keeps_keyless_rows(
+    app, encryption_enabled, monkeypatch, tmp_path, caplog
+):
+    from models import AuditLog
+    from config.settings import Config
+
+    monkeypatch.setattr(Config, 'PRIVATE_DIR', tmp_path)
+    keyed = Certificate(
+        refid=str(uuid.uuid4()), descr='Keyed purge row', prv='stored-key'
+    )
+    keyless = Certificate(
+        refid=str(uuid.uuid4()), descr='Keyless purge row', prv=None
+    )
+
+    with app.app_context():
+        db.session.add_all([keyed, keyless])
+        db.session.commit()
+        keyed_id = keyed.id
+        keyless_id = keyless.id
+        keyed_path = cert_key_path(keyed)
+        keyless_path = cert_key_path(keyless)
+        orphan_path = tmp_path / 'cert_orphan.key'
+        for path in (keyed_path, keyless_path, orphan_path):
+            path.write_bytes(b'plaintext')
+
+        stats = purge_private_key_files()
+
+        assert stats == {'removed': 2, 'kept_no_db_key': 1, 'errors': 0}
+        assert not keyed_path.exists()
+        assert not orphan_path.exists()
+        assert keyless_path.exists()
+        assert 'database row has no key' in caplog.text
+        assert AuditLog.query.filter_by(
+            action='private_key_files_purged'
+        ).count() >= 1
+
+        keyless_path.unlink()
+        Certificate.query.filter(Certificate.id.in_([keyed_id, keyless_id])).delete(
+            synchronize_session=False
+        )
+        db.session.commit()
+
+
+def test_regeneration_purges_keys_and_keeps_public_certificates(
+    app, encryption_enabled, monkeypatch, tmp_path
+):
+    import base64
+
+    from config.settings import Config
+    from services.file_regen_service import regenerate_all_files
+
+    monkeypatch.setattr(Config, 'PRIVATE_DIR', tmp_path / 'private')
+    monkeypatch.setattr(Config, 'CERT_DIR', tmp_path / 'certs')
+    monkeypatch.setattr(Config, 'CA_DIR', tmp_path / 'cas')
+    monkeypatch.setattr(Config, 'CRL_DIR', tmp_path / 'crls')
+    cert = Certificate(
+        refid=str(uuid.uuid4()),
+        descr='Startup purge row',
+        subject='CN=startup.example.com',
+        crt=base64.b64encode(b'public certificate').decode(),
+        prv=base64.b64encode(KEY_PEM).decode(),
+    )
+
+    with app.app_context():
+        db.session.add(cert)
+        db.session.commit()
+        cert_id = cert.id
+        Config.PRIVATE_DIR.mkdir(parents=True, exist_ok=True)
+        cert_key_path(cert).write_bytes(b'plaintext')
+
+        stats = regenerate_all_files()
+
+        assert stats['keys_purged'] == 1
+        assert stats['cert_keys'] == 0
+        assert not cert_key_path(cert).exists()
+        assert cert_cert_path(cert).read_bytes() == b'public certificate'
+
+        cert_cert_path(cert).unlink()
+        db.session.delete(db.session.get(Certificate, cert_id))
+        db.session.commit()
+
+
+def test_purge_is_noop_when_encryption_is_disabled(monkeypatch, tmp_path):
+    from config.settings import Config
+    from security.encryption import key_encryption
+
+    monkeypatch.setattr(Config, 'PRIVATE_DIR', tmp_path)
+    monkeypatch.setattr(key_encryption, '_enabled', False)
+    path = tmp_path / 'cert_orphan.key'
+    path.write_bytes(b'plaintext')
+
+    assert purge_private_key_files() == {
+        'removed': 0,
+        'kept_no_db_key': 0,
+        'errors': 0,
+    }
+    assert path.exists()
+
+
+def test_purge_counts_unlink_errors(
+    app, encryption_enabled, monkeypatch, tmp_path
+):
+    from config.settings import Config
+
+    monkeypatch.setattr(Config, 'PRIVATE_DIR', tmp_path)
+    path = tmp_path / 'cert_orphan.key'
+    path.write_bytes(b'plaintext')
+    real_unlink = type(path).unlink
+
+    def fail_target(candidate, *args, **kwargs):
+        if candidate == path:
+            raise PermissionError('denied')
+        return real_unlink(candidate, *args, **kwargs)
+
+    monkeypatch.setattr(type(path), 'unlink', fail_target)
+    with app.app_context():
+        assert purge_private_key_files() == {
+            'removed': 0,
+            'kept_no_db_key': 0,
+            'errors': 1,
+        }
 
 
 def _create_ca(auth_client, common_name):

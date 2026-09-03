@@ -109,6 +109,58 @@ def write_ca_files(ca) -> None:
             logger.warning(f"Could not write CA key file for {ca.descr}: {e}")
 
 
+def purge_private_key_files() -> dict:
+    """Remove plaintext key mirrors while database encryption is enabled."""
+    from models import CA, Certificate
+    from security.encryption import key_encryption
+
+    stats = {'removed': 0, 'kept_no_db_key': 0, 'errors': 0}
+    if not key_encryption.is_enabled:
+        return stats
+
+    known_keys = {}
+    for ca in CA.query.all():
+        known_keys[ca_key_path(ca).name] = bool(ca.prv)
+        known_keys[f"ca_{ca.refid}.key"] = bool(ca.prv)
+    for cert in Certificate.query.all():
+        known_keys[cert_key_path(cert).name] = bool(cert.prv)
+        known_keys[f"cert_{cert.refid}.key"] = bool(cert.prv)
+
+    for path in Config.PRIVATE_DIR.glob('*.key'):
+        if known_keys.get(path.name) is False:
+            stats['kept_no_db_key'] += 1
+            logger.error(
+                "Kept plaintext key mirror %s because its database row has no key",
+                path,
+            )
+            continue
+        try:
+            path.unlink()
+            stats['removed'] += 1
+        except Exception as e:
+            stats['errors'] += 1
+            logger.error("Could not purge plaintext key mirror %s: %s", path, e)
+
+    if stats['removed']:
+        try:
+            from services.audit_service import AuditService
+
+            AuditService.log_action(
+                action='private_key_files_purged',
+                resource_type='system',
+                resource_name='Private Key Files',
+                details=(
+                    f"{stats['removed']} plaintext key files removed from "
+                    "the private directory"
+                ),
+                success=True,
+            )
+        except Exception as e:
+            logger.warning("Could not audit private-key file purge: %s", e)
+
+    return stats
+
+
 def _handle_legacy_key(old_key: Path, new_key: Path, encryption_enabled: bool) -> int:
     """Remove or rename a legacy key mirror and return the rename count."""
     if not old_key.exists() or old_key == new_key:
@@ -128,6 +180,7 @@ def regenerate_all_files():
     from security.encryption import key_encryption
 
     encryption_enabled = key_encryption.is_enabled
+    purge_stats = purge_private_key_files() if encryption_enabled else None
     for directory in [Config.CA_DIR, Config.CERT_DIR, Config.PRIVATE_DIR, Config.CRL_DIR]:
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -138,7 +191,7 @@ def regenerate_all_files():
         'cert_keys': 0,
         'csrs': 0,
         'cleaned': 0,
-        'keys_purged': 0,
+        'keys_purged': purge_stats['removed'] if purge_stats else 0,
     }
 
     for ca in CA.query.all():
