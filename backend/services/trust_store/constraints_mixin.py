@@ -130,6 +130,14 @@ def _cert_name_values(cert):
     except Exception:
         pass
     try:
+        # Subject DN emailAddress is an rfc822 identity too (RFC 5280
+        # §4.2.1.10); key it as RFC822Name so the renewal-at-par check below
+        # matches it the same way it matches a SAN rfc822Name.
+        for attr in cert.subject.get_attributes_for_oid(NameOID.EMAIL_ADDRESS):
+            values.add(('RFC822Name', str(attr.value).lower()))
+    except Exception:
+        pass
+    try:
         san = cert.extensions.get_extension_for_oid(
             ExtensionOID.SUBJECT_ALTERNATIVE_NAME
         )
@@ -163,6 +171,17 @@ def validate_name_constraints(ca_cert, subject, san_names=None, renewal_of=None)
                 names_to_check.append(x509.DNSName(cn_value))
             # Non-hostname CNs ("John Doe") carry no DNS/email identity —
             # RFC 5280 name constraints do not apply to them.
+    except Exception:
+        pass
+
+    try:
+        # rfc822Name constraints apply to the subject DN emailAddress attribute,
+        # not only to SAN rfc822Names (RFC 5280 §4.2.1.10). Checking it here
+        # covers every issuance path (direct, approval, CSR signing, SCEP,
+        # renewal, TSA signer) since they all pass the built subject.
+        for attr in subject.get_attributes_for_oid(NameOID.EMAIL_ADDRESS):
+            if attr.value:
+                names_to_check.append(x509.RFC822Name(attr.value))
     except Exception:
         pass
 
