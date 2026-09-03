@@ -1356,16 +1356,19 @@ class AcmeProxyService:
                 (order.id, None),
             )
 
+        if status != 'pending':
+            # Already processing or finished: read-only pass-through whatever
+            # the challenge type. A pre-validated authorization (#325) exposes
+            # its already valid http-01/tls-alpn-01 challenge and a client may
+            # poll it; nothing is triggered here.
+            challenge_data['url'] = f"{self.base_url}/challenge/{chall_id_b64}"
+            return challenge_data, self._get_authz_link(resp.headers.get('Link'))
+
         if challenge_type != 'dns-01':
             raise ProxyDns01OnlyError(
                 f"Unsupported challenge type: {challenge_type}. "
                 "The ACME proxy only supports dns-01 validation."
             )
-
-        if status != 'pending':
-            # Already processing or finished
-            challenge_data['url'] = f"{self.base_url}/challenge/{chall_id_b64}"
-            return challenge_data, self._get_authz_link(resp.headers.get('Link'))
 
         # If still pending, check if automation already started — for this order
         # in get_authz, or for a sibling order sharing this upstream challenge

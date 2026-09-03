@@ -11,6 +11,7 @@ from models import db, AcmeClientOrder
 
 class _Resp:
     status_code = 200
+    headers = {}
 
     def __init__(self, body):
         self._body = body
@@ -111,3 +112,29 @@ class TestPrevalidatedAuthorization:
                     svc._proxy_id(authz_url),
                     requester_account_id='acct-pv', requester_thumbprint='thumb-pv',
                 )
+
+    def test_valid_non_dns_challenge_can_be_read_through_the_proxy(self, app, monkeypatch):
+        """The challenge URL announced for a valid authorization must answer a
+        POST-as-GET instead of the dns-01-only error."""
+        authz_url = 'https://ca.example/acme/authz/pv-4'
+        chall_url = 'https://ca.example/acme/chall/pv-4-http'
+        challenge = {'type': 'http-01', 'status': 'valid', 'url': chall_url, 'token': 'tok',
+                     'validated': '2026-01-01T00:00:00Z'}
+        upstream_authz = {'identifier': {'type': 'dns', 'value': 'readable.example.com'},
+                          'status': 'valid', 'challenges': [dict(challenge)]}
+        with app.app_context():
+            _seed_order(authz_url, 'readable.example.com')
+            from services.acme.acme_proxy_service import AcmeProxyService
+            svc = AcmeProxyService('https://ucm.example/acme/proxy')
+            monkeypatch.setattr(svc, 'upstream_directory_url', 'https://ca.example/acme/directory')
+            monkeypatch.setattr(svc, '_post_with_account',
+                                lambda url, *_a, **_k: _Resp(dict(challenge) if url == chall_url else upstream_authz))
+            svc.get_authz(svc._proxy_id(authz_url),
+                          requester_account_id='acct-pv', requester_thumbprint='thumb-pv')
+            data, _link = svc.respond_challenge(
+                svc._proxy_id(chall_url),
+                requester_account_id='acct-pv', requester_thumbprint='thumb-pv',
+            )
+        assert data['status'] == 'valid'
+        assert data['type'] == 'http-01'
+        assert data['url'] == f"https://ucm.example/acme/proxy/challenge/{svc._proxy_id(chall_url)}"
