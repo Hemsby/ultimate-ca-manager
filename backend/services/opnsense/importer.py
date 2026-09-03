@@ -6,9 +6,11 @@ import json
 import logging
 import os
 import traceback
+from pathlib import Path
 from typing import Dict, List
 
 from models import db, CA, Certificate
+from services.file_regen_service import mirror_private_key
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +91,11 @@ class ImportMixin:
                         os.makedirs(private_dir, exist_ok=True)
 
                         key_file = os.path.join(private_dir, f"{refid}.key")
-                        with open(key_file, "wb") as f:
-                            f.write(base64.b64decode(ca_data['prv']))
-                        os.chmod(key_file, 0o600)
+                        mirror_private_key(
+                            Path(key_file),
+                            base64.b64decode(ca_data['prv']),
+                            context=f"OPNsense CA {ca.id}",
+                        )
 
                 stats['imported'] += 1
 
@@ -216,9 +220,11 @@ class ImportMixin:
                         os.makedirs(private_dir, exist_ok=True)
 
                         key_file = os.path.join(private_dir, f"{refid}.key")
-                        with open(key_file, "wb") as f:
-                            f.write(base64.b64decode(cert_data['prv']))
-                        os.chmod(key_file, 0o600)
+                        mirror_private_key(
+                            Path(key_file),
+                            base64.b64decode(cert_data['prv']),
+                            context=f"OPNsense certificate {cert.id}",
+                        )
 
                 stats['imported'] += 1
 

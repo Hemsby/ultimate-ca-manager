@@ -298,6 +298,48 @@ def test_renew_import_csr_and_restore_do_not_recreate_encrypted_key_mirrors(
         _cleanup_models(app, cert_ids, ca_data['id'])
 
 
+def test_legacy_opnsense_import_skips_key_mirrors_when_encrypted(
+    app, encryption_enabled, monkeypatch, tmp_path
+):
+    import base64
+
+    from services.opnsense import importer
+
+    fake_module = tmp_path / 'services' / 'opnsense' / 'importer.py'
+    monkeypatch.setattr(importer, '__file__', str(fake_module))
+    encoded_key = base64.b64encode(KEY_PEM).decode()
+    encoded_cert = base64.b64encode(b'public certificate').decode()
+
+    with app.app_context():
+        ca_refid = str(uuid.uuid4())
+        cert_refid = str(uuid.uuid4())
+        ca_result = importer.ImportMixin().import_cas([{
+            'refid': ca_refid,
+            'descr': 'Legacy OPNsense encrypted CA',
+            'crt': encoded_cert,
+            'prv': encoded_key,
+            'is_root': True,
+        }])
+        cert_result = importer.ImportMixin().import_certificates([{
+            'refid': cert_refid,
+            'descr': 'Legacy OPNsense encrypted certificate',
+            'crt': encoded_cert,
+            'prv': encoded_key,
+        }])
+
+        assert ca_result['imported'] == 1
+        assert cert_result['imported'] == 1
+        data_dir = tmp_path / 'data'
+        assert (data_dir / 'ca' / f'{ca_refid}.crt').exists()
+        assert (data_dir / 'certs' / f'{cert_refid}.crt').exists()
+        assert not (data_dir / 'private' / f'{ca_refid}.key').exists()
+        assert not (data_dir / 'private' / f'{cert_refid}.key').exists()
+
+        CA.query.filter_by(refid=ca_refid).delete()
+        Certificate.query.filter_by(refid=cert_refid).delete()
+        db.session.commit()
+
+
 def test_api_creation_keeps_key_mirrors_when_encryption_disabled(
     app, auth_client, monkeypatch
 ):
