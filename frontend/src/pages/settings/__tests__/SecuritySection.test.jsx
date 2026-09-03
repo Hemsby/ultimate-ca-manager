@@ -1,0 +1,79 @@
+import { describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (key) => key }),
+}))
+
+vi.mock('../../../components', () => ({
+  Button: ({ children, ...props }) => <button {...props}>{children}</button>,
+  Input: ({ label }) => <label>{label}</label>,
+  Select: ({ label }) => <label>{label}</label>,
+  Badge: ({ children }) => <span>{children}</span>,
+  LoadingSpinner: () => <span>loading</span>,
+  ExperimentalBadge: () => <span>experimental</span>,
+  DetailHeader: ({ title }) => <header>{title}</header>,
+  DetailSection: ({ title, children }) => <section><h2>{title}</h2>{children}</section>,
+  DetailGrid: ({ children }) => <div>{children}</div>,
+  DetailContent: ({ children }) => <div>{children}</div>,
+}))
+
+vi.mock('../../../components/ui/ToggleSwitch', () => ({
+  ToggleSwitch: ({ label }) => <span>{label}</span>,
+}))
+
+import SecuritySection from '../SecuritySection'
+
+const renderSection = (encryptionStatus) => render(
+  <SecuritySection
+    settings={{}}
+    updateSetting={vi.fn()}
+    handleSave={vi.fn()}
+    saving={false}
+    hasPermission={() => true}
+    encryptionStatus={encryptionStatus}
+    setShowEnableEncryptionModal={vi.fn()}
+    setShowDisableEncryptionModal={vi.fn()}
+    anomalies={[]}
+    anomaliesLoading={false}
+    loadAnomalies={vi.fn()}
+    mtlsSettings={{}}
+    setMtlsSettings={vi.fn()}
+    mtlsLoading={false}
+    mtlsSaving={false}
+    handleMtlsSave={vi.fn()}
+    cas={[]}
+  />
+)
+
+describe('SecuritySection private key mirror status', () => {
+  it('shows the on-disk key count and pending-removal warning', () => {
+    renderSection({
+      enabled: true,
+      key_source: 'file',
+      key_file_path: '/etc/ucm/master.key',
+      total_keys: 4,
+      encrypted_count: 4,
+      unencrypted_count: 0,
+      key_files_on_disk: 3,
+    })
+
+    expect(screen.getByText('settings.keyFilesOnDisk:')).toBeInTheDocument()
+    expect(screen.getByText('3')).toBeInTheDocument()
+    expect(screen.getByText('settings.keyFilesRemovalPending')).toBeInTheDocument()
+  })
+
+  it('shows zero without a warning when encryption is disabled', () => {
+    renderSection({
+      enabled: false,
+      total_keys: 0,
+      encrypted_count: 0,
+      unencrypted_count: 0,
+      key_files_on_disk: 0,
+    })
+
+    expect(screen.getByText('settings.keyFilesOnDisk:')).toBeInTheDocument()
+    expect(screen.getByText('0')).toBeInTheDocument()
+    expect(screen.queryByText('settings.keyFilesRemovalPending')).not.toBeInTheDocument()
+  })
+})

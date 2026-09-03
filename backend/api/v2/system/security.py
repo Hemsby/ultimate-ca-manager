@@ -5,6 +5,7 @@ System Security Operations
 from . import bp
 from flask import request, current_app, Response
 from auth.unified import require_auth
+from config.settings import Config
 from utils.response import success_response, error_response
 from utils.trusted_proxy import client_ip
 from models import CA, Certificate, db
@@ -55,7 +56,8 @@ def get_encryption_status():
             'key_file_exists': key_encryption.key_file_exists(),
             'encrypted_count': encrypted,
             'unencrypted_count': unencrypted,
-            'total_keys': encrypted + unencrypted
+            'total_keys': encrypted + unencrypted,
+            'key_files_on_disk': sum(1 for _ in Config.PRIVATE_DIR.glob('*.key')),
         })
 
     except Exception as e:
@@ -93,6 +95,9 @@ def enable_encryption():
         # Encrypt all existing keys
         encrypted, skipped, errors = do_encrypt(dry_run=False)
 
+        from services.file_regen_service import purge_private_key_files
+        purge_stats = purge_private_key_files()
+
         # Read the freshly-written key so the caller can immediately download
         # a backup. This is the ONLY chance to surface it cleanly: if the
         # operator never backs it up and later loses /etc/ucm/master.key,
@@ -107,7 +112,11 @@ def enable_encryption():
             action='encryption_enabled',
             resource_type='system',
             resource_name='Private Key Encryption',
-            details=f'Encryption enabled. Encrypted {encrypted} keys, {skipped} already encrypted.',
+            details=(
+                f"Encryption enabled. Encrypted {encrypted} keys, {skipped} "
+                f"already encrypted. Removed {purge_stats['removed']} key files; "
+                f"kept {purge_stats['kept_no_db_key']} without a database key."
+            ),
             success=True
         )
 
@@ -119,6 +128,8 @@ def enable_encryption():
                 'encrypted': encrypted,
                 'skipped': skipped,
                 'errors': errors,
+                'key_files_removed': purge_stats['removed'],
+                'key_files_kept': purge_stats['kept_no_db_key'],
                 'master_key': master_key_pem,
                 'backup_required': True,
             }
@@ -250,11 +261,20 @@ def disable_encryption():
         # Reload singleton
         key_encryption.reload()
 
+        from services.file_regen_service import regenerate_all_files
+        regeneration_stats = regenerate_all_files()
+        key_files_written = (
+            regeneration_stats['ca_keys'] + regeneration_stats['cert_keys']
+        )
+
         AuditService.log_action(
             action='encryption_disabled',
             resource_type='system',
             resource_name='Private Key Encryption',
-            details=f'Encryption disabled. Decrypted {decrypted} keys.',
+            details=(
+                f"Encryption disabled. Decrypted {decrypted} keys and wrote "
+                f"{key_files_written} key files."
+            ),
             success=True
         )
 
@@ -263,7 +283,8 @@ def disable_encryption():
             data={
                 'enabled': False,
                 'decrypted': decrypted,
-                'skipped': skipped
+                'skipped': skipped,
+                'key_files_written': key_files_written,
             }
         )
 

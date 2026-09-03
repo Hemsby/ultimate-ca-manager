@@ -382,6 +382,22 @@ class TestEncryptionStatus:
         assert isinstance(data['encrypted_count'], int)
         assert isinstance(data['unencrypted_count'], int)
         assert isinstance(data['total_keys'], int)
+        assert isinstance(data['key_files_on_disk'], int)
+
+    def test_counts_private_key_files_on_disk(
+        self, auth_client, monkeypatch, tmp_path
+    ):
+        from config.settings import Config
+
+        monkeypatch.setattr(Config, 'PRIVATE_DIR', tmp_path)
+        (tmp_path / 'first.key').write_text('one')
+        (tmp_path / 'second.key').write_text('two')
+        (tmp_path / 'public.crt').write_text('public')
+
+        data = assert_success(
+            auth_client.get('/api/v2/system/security/encryption-status')
+        )
+        assert data['key_files_on_disk'] == 2
 
 
 class TestEnableEncryption:
@@ -393,6 +409,35 @@ class TestEnableEncryption:
                         content_type='application/json')
         assert r.status_code == 401
 
+    def test_enable_purges_plaintext_key_files(
+        self, auth_client, monkeypatch, tmp_path
+    ):
+        from config.settings import Config
+        from security import encryption as enc
+
+        master_key = tmp_path / 'master.key'
+        private_dir = tmp_path / 'private'
+        private_dir.mkdir()
+        (private_dir / 'cert_orphan.key').write_text('plaintext')
+
+        with monkeypatch.context() as patch:
+            patch.setattr(enc, 'MASTER_KEY_PATH', master_key)
+            patch.setattr(Config, 'PRIVATE_DIR', private_dir)
+            patch.delenv('KEY_ENCRYPTION_KEY', raising=False)
+            patch.delenv('UCM_REQUIRE_KEY_ENCRYPTION', raising=False)
+            patch.setattr(enc, 'encrypt_all_keys', lambda dry_run=False: (1, 2, []))
+            enc.key_encryption.reload()
+
+            response = auth_client.post(
+                '/api/v2/system/security/enable-encryption', json={}
+            )
+            data = assert_success(response)
+            assert data['key_files_removed'] == 1
+            assert data['key_files_kept'] == 0
+            assert not list(private_dir.glob('*.key'))
+
+        enc.key_encryption.reload()
+
 
 class TestDisableEncryption:
     """POST /system/security/disable-encryption — DANGEROUS."""
@@ -402,6 +447,61 @@ class TestDisableEncryption:
                         data=json.dumps({}),
                         content_type='application/json')
         assert r.status_code == 401
+
+    def test_disable_recreates_plaintext_key_files(
+        self, app, auth_client, monkeypatch, tmp_path
+    ):
+        import base64
+
+        from cryptography.fernet import Fernet
+        from config.settings import Config
+        from models import Certificate, db
+        from security import encryption as enc
+        from utils.file_naming import cert_key_path
+
+        directories = {
+            'PRIVATE_DIR': tmp_path / 'private',
+            'CERT_DIR': tmp_path / 'certs',
+            'CA_DIR': tmp_path / 'cas',
+            'CRL_DIR': tmp_path / 'crls',
+        }
+        master_key = tmp_path / 'master.key'
+        master_key.write_text(Fernet.generate_key().decode())
+
+        with monkeypatch.context() as patch:
+            patch.setattr(enc, 'MASTER_KEY_PATH', master_key)
+            for name, path in directories.items():
+                patch.setattr(Config, name, path)
+            patch.delenv('KEY_ENCRYPTION_KEY', raising=False)
+            patch.delenv('UCM_REQUIRE_KEY_ENCRYPTION', raising=False)
+            patch.setattr(enc, 'decrypt_all_keys', lambda dry_run=False: (1, 0, []))
+            enc.key_encryption.reload()
+
+            with app.app_context():
+                cert = Certificate(
+                    refid='99999999-aaaa-bbbb-cccc-dddddddddddd',
+                    descr='Disable mirror test',
+                    subject='CN=disable.example.com',
+                    prv=base64.b64encode(b'private-key-data').decode(),
+                )
+                db.session.add(cert)
+                db.session.commit()
+                cert_id = cert.id
+
+            response = auth_client.post(
+                '/api/v2/system/security/disable-encryption', json={}
+            )
+            data = assert_success(response)
+            assert data['key_files_written'] >= 1
+
+            with app.app_context():
+                cert = db.session.get(Certificate, cert_id)
+                assert cert_key_path(cert).read_bytes() == b'private-key-data'
+                cert_key_path(cert).unlink()
+                db.session.delete(cert)
+                db.session.commit()
+
+        enc.key_encryption.reload()
 
 
 class TestDownloadMasterKey:

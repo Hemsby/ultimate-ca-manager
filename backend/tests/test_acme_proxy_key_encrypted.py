@@ -10,9 +10,6 @@ from __future__ import annotations
 
 import inspect
 
-import pytest
-
-
 def test_load_or_create_account_key_delegates_to_client_service():
     """Proxy key load must go through AcmeClientService on the linked account."""
     from services.acme.acme_client_service import AcmeClientService
@@ -26,15 +23,6 @@ def test_load_or_create_account_key_delegates_to_client_service():
     assert "encrypt_text(" in client_src
     assert "decrypt_text(" in client_src
 
-
-@pytest.fixture
-def encryption_enabled(monkeypatch):
-    from cryptography.fernet import Fernet
-    monkeypatch.setenv("KEY_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    from security import encryption as enc_mod
-    enc_mod.KeyEncryption().reload()
-    assert enc_mod.KeyEncryption().is_enabled
-    yield
 
 
 def test_proxy_account_key_encrypted_at_rest(app, encryption_enabled):

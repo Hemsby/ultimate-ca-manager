@@ -2,20 +2,7 @@
 import importlib
 import sqlite3
 
-import pytest
-from cryptography.fernet import Fernet
 from sqlalchemy import create_engine, text
-
-
-@pytest.fixture
-def encryption_enabled(monkeypatch):
-    monkeypatch.setenv('KEY_ENCRYPTION_KEY', Fernet.generate_key().decode())
-    from security import encryption
-    encryption.key_encryption.reload()
-    assert encryption.key_encryption.is_enabled
-    yield encryption
-    monkeypatch.delenv('KEY_ENCRYPTION_KEY', raising=False)
-    encryption.key_encryption.reload()
 
 
 def _migration():

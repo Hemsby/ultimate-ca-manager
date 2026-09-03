@@ -11,6 +11,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 
 from models import db, CA, Certificate, CertificateTemplate, SystemConfig, RevokedSerial
+from services.file_regen_service import mirror_private_key
 from services.ocsp_service import OCSPService
 from services.trust_store import TrustStoreService
 from utils.ct_client import collect_scts, embed_scts_in_certificate
@@ -294,13 +295,11 @@ class LifecycleMixin:
         with open(cert_path, 'wb') as f:
             f.write(cert_pem)
 
-        key_path = cert_key_path(certificate)
-        with open(key_path, 'wb') as f:
-            f.write(key_pem)
-        try:
-            key_path.chmod(0o600)
-        except (OSError, PermissionError):
-            pass
+        mirror_private_key(
+            cert_key_path(certificate),
+            key_pem,
+            context=f"certificate {certificate.id}",
+        )
 
         from services.webhook_service import emit_cert_issued
         emit_cert_issued(certificate.to_dict(), ca_refid=certificate.caref, actor=username)

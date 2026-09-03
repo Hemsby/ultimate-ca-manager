@@ -40,6 +40,14 @@ export default function SecuritySection({ settings, updateSetting, handleSave, s
               </div>
             )}
 
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-text-secondary">{t('settings.keyFilesOnDisk')}:</span>
+              <strong className="text-text-primary">{encryptionStatus.key_files_on_disk ?? 0}</strong>
+              {encryptionStatus.enabled && encryptionStatus.key_files_on_disk > 0 && (
+                <Badge variant="warning">{t('settings.keyFilesRemovalPending')}</Badge>
+              )}
+            </div>
+
             <p className="text-xs text-text-secondary">{t('settings.encryptionDesc')}</p>
 
             {hasPermission('admin:system') && (

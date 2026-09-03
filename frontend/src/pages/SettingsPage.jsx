@@ -789,7 +789,9 @@ export default function SettingsPage() {
     setEncryptionLoading(true)
     try {
       const response = await settingsService.enableEncryption()
-      showSuccess(t('settings.encryptionEnabled'))
+      showSuccess(t('settings.encryptionEnabled', {
+        count: response?.data?.key_files_removed ?? 0,
+      }))
       setShowEnableEncryptionModal(false)
       setEncryptionConfirmText('')
       setEncryptionChecks({ backup: false, keyFile: false, lostKeys: false })

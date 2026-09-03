@@ -11,6 +11,7 @@ from typing import Dict, Any
 from models import db, User, CA, Certificate
 from models.acme_models import AcmeAccount
 from config.settings import Config
+from services.file_regen_service import mirror_private_key
 
 logger = logging.getLogger(__name__)
 
@@ -373,10 +374,9 @@ class RestoreCoreMixin:
                 try:
                     from utils.key_codec import load_pem_bytes
                     prv_pem = load_pem_bytes(ca.prv, context=f"CA {ca.id}")
-                    p = ca_key_path(ca)
-                    Config.PRIVATE_DIR.mkdir(parents=True, exist_ok=True)
-                    p.write_bytes(prv_pem)
-                    p.chmod(0o600)
+                    mirror_private_key(
+                        ca_key_path(ca), prv_pem, context=f"restored CA {ca.id}"
+                    )
                 except Exception:
                     pass
 
@@ -404,9 +404,10 @@ class RestoreCoreMixin:
                 try:
                     from utils.key_codec import load_pem_bytes
                     prv_pem_bytes = load_pem_bytes(cert.prv, context=f"certificate {cert.id}")
-                    p = cert_key_path(cert)
-                    Config.PRIVATE_DIR.mkdir(parents=True, exist_ok=True)
-                    p.write_bytes(prv_pem_bytes)
-                    p.chmod(0o600)
+                    mirror_private_key(
+                        cert_key_path(cert),
+                        prv_pem_bytes,
+                        context=f"restored certificate {cert.id}",
+                    )
                 except Exception:
                     pass

@@ -31,6 +31,10 @@ curl -k -b cookies.txt -X POST https://localhost:8443/api/v2/system/security/enc
 - Decrypted only when needed (export, signing)
 - Original keys never logged
 
+When private-key encryption is enabled, UCM does not keep plaintext key files in the `data/private/` directory. Existing mirrors are removed when encryption is enabled and on every start; public certificate files remain untouched. If a local service needs certificate and key files, use a deploy hook, including a same-host SFTP target for services running on the UCM host. Private-key export through the API remains permission-gated by `read:private_keys`.
+
+When `KEY_ENCRYPTION_KEY` enables encryption through the environment, the same startup purge applies. Move any consumer that reads `data/private/` directly to a deploy hook or the API before restarting with this setting.
+
 ---
 
 ### 2. CSRF Protection

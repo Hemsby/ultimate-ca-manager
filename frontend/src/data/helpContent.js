@@ -206,6 +206,7 @@ export const helpContent = {
         content: 'Push this certificate to remote hosts over SSH/SFTP — admin-only, targets are managed in Settings › Deployment.',
         items: [
           { label: 'Attach target', text: 'From the certificate detail view: pick a deploy target and set absolute destination paths for the certificate, private key and/or full chain (at least one)' },
+          { label: 'Same host', text: 'To deploy on the UCM host itself, use an SFTP target at 127.0.0.1 with a dedicated SSH account; the sandboxed service cannot write outside its data directory' },
           { label: 'Automatic', text: 'On issuance and renewal, the bound files are pushed again and the target reload command runs — deliveries are queued with retries' },
           { label: 'Files', text: 'Written atomically at the exact configured paths (parent directory must exist): key 0600, certificate/chain 0644' },
           { label: 'Deploy now', text: 'Manual push from the detail view, with the delivery status and last error shown per target' },
@@ -1290,7 +1291,8 @@ export const helpContent = {
         icon: Lock,
         items: [
           { label: 'Status & counters', text: 'Shows whether encryption is enabled and how many stored private keys are encrypted vs unencrypted' },
-          { label: 'Enable / Disable', text: 'Encrypt all CA and certificate private keys with AES-256 under a master key file — back up the key file immediately, or disable to return to plaintext storage' },
+          { label: 'Enable / Disable', text: 'Encrypt all CA and certificate private keys with AES-256 under a master key file. Enabling also removes plaintext key mirrors, while disabling recreates them' },
+          { label: 'Key files on disk', text: 'Shows how many plaintext key mirrors remain; use deploy hooks when another service needs a key file' },
           { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: 'Opt-in environment variable: refuse to start without an explicit database encryption key' },
           { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: 'Opt-in environment variable: refuse to start unless private-key encryption is enabled' },
         ]

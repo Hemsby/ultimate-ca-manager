@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 from config.settings import Config
+from services.file_regen_service import mirror_private_key
 from utils.file_naming import ca_cert_path, ca_key_path, cleanup_old_files
 
 logger = logging.getLogger(__name__)
@@ -39,14 +40,13 @@ def save_ca_key_file(ca, key_pem: bytes) -> None:
     """Save only the CA private key file (pending external-CSR CAs have a key
     on disk before any certificate exists)."""
     key_path = ca_key_path(ca)
-    try:
-        key_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(key_path, 'wb') as f:
-            f.write(key_pem)
-        key_path.chmod(0o600)
-    except Exception as e:
-        logger.error(f"Failed to save CA private key file: {e}")
-        raise
+    if mirror_private_key(key_path, key_pem, context=f"CA {ca.id}"):
+        return
+
+    from security.encryption import key_encryption
+
+    if not key_encryption.is_enabled:
+        raise OSError(f"Failed to save CA private key file: {key_path}")
 
 
 def delete_ca_files(ca) -> None:
