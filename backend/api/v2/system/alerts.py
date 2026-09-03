@@ -16,7 +16,7 @@ import json as _json
 logger = logging.getLogger(__name__)
 
 
-_MAX_ALERT_DAYS = 3650
+_MAX_ALERT_DAYS = 3650  # mirrors NotificationConfig.MAX_ALERT_DAYS
 
 
 def _alert_payload(config):

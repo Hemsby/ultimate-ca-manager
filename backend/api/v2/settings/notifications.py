@@ -73,12 +73,14 @@ def update_notification_settings():
         recipients = data['recipients']
         config.recipients = json.dumps(recipients) if isinstance(recipients, list) else recipients
     if 'threshold_days' in data:
-        try:
-            threshold_days = int(data['threshold_days'])
-        except (TypeError, ValueError):
+        threshold_days = data['threshold_days']
+        # Same rule as the expiry endpoint: a real integer (not a bool),
+        # 1..3650; larger values overflow the scheduler's date arithmetic.
+        if isinstance(threshold_days, bool) or not isinstance(threshold_days, int):
             return error_response('threshold_days must be an integer', 400)
-        if threshold_days < 1:
-            return error_response('threshold_days must be positive', 400)
+        if threshold_days < 1 or threshold_days > NotificationConfig.MAX_ALERT_DAYS:
+            return error_response(
+                f'threshold_days must be between 1 and {NotificationConfig.MAX_ALERT_DAYS}', 400)
         if config.type == 'cert_expiring':
             # The expiry job reads the alert_days list (#323); a single
             # threshold set here replaces it so both endpoints stay in sync.
@@ -86,7 +88,11 @@ def update_notification_settings():
         else:
             config.days_before = threshold_days  # Model uses 'days_before'
     if 'cooldown_hours' in data:
-        config.cooldown_hours = int(data['cooldown_hours'])
+        cooldown_hours = data['cooldown_hours']
+        if isinstance(cooldown_hours, bool) or not isinstance(cooldown_hours, int) \
+                or cooldown_hours < 0 or cooldown_hours > 8760:
+            return error_response('cooldown_hours must be an integer between 0 and 8760', 400)
+        config.cooldown_hours = cooldown_hours
 
     try:
         db.session.commit()

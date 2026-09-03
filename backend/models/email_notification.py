@@ -168,27 +168,29 @@ class NotificationConfig(db.Model):
     updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
 
     DEFAULT_ALERT_DAYS = (30, 14, 7, 1)
+    MAX_ALERT_DAYS = 3650  # larger values overflow the scheduler's timedelta arithmetic
 
     def get_alert_days(self):
         """Thresholds (days before expiry), largest first. Falls back to the
         legacy single days_before, then to the defaults."""
         if self.alert_days:
             try:
-                days = sorted({int(d) for d in json.loads(self.alert_days) if int(d) > 0}, reverse=True)
+                days = sorted({int(d) for d in json.loads(self.alert_days)
+                               if 0 < int(d) <= self.MAX_ALERT_DAYS}, reverse=True)
                 if days:
                     return days
             except (TypeError, ValueError):
                 pass
-        if self.days_before:
+        if self.days_before and 0 < int(self.days_before) <= self.MAX_ALERT_DAYS:
             return [int(self.days_before)]
         return list(self.DEFAULT_ALERT_DAYS)
 
     def set_alert_days(self, days):
         """Store a validated, deduplicated, descending threshold list and keep
         days_before (largest) in sync for the generic notifications screen."""
-        cleaned = sorted({int(d) for d in days if int(d) > 0}, reverse=True)
+        cleaned = sorted({int(d) for d in days if 0 < int(d) <= self.MAX_ALERT_DAYS}, reverse=True)
         if not cleaned:
-            raise ValueError('At least one alert threshold is required')
+            raise ValueError('At least one alert threshold between 1 and 3650 days is required')
         self.alert_days = json.dumps(cleaned)
         self.days_before = cleaned[0]
         return cleaned

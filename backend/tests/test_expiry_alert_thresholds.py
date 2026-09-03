@@ -253,8 +253,29 @@ class TestGenericNotificationsEndpointStaysInSync:
         assert row['threshold_days'] == 21 and row['alert_days'] == [21]
 
     def test_threshold_days_is_validated(self, auth_client, expiry_config):
-        for bad in ('x', 0, -3):
+        for bad in ('x', 0, -3, True, 4000, 999999999, 7.5):
             r = auth_client.patch('/api/v2/settings/notifications',
                                   data=json.dumps({'notification_type': 'cert_expiring', 'threshold_days': bad}),
                                   content_type='application/json')
             assert r.status_code == 400, bad
+
+    def test_cooldown_hours_is_validated(self, auth_client, expiry_config):
+        for bad in ('x', True, -1, 100000):
+            r = auth_client.patch('/api/v2/settings/notifications',
+                                  data=json.dumps({'notification_type': 'cert_expiring', 'cooldown_hours': bad}),
+                                  content_type='application/json')
+            assert r.status_code == 400, bad
+
+
+class TestModelIgnoresOutOfRangeThresholds:
+    def test_restored_extreme_values_never_reach_the_scheduler(self, app, expiry_config):
+        with app.app_context():
+            config = db.session.get(NotificationConfig, expiry_config)
+            config.alert_days = json.dumps([999999999, 14, 0, -1])
+            assert config.get_alert_days() == [14]
+            config.alert_days = json.dumps([999999999])
+            config.days_before = 999999999
+            assert config.get_alert_days() == list(NotificationConfig.DEFAULT_ALERT_DAYS)
+            with pytest.raises(ValueError):
+                config.set_alert_days([999999999])
+            db.session.rollback()
