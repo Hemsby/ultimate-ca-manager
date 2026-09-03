@@ -9,6 +9,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 
 from models import db, CA, Certificate
+from services.file_regen_service import mirror_private_key
 from services.trust_store import TrustStoreService
 from utils.dn_parse import subject_common_name
 from utils.file_naming import cert_cert_path, cert_key_path, cert_csr_path, ca_cert_path, ca_key_path
@@ -128,10 +129,11 @@ class CSRMixin:
         with open(csr_path, 'wb') as f:
             f.write(csr_pem)
 
-        key_path = cert_key_path(certificate)
-        with open(key_path, 'wb') as f:
-            f.write(key_pem)
-        key_path.chmod(0o600)
+        mirror_private_key(
+            cert_key_path(certificate),
+            key_pem,
+            context=f"CSR certificate {certificate.id}",
+        )
 
         return certificate
 
@@ -349,11 +351,10 @@ class CSRMixin:
             with open(ca_path, 'wb') as f:
                 f.write(cert_pem)
             if new_ca.prv:
-                key_path = ca_key_path(new_ca)
                 key_data = load_pem_bytes(new_ca.prv, context=f"CA {new_ca.id}")
-                with open(key_path, 'wb') as f:
-                    f.write(key_data)
-                key_path.chmod(0o600)
+                mirror_private_key(
+                    ca_key_path(new_ca), key_data, context=f"CA {new_ca.id}"
+                )
             return new_ca
         else:
             AuditService.log_certificate('csr_signed', certificate, f'Signed CSR: {certificate.descr}')

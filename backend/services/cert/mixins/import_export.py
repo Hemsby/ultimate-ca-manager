@@ -9,6 +9,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 
 from models import db, CA, Certificate
+from services.file_regen_service import mirror_private_key
 from services.trust_store import TrustStoreService
 from utils.file_naming import cert_cert_path, cert_key_path
 
@@ -169,10 +170,11 @@ class ImportExportMixin:
             f.write(cert_pem.encode() if isinstance(cert_pem, str) else cert_pem)
 
         if key_pem:
-            key_path = cert_key_path(certificate)
-            with open(key_path, 'wb') as f:
-                f.write(key_pem.encode() if isinstance(key_pem, str) else key_pem)
-            key_path.chmod(0o600)
+            mirror_private_key(
+                cert_key_path(certificate),
+                key_pem.encode() if isinstance(key_pem, str) else key_pem,
+                context=f"imported certificate {certificate.id}",
+            )
 
         return certificate
 

@@ -23,23 +23,6 @@ from api.v2.policies import _issue_approved_certificate
 _SEQ = itertools.count(1)
 
 
-@pytest.fixture
-def encryption_enabled(monkeypatch):
-    """Force private-key encryption on for this test, then restore.
-
-    The KeyEncryption singleton is process-global and other test files may
-    leave it disabled — without pinning it here the encrypted-at-rest
-    assertion depends on test ordering (flaky under -n auto and in CI).
-    """
-    from cryptography.fernet import Fernet
-    from security import encryption as enc_mod
-    monkeypatch.setenv("KEY_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    enc_mod.KeyEncryption().reload()
-    assert enc_mod.KeyEncryption().is_enabled
-    yield
-    monkeypatch.undo()
-    enc_mod.KeyEncryption().reload()
-
 TEMPLATE_4096_30D = {
     'name': 'approval-tpl',
     'template_type': 'custom',

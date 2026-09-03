@@ -110,6 +110,23 @@ def _reset_acme_proxy_caches():
     reset_proxy_caches()
 
 
+@pytest.fixture
+def encryption_enabled(monkeypatch, tmp_path):
+    """Enable private-key encryption with an isolated ephemeral key."""
+    from cryptography.fernet import Fernet
+    from security import encryption as enc_mod
+
+    with monkeypatch.context() as patch:
+        patch.setattr(enc_mod, 'MASTER_KEY_PATH', tmp_path / 'master.key')
+        patch.setenv('KEY_ENCRYPTION_KEY', Fernet.generate_key().decode('ascii'))
+        patch.delenv('KEY_ENCRYPTION_KEY_FILE', raising=False)
+        enc_mod.key_encryption.reload()
+        assert enc_mod.key_encryption.is_enabled
+        yield enc_mod
+
+    enc_mod.key_encryption.reload()
+
+
 @pytest.fixture(scope='session')
 def app():
     """Create Flask app with test configuration (shared across all tests)."""

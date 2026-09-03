@@ -40,6 +40,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import ExtensionOID
 
 from models import CA, Certificate, RevokedSerial, db
+from services.file_regen_service import mirror_private_key
 from services.ocsp_service import OCSPService
 from utils.datetime_utils import utc_now
 from utils.db_transaction import commit_or_rollback
@@ -225,13 +226,11 @@ def _write_cert_files(cert: Certificate, cert_pem: str, key_pem):
         cert_path.parent.mkdir(parents=True, exist_ok=True)
         cert_path.write_bytes(cert_pem.encode())
         if key_pem:
-            key_path = cert_key_path(cert)
-            key_path.parent.mkdir(parents=True, exist_ok=True)
-            key_path.write_bytes(key_pem.encode())
-            try:
-                key_path.chmod(0o600)
-            except (OSError, PermissionError):
-                pass
+            mirror_private_key(
+                cert_key_path(cert),
+                key_pem.encode(),
+                context=f"renewed certificate {cert.id}",
+            )
     except Exception as e:
         logger.warning(f"Failed to write cert/key files for renewed cert {cert.id}: {e}")
 
