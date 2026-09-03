@@ -1290,7 +1290,8 @@ export const helpContent = {
         icon: Lock,
         items: [
           { label: 'Status & counters', text: 'Shows whether encryption is enabled and how many stored private keys are encrypted vs unencrypted' },
-          { label: 'Enable / Disable', text: 'Encrypt all CA and certificate private keys with AES-256 under a master key file — back up the key file immediately, or disable to return to plaintext storage' },
+          { label: 'Enable / Disable', text: 'Encrypt all CA and certificate private keys with AES-256 under a master key file — enabling also removes plaintext key mirrors, while disabling recreates them' },
+          { label: 'Key files on disk', text: 'Shows how many plaintext key mirrors remain; use deploy hooks when another service needs a key file' },
           { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: 'Opt-in environment variable: refuse to start without an explicit database encryption key' },
           { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: 'Opt-in environment variable: refuse to start unless private-key encryption is enabled' },
         ]

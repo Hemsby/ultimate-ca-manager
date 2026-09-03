@@ -8,7 +8,8 @@ export default {
         title: 'Verschlüsselung privater Schlüssel',
         items: [
           { label: 'Status & Zähler', text: 'Zeigt, ob die Verschlüsselung aktiviert ist und wie viele gespeicherte private Schlüssel verschlüsselt bzw. unverschlüsselt sind' },
-          { label: 'Aktivieren / Deaktivieren', text: 'Alle privaten Schlüssel von CAs und Zertifikaten mit AES-256 unter einer Master-Key-Datei verschlüsseln — sichern Sie die Schlüsseldatei sofort, oder deaktivieren Sie die Verschlüsselung, um zur Klartextspeicherung zurückzukehren' },
+          { label: 'Aktivieren / Deaktivieren', text: 'Alle privaten Schlüssel mit AES-256 verschlüsseln — beim Aktivieren werden Klartext-Schlüsselkopien entfernt, beim Deaktivieren neu erstellt' },
+          { label: 'Schlüsseldateien auf dem Datenträger', text: 'Zeigt die verbleibenden Klartext-Schlüsselkopien; verwenden Sie Deploy-Hooks, wenn ein anderer Dienst eine Schlüsseldatei benötigt' },
           { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: 'Opt-in-Umgebungsvariable: Start ohne expliziten Datenbank-Verschlüsselungsschlüssel verweigern' },
           { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: 'Opt-in-Umgebungsvariable: Start verweigern, solange die Verschlüsselung privater Schlüssel nicht aktiviert ist' },
         ]

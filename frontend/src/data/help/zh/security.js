@@ -8,7 +8,8 @@ export default {
         title: '私钥加密',
         items: [
           { label: '状态与计数器', text: '显示是否已启用加密，以及已存储私钥中加密与未加密的数量' },
-          { label: '启用 / 禁用', text: '使用主密钥文件下的 AES-256 加密所有 CA 和证书私钥——请立即备份密钥文件；或禁用以恢复明文存储' },
+          { label: '启用 / 禁用', text: '使用 AES-256 加密所有私钥；启用时删除明文密钥副本，禁用时重新创建' },
+          { label: '磁盘上的密钥文件', text: '显示仍保留的明文密钥副本数量；其他服务需要密钥文件时请使用部署钩子' },
           { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: '可选启用的环境变量：没有显式的数据库加密密钥时拒绝启动' },
           { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: '可选启用的环境变量：未启用私钥加密时拒绝启动' },
         ]

@@ -8,7 +8,8 @@ export default {
         title: 'Cifrado de claves privadas',
         items: [
           { label: 'Estado y contadores', text: 'Muestra si el cifrado está activado y cuántas claves privadas almacenadas están cifradas frente a sin cifrar' },
-          { label: 'Activar / Desactivar', text: 'Cifra todas las claves privadas de CAs y certificados con AES-256 bajo un archivo de clave maestra — haga una copia de seguridad del archivo de clave de inmediato, o desactívelo para volver al almacenamiento en texto plano' },
+          { label: 'Activar / Desactivar', text: 'Cifra todas las claves privadas con AES-256 — al activar elimina las copias de claves en texto plano y al desactivar las vuelve a crear' },
+          { label: 'Archivos de clave en disco', text: 'Muestra cuántas copias de claves en texto plano quedan; use hooks de despliegue cuando otro servicio necesite un archivo de clave' },
           { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: 'Variable de entorno opcional: rechaza arrancar sin una clave de cifrado de base de datos explícita' },
           { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: 'Variable de entorno opcional: rechaza arrancar si el cifrado de claves privadas no está activado' },
         ]
