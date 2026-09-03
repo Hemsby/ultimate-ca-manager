@@ -201,6 +201,28 @@ class TestTemplateDefaultsAtIssuance:
         assert isinstance(pub, rsa.RSAPublicKey)
         assert pub.key_size == 4096
 
+    def test_rsa3072_and_ecp521_templates_issue(self, app, auth_client, create_ca):
+        """The Key Type options newly surfaced in the template editor
+        (RSA-3072, EC-P521) issue a certificate with the expected key."""
+        from cryptography.hazmat.primitives.asymmetric import ec, rsa
+        ca = create_ca(cn='Issue226 New Key Options CA')
+
+        tpl_rsa = _create_template(
+            auth_client, name='issue226-rsa3072', key_type='RSA-3072')
+        r = self._issue_raw(auth_client, {
+            'cn': 'rsa3072.test', 'ca_id': ca['id'], 'template_id': tpl_rsa['id']})
+        assert r.status_code in (200, 201), r.data
+        pub = _issued_cert_obj(app, get_json(r)['data']['id']).public_key()
+        assert isinstance(pub, rsa.RSAPublicKey) and pub.key_size == 3072
+
+        tpl_ec = _create_template(
+            auth_client, name='issue226-ecp521', key_type='EC-P521')
+        r = self._issue_raw(auth_client, {
+            'cn': 'ecp521.test', 'ca_id': ca['id'], 'template_id': tpl_ec['id']})
+        assert r.status_code in (200, 201), r.data
+        pub = _issued_cert_obj(app, get_json(r)['data']['id']).public_key()
+        assert isinstance(pub, ec.EllipticCurvePublicKey) and pub.curve.name == 'secp521r1'
+
     def test_explicit_request_values_override_template(self, app, auth_client, create_ca):
         from cryptography.hazmat.primitives.asymmetric import ec
         ca = create_ca(cn='Issue226 Override Defaults CA')
