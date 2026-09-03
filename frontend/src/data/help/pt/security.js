@@ -8,7 +8,7 @@ export default {
         title: 'Criptografia de Chaves Privadas',
         items: [
           { label: 'Status e contadores', text: 'Mostra se a criptografia está ativada e quantas chaves privadas armazenadas estão criptografadas vs não criptografadas' },
-          { label: 'Ativar / Desativar', text: 'Criptografa todas as chaves privadas com AES-256 — ao ativar remove as cópias em texto claro e ao desativar as recria' },
+          { label: 'Ativar / Desativar', text: 'Criptografa todas as chaves privadas com AES-256. Ao ativar remove as cópias em texto claro e ao desativar as recria' },
           { label: 'Arquivos de chave no disco', text: 'Mostra quantas cópias de chaves em texto claro restam; use hooks de implantação quando outro serviço precisar de um arquivo de chave' },
           { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: 'Variável de ambiente opcional: recusa iniciar sem uma chave de criptografia de banco de dados explícita' },
           { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: 'Variável de ambiente opcional: recusa iniciar a menos que a criptografia de chaves privadas esteja ativada' },

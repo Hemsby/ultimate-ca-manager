@@ -8,7 +8,7 @@ export default {
         title: 'Chiffrement des clés privées',
         items: [
           { label: 'Statut et compteurs', text: 'Indique si le chiffrement est activé et combien de clés privées stockées sont chiffrées vs non chiffrées' },
-          { label: 'Activer / Désactiver', text: 'Chiffrer toutes les clés privées en AES-256 — l’activation supprime les copies de clés en clair et la désactivation les recrée' },
+          { label: 'Activer / Désactiver', text: 'Chiffrer toutes les clés privées en AES-256. L’activation supprime les copies de clés en clair et la désactivation les recrée' },
           { label: 'Fichiers de clé sur disque', text: 'Indique combien de copies de clés en clair subsistent ; utilisez les hooks de déploiement lorsqu’un autre service a besoin d’un fichier de clé' },
           { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: 'Variable d\'environnement opt-in : refuser de démarrer sans clé de chiffrement de base de données explicite' },
           { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: 'Variable d\'environnement opt-in : refuser de démarrer si le chiffrement des clés privées n\'est pas activé' },

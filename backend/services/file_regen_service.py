@@ -51,7 +51,10 @@ def mirror_private_key(path: Path, key_pem: bytes, *, context: str) -> bool:
 
 
 def write_cert_files(cert) -> None:
-    """Write certificate, key, and CSR files for a Certificate object."""
+    """Write certificate, key, and CSR files for a Certificate object.
+
+    With key encryption enabled the key is neither decrypted nor mirrored."""
+    from security.encryption import key_encryption
     from utils.key_codec import load_pem_bytes
 
     Config.CERT_DIR.mkdir(parents=True, exist_ok=True)
@@ -64,7 +67,7 @@ def write_cert_files(cert) -> None:
         except Exception as e:
             logger.warning(f"Could not write cert file for {cert.descr}: {e}")
 
-    if cert.prv:
+    if cert.prv and not key_encryption.is_enabled:
         try:
             key_pem = load_pem_bytes(cert.prv, context=f"certificate {cert.id}")
             mirror_private_key(
@@ -88,7 +91,10 @@ def write_cert_files(cert) -> None:
 
 
 def write_ca_files(ca) -> None:
-    """Write certificate and key files for a CA object."""
+    """Write certificate and key files for a CA object.
+
+    With key encryption enabled the key is neither decrypted nor mirrored."""
+    from security.encryption import key_encryption
     from utils.key_codec import load_pem_bytes
 
     Config.CA_DIR.mkdir(parents=True, exist_ok=True)
@@ -101,7 +107,7 @@ def write_ca_files(ca) -> None:
         except Exception as e:
             logger.warning(f"Could not write CA cert file for {ca.descr}: {e}")
 
-    if ca.prv:
+    if ca.prv and not key_encryption.is_enabled:
         try:
             key_pem = load_pem_bytes(ca.prv, context=f"CA {ca.id}")
             mirror_private_key(ca_key_path(ca), key_pem, context=f"CA {ca.id}")
@@ -214,7 +220,7 @@ def regenerate_all_files():
             except Exception as e:
                 logger.warning(f"Failed to regenerate CA cert {ca.descr}: {e}")
 
-        if ca.prv and (encryption_enabled or not new_key.exists()):
+        if ca.prv and not encryption_enabled and not new_key.exists():
             try:
                 from utils.key_codec import load_pem_bytes
 
@@ -262,7 +268,7 @@ def regenerate_all_files():
             except Exception as e:
                 logger.warning(f"Failed to regenerate CSR {cert.descr}: {e}")
 
-        if cert.prv and (encryption_enabled or not new_key.exists()):
+        if cert.prv and not encryption_enabled and not new_key.exists():
             try:
                 from utils.key_codec import load_pem_bytes
 

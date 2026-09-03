@@ -8,7 +8,7 @@ export default {
         title: 'Cifratura delle chiavi private',
         items: [
           { label: 'Stato e contatori', text: 'Mostra se la cifratura è abilitata e quante chiavi private memorizzate sono cifrate rispetto a quelle non cifrate' },
-          { label: 'Abilita / Disabilita', text: 'Cifra tutte le chiavi private con AES-256 — l’abilitazione rimuove le copie in chiaro e la disabilitazione le ricrea' },
+          { label: 'Abilita / Disabilita', text: 'Cifra tutte le chiavi private con AES-256. L’abilitazione rimuove le copie in chiaro e la disabilitazione le ricrea' },
           { label: 'File di chiavi su disco', text: 'Mostra quante copie di chiavi in chiaro restano; usa gli hook di distribuzione quando un altro servizio necessita di un file di chiave' },
           { label: 'UCM_REQUIRE_DB_ENCRYPTION_KEY', text: 'Variabile d\'ambiente opt-in: rifiuta l\'avvio senza una chiave di cifratura del database esplicita' },
           { label: 'UCM_REQUIRE_KEY_ENCRYPTION', text: 'Variabile d\'ambiente opt-in: rifiuta l\'avvio se la cifratura delle chiavi private non è abilitata' },
