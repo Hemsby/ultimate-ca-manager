@@ -1905,6 +1905,8 @@
     "publicKeyUnavailable": "No public key available for this target.",
     "sshUser": "SSH user",
     "host": "Host",
+    "sameHost": "This host",
+    "sameHostHint": "To place keys on the UCM host itself, use a dedicated SSH account; the service cannot write outside its data directory.",
     "port": "Port",
     "reloadCommand": "Reload command",
     "reloadCommandHint": "Optional — run over SSH after a successful push (exit 0 = success). One fixed command, no templating.",

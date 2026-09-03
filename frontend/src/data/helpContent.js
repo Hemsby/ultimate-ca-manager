@@ -206,6 +206,7 @@ export const helpContent = {
         content: 'Push this certificate to remote hosts over SSH/SFTP — admin-only, targets are managed in Settings › Deployment.',
         items: [
           { label: 'Attach target', text: 'From the certificate detail view: pick a deploy target and set absolute destination paths for the certificate, private key and/or full chain (at least one)' },
+          { label: 'Same host', text: 'To deploy on the UCM host itself, use an SFTP target at 127.0.0.1 with a dedicated SSH account; the sandboxed service cannot write outside its data directory' },
           { label: 'Automatic', text: 'On issuance and renewal, the bound files are pushed again and the target reload command runs — deliveries are queued with retries' },
           { label: 'Files', text: 'Written atomically at the exact configured paths (parent directory must exist): key 0600, certificate/chain 0644' },
           { label: 'Deploy now', text: 'Manual push from the detail view, with the delivery status and last error shown per target' },

@@ -1905,6 +1905,8 @@
     "publicKeyUnavailable": "Kein öffentlicher Schlüssel für dieses Ziel verfügbar.",
     "sshUser": "SSH-Benutzer",
     "host": "Host",
+    "sameHost": "Dieser Host",
+    "sameHostHint": "Um Schlüssel auf dem UCM-Host selbst abzulegen, verwenden Sie ein dediziertes SSH-Konto; der Dienst kann nicht außerhalb seines Datenverzeichnisses schreiben.",
     "port": "Port",
     "reloadCommand": "Reload-Befehl",
     "reloadCommandHint": "Optional — wird nach einer erfolgreichen Übertragung per SSH ausgeführt (exit 0 = Erfolg). Ein fester Befehl, kein Templating.",

@@ -1905,6 +1905,8 @@
     "publicKeyUnavailable": "Nessuna chiave pubblica disponibile per questa destinazione.",
     "sshUser": "Utente SSH",
     "host": "Host",
+    "sameHost": "Questo host",
+    "sameHostHint": "Per collocare le chiavi sullo stesso host UCM, usa un account SSH dedicato; il servizio non può scrivere fuori dalla propria directory dei dati.",
     "port": "Porta",
     "reloadCommand": "Comando di ricarica",
     "reloadCommandHint": "Facoltativo — eseguito tramite SSH dopo un invio riuscito (exit 0 = successo). Un solo comando fisso, senza templating.",

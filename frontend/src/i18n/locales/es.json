@@ -1905,6 +1905,8 @@
     "publicKeyUnavailable": "No hay clave pública disponible para este destino.",
     "sshUser": "Usuario SSH",
     "host": "Host",
+    "sameHost": "Este host",
+    "sameHostHint": "Para colocar claves en el propio host de UCM, use una cuenta SSH dedicada; el servicio no puede escribir fuera de su directorio de datos.",
     "port": "Puerto",
     "reloadCommand": "Comando de recarga",
     "reloadCommandHint": "Opcional — se ejecuta por SSH tras un envío exitoso (exit 0 = éxito). Un solo comando fijo, sin plantillas.",

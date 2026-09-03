@@ -1905,6 +1905,8 @@
     "publicKeyUnavailable": "此目标没有可用的公钥。",
     "sshUser": "SSH 用户",
     "host": "主机",
+    "sameHost": "此主机",
+    "sameHostHint": "要将密钥放置在 UCM 主机本身，请使用专用 SSH 账户；服务无法写入其数据目录之外的位置。",
     "port": "端口",
     "reloadCommand": "重载命令",
     "reloadCommandHint": "可选 — 推送成功后通过 SSH 运行（exit 0 = 成功）。单条固定命令，不支持模板。",

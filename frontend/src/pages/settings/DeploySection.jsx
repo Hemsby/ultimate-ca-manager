@@ -138,6 +138,12 @@ export default function DeploySection() {
   }
 
   const field = (key) => (e) => setForm({ ...form, [key]: e.target.value })
+  const applySameHostPreset = () => setForm(current => ({
+    ...current,
+    host: '127.0.0.1',
+    username: 'ucm-deploy',
+    reload_command: 'sudo systemctl reload nginx',
+  }))
 
   return (
     <DetailContent>
@@ -236,6 +242,16 @@ export default function DeploySection() {
               <label className="block text-xs font-medium text-text-secondary">{t('deploy.host')}</label>
               <input className="w-full px-3 py-2 bg-bg-tertiary border border-border rounded-md text-sm text-text-primary font-mono focus:outline-none focus:border-accent-primary"
                      value={form.host} onChange={field('host')} required maxLength={255} />
+              <div className="flex items-start gap-2 text-2xs">
+                <button
+                  type="button"
+                  className="text-accent-primary hover:underline whitespace-nowrap"
+                  onClick={applySameHostPreset}
+                >
+                  {t('deploy.sameHost')}
+                </button>
+                <span className="text-text-tertiary">{t('deploy.sameHostHint')}</span>
+              </div>
             </div>
             <div className="space-y-1">
               <label className="block text-xs font-medium text-text-secondary">{t('deploy.port')}</label>

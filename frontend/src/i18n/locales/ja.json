@@ -1905,6 +1905,8 @@
     "publicKeyUnavailable": "このターゲットに利用可能な公開鍵はありません。",
     "sshUser": "SSH ユーザー",
     "host": "ホスト",
+    "sameHost": "このホスト",
+    "sameHostHint": "UCM ホスト自体に鍵を配置するには専用の SSH アカウントを使用してください。サービスはデータディレクトリ外へ書き込めません。",
     "port": "ポート",
     "reloadCommand": "リロードコマンド",
     "reloadCommandHint": "任意 — 転送成功後に SSH で実行されます（exit 0 = 成功）。固定コマンド 1 つのみ、テンプレートは使用できません。",
