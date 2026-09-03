@@ -26,6 +26,19 @@ export function SelectComponent({
   helperText,
   className 
 }) {
+  // Radix fires onValueChange when the selected item unmounts, e.g. a caller
+  // swaps the options list out from under it (the key type driving the key
+  // size list in the issue / Create CA forms). That is not a user choice, so
+  // ignore any value that isn't a current option and would silently blank the
+  // field. This relies on `options` being the post-swap list at the time Radix
+  // fires (it is: the reset runs after that commit) (#318).
+  const handleValueChange = onChange
+    ? (v) => {
+        const next = fromInternal(v)
+        if (options.some((o) => o.value === next)) onChange(next)
+      }
+    : undefined
+
   if (searchable) {
     return (
       <SearchableSelect
@@ -50,7 +63,7 @@ export function SelectComponent({
         </label>
       )}
 
-      <Select.Root value={value == null ? value : toInternal(value)} onValueChange={onChange ? (v) => onChange(fromInternal(v)) : undefined} disabled={disabled}>
+      <Select.Root value={value == null ? value : toInternal(value)} onValueChange={handleValueChange} disabled={disabled}>
         <Select.Trigger
           className={cn(
             "w-full flex items-center justify-between px-2.5 py-1.5 bg-tertiary-op80 border rounded-md text-sm",

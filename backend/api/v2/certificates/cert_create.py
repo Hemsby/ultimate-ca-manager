@@ -131,18 +131,17 @@ def create_certificate():
         from services.hsm.ca_key_loader import get_ca_signing_key
         ca_key = get_ca_signing_key(ca)
 
-        from utils.key_type import parse_issue_key_type
+        from utils.key_type import parse_issue_key_type, fill_key_params_from_template
 
         key_type_in = data.get('key_type') or data.get('keyType')
         key_size_in = data.get('key_size') or data.get('keySize')
-        # Template key_type ("RSA-2048", "EC-P384") is the default when the
-        # request doesn't pick a key — API parity with the UI, which prefills
-        # these fields from the template (issue #226 follow-up).
-        if not key_type_in and template and template.key_type:
-            tpl_algo, _, tpl_size = template.key_type.partition('-')
-            key_type_in = tpl_algo
-            if not key_size_in:
-                key_size_in = tpl_size
+        # Template key params ("RSA-2048", "EC-P384") are the default when the
+        # request leaves them unset, for API parity with the UI prefill (issue
+        # #226 follow-up); key_size only inherits when the algorithm still
+        # matches (#318).
+        if template:
+            key_type_in, key_size_in = fill_key_params_from_template(
+                key_type_in, key_size_in, template.key_type)
         key_type_in = key_type_in or 'rsa'
         key_size_in = key_size_in or '2048'
         try:

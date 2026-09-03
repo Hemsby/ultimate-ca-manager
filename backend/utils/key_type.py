@@ -97,6 +97,27 @@ def parse_issue_key_type(
     raise ValueError(f'Unsupported key type: {raw_type}')
 
 
+def fill_key_params_from_template(key_type, key_size, template_key_type):
+    """Default unset ``key_type``/``key_size`` from a template's ``"RSA-2048"`` /
+    ``"EC-P384"`` string, for the API paths that mirror the UI's template prefill.
+
+    ``key_size`` is only inherited when the request's algorithm still matches the
+    template's, so an explicit ``key_type=rsa`` never picks up an EC curve (#318).
+    Returns the (possibly filled) ``(key_type, key_size)`` pair unchanged in type.
+    """
+    if not template_key_type:
+        return key_type, key_size
+    tpl_algo, _, tpl_size = template_key_type.partition('-')
+    if not key_type:
+        key_type = tpl_algo
+    if not key_size and tpl_size:
+        tpl_is_ec = tpl_algo.strip().lower() in ('ec', 'ecdsa')
+        req_is_ec = str(key_type or 'rsa').strip().lower() in ('ec', 'ecdsa')
+        if tpl_is_ec == req_is_ec:
+            key_size = tpl_size
+    return key_type, key_size
+
+
 def parse_csr_key_type(key_algo_full: str) -> str:
     """Parse frontend key_type (e.g. ``RSA 2048``, ``EC P-256``) for CSR generation."""
     raw = (key_algo_full or 'RSA 2048').strip()
