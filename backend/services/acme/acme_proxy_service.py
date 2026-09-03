@@ -1206,15 +1206,21 @@ class AcmeProxyService:
             )
             raise ProxyResourceNotFoundError("Authorization not found")
 
-        # Filter to dns-01 only — the proxy handles DNS record creation
-        # automatically. http-01/tls-alpn-01 cannot work through a proxy
-        # because the upstream CA needs direct access to the client.
+        # An authorization the upstream CA has already validated (pre-validated
+        # or onboarded domain, typically on an EAB-bound account) carries no
+        # pending challenge and often no dns-01 at all. Nothing is left to
+        # validate, so it is exposed as-is and the client goes straight to
+        # finalize (#325). Otherwise only dns-01 is exposed: the proxy creates
+        # the DNS record itself, while http-01/tls-alpn-01 need the upstream CA
+        # to reach the client directly, which cannot work through a proxy.
+        already_valid = authz.get('status') == 'valid'
         proxy_challenges = []
         for chall in authz.get('challenges', []):
-            if chall.get('type') != 'dns-01':
+            if chall.get('type') != 'dns-01' and not already_valid:
                 continue
-
-            chall_url = chall['url']
+            chall_url = chall.get('url')
+            if not chall_url:
+                continue
             chall_id = self._proxy_id(chall_url)
 
             # Remember which order (and identifier) this challenge belongs to so
@@ -1229,7 +1235,7 @@ class AcmeProxyService:
 
             # Check if we should trigger automation for this challenge
             # We trigger it as soon as the client fetches the authorization
-            if chall.get('status') == 'pending':
+            if chall.get('status') == 'pending' and not already_valid:
                 challenges_data = order.challenges_dict
                 if not self._challenge_automation_started(chall_url, candidates):
                     # Trigger automation in background
@@ -1260,10 +1266,11 @@ class AcmeProxyService:
                             db.session.rollback()
                             logger.error(f"Failed to start auto-DNS thread: {e}")
 
+
             chall['url'] = f"{self.base_url}/challenge/{chall_id}"
             proxy_challenges.append(chall)
 
-        if not proxy_challenges:
+        if not proxy_challenges and not already_valid:
             logger.error(
                 f"Upstream authz for {identifier.get('value', '?')} has no dns-01 challenge. "
                 f"Available types: {[c.get('type') for c in authz.get('challenges', [])]}"
@@ -1271,6 +1278,11 @@ class AcmeProxyService:
             raise ProxyDns01OnlyError(
                 f"Upstream CA does not offer dns-01 challenge for {identifier.get('value', '?')}. "
                 "The ACME proxy only supports dns-01 validation; tls-alpn-01 is not supported."
+            )
+        if already_valid:
+            logger.info(
+                "[ACME Proxy] Upstream authorization for %s is already valid; "
+                "passed through without validation", domain,
             )
 
         authz['challenges'] = proxy_challenges
