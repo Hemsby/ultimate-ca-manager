@@ -34,6 +34,7 @@ def get_notification_settings():
             'enabled': c.enabled,
             'recipients': json.loads(c.recipients) if c.recipients else [],
             'threshold_days': c.days_before,  # Model uses 'days_before'
+            'alert_days': c.get_alert_days() if c.type == 'cert_expiring' else None,
             'cooldown_hours': c.cooldown_hours,
             'description': c.description
         } for c in configs]
@@ -72,7 +73,18 @@ def update_notification_settings():
         recipients = data['recipients']
         config.recipients = json.dumps(recipients) if isinstance(recipients, list) else recipients
     if 'threshold_days' in data:
-        config.days_before = int(data['threshold_days'])  # Model uses 'days_before'
+        try:
+            threshold_days = int(data['threshold_days'])
+        except (TypeError, ValueError):
+            return error_response('threshold_days must be an integer', 400)
+        if threshold_days < 1:
+            return error_response('threshold_days must be positive', 400)
+        if config.type == 'cert_expiring':
+            # The expiry job reads the alert_days list (#323); a single
+            # threshold set here replaces it so both endpoints stay in sync.
+            config.set_alert_days([threshold_days])
+        else:
+            config.days_before = threshold_days  # Model uses 'days_before'
     if 'cooldown_hours' in data:
         config.cooldown_hours = int(data['cooldown_hours'])
 

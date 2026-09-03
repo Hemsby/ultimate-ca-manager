@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 from datetime import timedelta
 from typing import List, Dict
 from models import CA, Certificate
@@ -44,7 +45,9 @@ class NotificationSchedulerMixin:
 
         expiring = []
         for cert in query.all():
-            days_remaining = max((cert.valid_to - now).days, 0)
+            # Whole days left, rounded up: 14 days and 23 hours is still 15
+            # days away, so the 14-day threshold fires once 14 days remain.
+            days_remaining = max(math.ceil((cert.valid_to - now).total_seconds() / 86400), 0)
             due = [t for t in thresholds if days_remaining <= t]
             if not due:
                 continue

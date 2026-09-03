@@ -341,7 +341,9 @@ export default function SettingsPage() {
     try {
       const res = await settingsService.checkExpiryAlerts()
       const data = res.data || res
-      showSuccess(t('settings.expiryCheckResult', { count: data.alerts_sent || 0 }))
+      // The check reports per type: {cert_expiring: {notified}, crl_expiring: {notified}}
+      const count = (data.cert_expiring?.notified || 0) + (data.crl_expiring?.notified || 0) + (data.alerts_sent || 0)
+      showSuccess(t('settings.expiryCheckResult', { count }))
     } catch (e) {
       showError(e.message || t('common.error'))
     }

@@ -212,3 +212,49 @@ class TestThresholdEscalation:
         assert any('ops@example.com' in rcpts for rcpts in sent_to)
         assert all('ucm@example.com' not in rcpts for rcpts in sent_to), \
             'the From address is not appended as a recipient'
+
+
+class TestThresholdRounding:
+    def test_threshold_fires_only_once_whole_days_remain(self, app, create_cert, expiry_config, smtp_spy):
+        """14 days and 23 hours left is still 15 days away: the 14-day threshold
+        must not fire almost a day early."""
+        with app.app_context():
+            config = db.session.get(NotificationConfig, expiry_config)
+            config.set_alert_days([14])
+            db.session.commit()
+        cert = create_cert(cn='expiry-rounding.example.com')
+        with app.app_context():
+            c = db.session.get(Certificate, cert['id'])
+            c.valid_from = utc_now() - timedelta(days=100)
+            c.valid_to = utc_now() + timedelta(days=14, hours=23)
+            db.session.commit()
+            refid = c.refid
+        _run(app)
+        assert _thresholds_sent(app, refid) == []
+
+        with app.app_context():
+            c = db.session.get(Certificate, cert['id'])
+            c.valid_to = utc_now() + timedelta(days=13, hours=23)
+            db.session.commit()
+        _run(app)
+        assert _thresholds_sent(app, refid) == [14]
+
+
+class TestGenericNotificationsEndpointStaysInSync:
+    def test_threshold_days_replaces_the_alert_days_list(self, app, auth_client, expiry_config):
+        r = auth_client.patch('/api/v2/settings/notifications',
+                              data=json.dumps({'notification_type': 'cert_expiring', 'threshold_days': 21}),
+                              content_type='application/json')
+        assert r.status_code == 200, r.data
+        r = auth_client.get('/api/v2/system/alerts/expiry')
+        assert r.get_json()['data']['alert_days'] == [21]
+        r = auth_client.get('/api/v2/settings/notifications')
+        row = next(c for c in r.get_json()['data']['configs'] if c['notification_type'] == 'cert_expiring')
+        assert row['threshold_days'] == 21 and row['alert_days'] == [21]
+
+    def test_threshold_days_is_validated(self, auth_client, expiry_config):
+        for bad in ('x', 0, -3):
+            r = auth_client.patch('/api/v2/settings/notifications',
+                                  data=json.dumps({'notification_type': 'cert_expiring', 'threshold_days': bad}),
+                                  content_type='application/json')
+            assert r.status_code == 400, bad

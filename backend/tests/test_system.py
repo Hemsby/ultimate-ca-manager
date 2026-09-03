@@ -890,6 +890,13 @@ class TestExpiryAlertUpdate:
         assert data['alert_days'] == [14, 7, 3, 1]
         assert data['include_revoked'] is True
 
+    @pytest.mark.parametrize('payload', [{'include_revoked': 'false'}, {'enabled': 'yes'}, {'include_revoked': 1}])
+    def test_flags_must_be_real_booleans(self, auth_client, payload):
+        r = auth_client.put('/api/v2/system/alerts/expiry',
+                            data=json.dumps(payload),
+                            content_type='application/json')
+        assert r.status_code == 400
+
     @pytest.mark.parametrize('bad', [[], 'x', [0], [4000], ['7'], [True]])
     def test_invalid_thresholds_are_rejected(self, auth_client, bad):
         r = auth_client.put('/api/v2/system/alerts/expiry',

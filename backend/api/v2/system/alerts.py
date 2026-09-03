@@ -69,6 +69,9 @@ def update_expiry_alert_settings():
         from models.email_notification import NotificationConfig
         data = request.get_json() or {}
 
+        for flag in ('enabled', 'include_revoked'):
+            if flag in data and not isinstance(data[flag], bool):
+                return error_response(f'{flag} must be a boolean', 400)
         if 'alert_days' in data:
             try:
                 alert_days = _validate_alert_days(data['alert_days'])
@@ -90,11 +93,11 @@ def update_expiry_alert_settings():
             db.session.add(config)
 
         if 'enabled' in data:
-            config.enabled = bool(data['enabled'])
+            config.enabled = data['enabled']
         if alert_days is not None:
             config.set_alert_days(alert_days)
         if 'include_revoked' in data:
-            config.include_revoked = bool(data['include_revoked'])
+            config.include_revoked = data['include_revoked']
         if recipients is not None:
             config.recipients = _json.dumps(recipients)
 
