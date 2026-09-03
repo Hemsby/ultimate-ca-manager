@@ -155,6 +155,49 @@ class TestMTLSSettings:
 class TestMTLSCertificates:
     """Test mTLS certificate CRUD."""
 
+    def test_create_reads_encrypted_private_key_from_database(
+        self, app, auth_client, create_ca, encryption_enabled
+    ):
+        from cryptography.hazmat.primitives.serialization import load_pem_private_key
+
+        from models import AuthCertificate, CA, CRLMetadata, Certificate, OCSPResponse, db
+        from utils.file_naming import ca_cert_path, ca_key_path, cert_cert_path, cert_key_path
+
+        ca_data = create_ca(cn='mTLS encrypted key source')
+        response = _post(auth_client, '/api/v2/mtls/certificates', {
+            'ca_id': ca_data['id'],
+            'name': 'Encrypted mTLS enrollment',
+        })
+        assert response.status_code == 201, response.get_json()
+        data = response.get_json()['data']
+
+        try:
+            key_pem = data['private_key'].encode()
+            assert key_pem.startswith(b'-----BEGIN')
+            assert b'PRIVATE KEY-----' in key_pem.splitlines()[0]
+            load_pem_private_key(key_pem, password=None)
+
+            with app.app_context():
+                cert = db.session.get(Certificate, data['certificate_id'])
+                assert cert is not None
+                assert not cert_key_path(cert).exists()
+        finally:
+            with app.app_context():
+                AuthCertificate.query.filter_by(id=data['id']).delete()
+                cert = db.session.get(Certificate, data['certificate_id'])
+                if cert:
+                    cert_cert_path(cert).unlink(missing_ok=True)
+                    cert_key_path(cert).unlink(missing_ok=True)
+                    db.session.delete(cert)
+                CRLMetadata.query.filter_by(ca_id=ca_data['id']).delete()
+                OCSPResponse.query.filter_by(ca_id=ca_data['id']).delete()
+                ca = db.session.get(CA, ca_data['id'])
+                if ca:
+                    ca_cert_path(ca).unlink(missing_ok=True)
+                    ca_key_path(ca).unlink(missing_ok=True)
+                    db.session.delete(ca)
+                db.session.commit()
+
     def test_list_certificates_empty(self, auth_client):
         r = auth_client.get('/api/v2/mtls/certificates')
         assert r.status_code == 200

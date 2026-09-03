@@ -23,7 +23,6 @@ from models.auth_certificate import AuthCertificate
 from services.audit_service import AuditService
 from services.cert_service import CertificateService
 from services.certificate_parser import CertificateParser
-from utils.file_naming import cert_key_path
 from utils import trusted_proxy
 from utils.key_codec import load_pem_bytes
 from utils.response import success_response, error_response, created_response
@@ -238,10 +237,9 @@ def create_mtls_certificate():
         )
 
         cert_pem = base64.b64decode(cert_obj.crt).decode('utf-8') if cert_obj.crt else ''
-        key_pem = ''
-        key_file = cert_key_path(cert_obj)
-        if key_file.exists():
-            key_pem = key_file.read_text()
+        key_pem = load_pem_bytes(
+            cert_obj.prv, context=f"mTLS certificate {cert_obj.id}"
+        ).decode('utf-8') if cert_obj.prv else ''
 
         # Enroll in auth_certificates for auto-login
         auth_cert = AuthCertificate(
