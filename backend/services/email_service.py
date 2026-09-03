@@ -121,7 +121,8 @@ class EmailService:
         body_text: Optional[str] = None,
         notification_type: str = "general",
         resource_type: Optional[str] = None,
-        resource_id: Optional[str] = None
+        resource_id: Optional[str] = None,
+        threshold_days: Optional[int] = None,
     ) -> tuple[bool, str]:
         """
         Send email to recipients
@@ -222,6 +223,7 @@ class EmailService:
                     status='sent',
                     resource_type=resource_type,
                     resource_id=resource_id,
+                    threshold_days=threshold_days,
                     sent_at=utc_now()
                 )
                 db.session.add(log)
@@ -251,6 +253,7 @@ class EmailService:
                     error_message=error_msg,
                     resource_type=resource_type,
                     resource_id=resource_id,
+                    threshold_days=threshold_days,
                     sent_at=utc_now()
                 )
                 db.session.add(log)

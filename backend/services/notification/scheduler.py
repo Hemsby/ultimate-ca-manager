@@ -3,6 +3,7 @@ import logging
 from datetime import timedelta
 from typing import List, Dict
 from models import CA, Certificate
+from models.email_notification import NotificationLog
 from models.crl import CRLMetadata
 from utils.datetime_utils import utc_now
 from .config import NotificationConfigMixin
@@ -16,26 +17,48 @@ class NotificationSchedulerMixin:
 
     @staticmethod
     def check_expiring_certificates():
+        """Certificates that crossed an alert threshold not yet notified for
+        their current validity period.
+
+        Thresholds come from the cert_expiring row (#323). For each
+        certificate the tightest crossed threshold is used and fires once
+        (tracked in notification_log.threshold_days since valid_from), so a
+        30/14/7/1 selection escalates instead of repeating every day inside
+        the largest window (#324).
+        """
         config = NotificationConfigMixin.get_config(CERT_EXPIRING)
-        if not config or not config.enabled or not config.days_before:
+        if not config or not config.enabled:
+            return []
+        thresholds = config.get_alert_days()
+        if not thresholds:
             return []
 
-        threshold_date = utc_now() + timedelta(days=config.days_before)
-
-        certs = Certificate.query.filter(
+        now = utc_now()
+        threshold_date = now + timedelta(days=max(thresholds))
+        query = Certificate.query.filter(
             Certificate.valid_to <= threshold_date,
-            Certificate.valid_to > utc_now(),
-            Certificate.revoked == False
-        ).all()
+            Certificate.valid_to > now,
+        )
+        if not config.include_revoked:
+            query = query.filter(Certificate.revoked.isnot(True))
 
         expiring = []
-        for cert in certs:
-            if NotificationConfigMixin.should_send(CERT_EXPIRING, 'certificate', cert.refid):
-                days_remaining = (cert.valid_to - utc_now()).days
-                expiring.append({
-                    'cert': cert,
-                    'days_remaining': days_remaining
-                })
+        for cert in query.all():
+            days_remaining = max((cert.valid_to - now).days, 0)
+            due = [t for t in thresholds if days_remaining <= t]
+            if not due:
+                continue
+            threshold = min(due)
+            if NotificationLog.was_sent_for_threshold(
+                CERT_EXPIRING, 'certificate', cert.refid, threshold,
+                since=cert.valid_from,
+            ):
+                continue
+            expiring.append({
+                'cert': cert,
+                'days_remaining': days_remaining,
+                'threshold_days': threshold,
+            })
 
         return expiring
 
@@ -72,8 +95,14 @@ class NotificationSchedulerMixin:
         }
 
         config = NotificationConfigMixin.get_config(CERT_EXPIRING)
-        if config and config.enabled and config.recipients:
-            recipients = json.loads(config.recipients)
+        cert_recipients = json.loads(config.recipients) if config and config.recipients else []
+        if config and config.enabled and not cert_recipients:
+            logger.warning(
+                "Certificate expiry alerts are enabled but have no recipients; "
+                "add recipients under Settings > Email > Certificate Expiry Alerts"
+            )
+        if config and config.enabled and cert_recipients:
+            recipients = cert_recipients
             expiring_certs = NotificationSchedulerMixin.check_expiring_certificates()
             results['cert_expiring']['checked'] = len(expiring_certs)
 
@@ -82,7 +111,7 @@ class NotificationSchedulerMixin:
                 days = item['days_remaining']
 
                 success, msg = NotificationSenderMixin.send_cert_expiring_notification(
-                    cert, days, recipients
+                    cert, days, recipients, threshold_days=item.get('threshold_days')
                 )
                 if success:
                     results['cert_expiring']['notified'] += 1

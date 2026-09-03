@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class NotificationSenderMixin:
 
     @staticmethod
-    def send_cert_expiring_notification(cert, days_remaining, recipients):
+    def send_cert_expiring_notification(cert, days_remaining, recipients, threshold_days=None):
         subject = f"UCM Alert: Certificate Expiring in {days_remaining} days - {cert.descr}"
 
         content = f"""
@@ -58,7 +58,8 @@ class NotificationSenderMixin:
             body_html=body_html,
             notification_type=CERT_EXPIRING,
             resource_type='certificate',
-            resource_id=cert.refid
+            resource_id=cert.refid,
+            threshold_days=threshold_days,
         )
 
     @staticmethod

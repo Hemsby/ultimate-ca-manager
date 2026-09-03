@@ -39,6 +39,8 @@ class RestoreNotificationsMixin:
             if existing:
                 existing.enabled = nc_data.get('enabled', True)
                 existing.days_before = nc_data.get('days_before')
+                existing.alert_days = nc_data.get('alert_days')
+                existing.include_revoked = bool(nc_data.get('include_revoked', False))
                 existing.recipients = nc_data.get('recipients')
                 existing.subject_template = nc_data.get('subject_template')
                 existing.description = nc_data.get('description')
@@ -48,6 +50,8 @@ class RestoreNotificationsMixin:
                     type=nc_data['type'],
                     enabled=nc_data.get('enabled', True),
                     days_before=nc_data.get('days_before'),
+                    alert_days=nc_data.get('alert_days'),
+                    include_revoked=bool(nc_data.get('include_revoked', False)),
                     recipients=nc_data.get('recipients'),
                     subject_template=nc_data.get('subject_template'),
                     description=nc_data.get('description'),

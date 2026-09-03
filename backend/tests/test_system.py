@@ -873,6 +873,30 @@ class TestExpiryAlertUpdate:
                             content_type='application/json')
         assert r.status_code == 200
 
+    def test_every_selected_threshold_is_stored(self, auth_client):
+        """#323: the full selection round-trips, not only the largest value."""
+        r = auth_client.put('/api/v2/system/alerts/expiry',
+                            data=json.dumps({'enabled': True, 'alert_days': [7, 14, 1, 3, 7],
+                                             'include_revoked': True,
+                                             'recipients': ['ops@example.com']}),
+                            content_type='application/json')
+        data = assert_success(r)
+        assert data['alert_days'] == [14, 7, 3, 1]
+        assert data['include_revoked'] is True
+        assert data['recipients'] == ['ops@example.com']
+
+        r = auth_client.get('/api/v2/system/alerts/expiry')
+        data = assert_success(r)
+        assert data['alert_days'] == [14, 7, 3, 1]
+        assert data['include_revoked'] is True
+
+    @pytest.mark.parametrize('bad', [[], 'x', [0], [4000], ['7'], [True]])
+    def test_invalid_thresholds_are_rejected(self, auth_client, bad):
+        r = auth_client.put('/api/v2/system/alerts/expiry',
+                            data=json.dumps({'alert_days': bad}),
+                            content_type='application/json')
+        assert r.status_code == 400
+
 
 class TestExpiryAlertCheck:
     """POST /system/alerts/expiry/check"""

@@ -154,7 +154,11 @@ class NotificationConfig(db.Model):
     type = db.Column(db.String(50), unique=True, nullable=False, index=True)
     # Types: cert_expiring, crl_expiring, cert_issued, cert_revoked, ca_created, security_alert, password_changed
     enabled = db.Column(db.Boolean, default=True)
-    days_before = db.Column(db.Integer)  # For expiring notifications (7, 14, 30, etc.)
+    days_before = db.Column(db.Integer)  # Largest threshold; single threshold for CRL alerts
+    # cert_expiring only: JSON list of day thresholds, each fired once per
+    # validity period (#323). days_before mirrors the largest one.
+    alert_days = db.Column(db.Text)
+    include_revoked = db.Column(db.Boolean, default=False)
     recipients = db.Column(db.Text)  # JSON array of email addresses
     subject_template = db.Column(db.String(255))
     description = db.Column(db.String(512))
@@ -162,6 +166,32 @@ class NotificationConfig(db.Model):
     cooldown_hours = db.Column(db.Integer, default=24)
     created_at = db.Column(db.DateTime, default=utc_now)
     updated_at = db.Column(db.DateTime, default=utc_now, onupdate=utc_now)
+
+    DEFAULT_ALERT_DAYS = (30, 14, 7, 1)
+
+    def get_alert_days(self):
+        """Thresholds (days before expiry), largest first. Falls back to the
+        legacy single days_before, then to the defaults."""
+        if self.alert_days:
+            try:
+                days = sorted({int(d) for d in json.loads(self.alert_days) if int(d) > 0}, reverse=True)
+                if days:
+                    return days
+            except (TypeError, ValueError):
+                pass
+        if self.days_before:
+            return [int(self.days_before)]
+        return list(self.DEFAULT_ALERT_DAYS)
+
+    def set_alert_days(self, days):
+        """Store a validated, deduplicated, descending threshold list and keep
+        days_before (largest) in sync for the generic notifications screen."""
+        cleaned = sorted({int(d) for d in days if int(d) > 0}, reverse=True)
+        if not cleaned:
+            raise ValueError('At least one alert threshold is required')
+        self.alert_days = json.dumps(cleaned)
+        self.days_before = cleaned[0]
+        return cleaned
     
     def to_dict(self):
         """Convert to dictionary"""
@@ -170,6 +200,8 @@ class NotificationConfig(db.Model):
             "type": self.type,
             "enabled": self.enabled,
             "days_before": self.days_before,
+            "alert_days": self.get_alert_days(),
+            "include_revoked": bool(self.include_revoked),
             "recipients": json.loads(self.recipients) if self.recipients else [],
             "subject_template": self.subject_template,
             "description": self.description,
@@ -192,6 +224,8 @@ class NotificationLog(db.Model):
     error_message = db.Column(db.Text)
     resource_type = db.Column(db.String(50))  # certificate, ca, crl, user
     resource_id = db.Column(db.String(100))  # refid or ID
+    # cert_expiring: which day threshold this alert covered (#323)
+    threshold_days = db.Column(db.Integer)
     retry_count = db.Column(db.Integer, default=0)
     sent_at = db.Column(db.DateTime, default=utc_now, index=True)
     
@@ -216,6 +250,23 @@ class NotificationLog(db.Model):
             "sent_at": utc_isoformat(self.sent_at),
         }
     
+    @classmethod
+    def was_sent_for_threshold(cls, notification_type: str, resource_type: str,
+                               resource_id: str, threshold_days: int, since=None) -> bool:
+        """True when an alert for this threshold already went out, optionally
+        only counting sends after ``since`` (a renewed certificate starts a
+        new validity period and must be alerted again)."""
+        query = cls.query.filter(
+            cls.type == notification_type,
+            cls.resource_type == resource_type,
+            cls.resource_id == resource_id,
+            cls.threshold_days == threshold_days,
+            cls.status == 'sent',
+        )
+        if since is not None:
+            query = query.filter(cls.sent_at >= since)
+        return query.first() is not None
+
     @classmethod
     def was_recently_sent(cls, notification_type: str, resource_type: str, resource_id: str, hours: int = 24) -> bool:
         """Check if this notification was already sent recently (for deduplication)"""

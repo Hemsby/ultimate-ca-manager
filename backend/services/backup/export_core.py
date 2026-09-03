@@ -461,6 +461,8 @@ class ExportCoreMixin:
                 'type': nc.type,
                 'enabled': nc.enabled,
                 'days_before': nc.days_before,
+                'alert_days': nc.alert_days,
+                'include_revoked': bool(nc.include_revoked),
                 'recipients': nc.recipients,
                 'subject_template': nc.subject_template,
                 'description': nc.description,
