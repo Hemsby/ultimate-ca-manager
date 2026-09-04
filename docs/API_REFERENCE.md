@@ -1198,9 +1198,19 @@ Content-Type: application/json
   "enabled": true,
   "issuing_ca_id": 2,
   "validity_days": 90,
-  "require_approval": false
+  "require_approval": false,
+  "profiles": {
+    "mtls": {
+      "description": "client certificate",
+      "validity_days": 30,
+      "digest": "sha256",
+      "template_id": 4
+    }
+  }
 }
 ```
+
+`profiles` holds the certificate profiles advertised in the ACME directory (draft-ietf-acme-profiles), keyed by the name a client sends in `profile`. `template_id` (optional) binds a certificate template: its key usage and extended key usage govern every certificate issued under the profile, while validity and digest stay those of the profile. CA templates and templates carrying OCSP signing, timestamping, any-purpose or smartcard logon EKUs are refused (400), and a bound template cannot be deleted until the profile is unbound. `GET` returns the profiles with `template_id` (null when unbound).
 
 ### Get Statistics
 ```http
