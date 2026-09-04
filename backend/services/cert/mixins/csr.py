@@ -19,12 +19,17 @@ logger = logging.getLogger(__name__)
 
 def _csr_key_type_label(public_key):
     """The CSR key in the form compute_template_overrides normalizes: an RSA
-    size ('2048') or an OpenSSL curve name ('secp256r1'); None if neither."""
-    from cryptography.hazmat.primitives.asymmetric import ec, rsa
+    size ('2048'), an OpenSSL curve name ('secp256r1') or an Edwards curve
+    ('ed25519', 'ed448'), the key types enrollment accepts; None otherwise."""
+    from cryptography.hazmat.primitives.asymmetric import ec, ed448, ed25519, rsa
     if isinstance(public_key, rsa.RSAPublicKey):
         return str(public_key.key_size)
     if isinstance(public_key, ec.EllipticCurvePublicKey):
         return public_key.curve.name
+    if isinstance(public_key, ed25519.Ed25519PublicKey):
+        return 'ed25519'
+    if isinstance(public_key, ed448.Ed448PublicKey):
+        return 'ed448'
     return None
 
 try:

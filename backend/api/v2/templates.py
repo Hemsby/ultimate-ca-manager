@@ -444,6 +444,16 @@ def delete_template(template_id):
         return error_response(
             f'Cannot delete: template is used by {policy_count} policy/policies', 409
         )
+    # ACME profiles keep only the numeric id; SQLite reuses it for the next
+    # template, so a binding left behind would silently apply a foreign
+    # template's KU/EKU. Unbind first (ACME settings), then delete.
+    from services.acme import profiles as acme_profiles
+    bound_profiles = acme_profiles.profiles_bound_to_template(template_id)
+    if bound_profiles:
+        return error_response(
+            'Cannot delete: template is bound to ACME profile(s) '
+            + ', '.join(bound_profiles), 409
+        )
 
     template_name = template.name
     
@@ -474,6 +484,7 @@ def delete_template(template_id):
 @bp.route('/api/v2/templates/bulk/delete', methods=['POST'])
 @require_auth(['delete:templates'])
 def bulk_delete_templates():
+    from services.acme import profiles as acme_profiles
     """Bulk delete templates"""
 
     data = request.get_json()
@@ -498,6 +509,13 @@ def bulk_delete_templates():
         policy_count = CertificatePolicy.query.filter_by(template_id=template_id).count()
         if policy_count > 0:
             results['failed'].append({'id': template_id, 'error': f'In use by {policy_count} policy/policies'})
+            continue
+        bound_profiles = acme_profiles.profiles_bound_to_template(template_id)
+        if bound_profiles:
+            results['failed'].append({
+                'id': template_id,
+                'error': 'Bound to ACME profile(s) ' + ', '.join(bound_profiles),
+            })
             continue
         template_name = template.name
         db.session.delete(template)

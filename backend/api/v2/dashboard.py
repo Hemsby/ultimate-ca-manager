@@ -24,6 +24,27 @@ bp = Blueprint('dashboard_v2', __name__)
 TSA_SIGNER_WARN_DAYS = 30
 
 
+def _scep_ca_usable(ca):
+    """Whether api/scep_protocol.get_scep_service would accept *ca*: it
+    refuses a CA without private key or certificate, an offline CA, and an
+    HSM-backed CA (SCEP needs RSA envelope decryption)."""
+    return bool(ca.has_private_key and ca.crt and not ca.offline and not ca.uses_hsm)
+
+
+def _scep_global_ca(value):
+    """The CA scep_ca_id points at (numeric id or refid), or None."""
+    if not value or value == '0':
+        return None
+    ca = None
+    try:
+        ca = db.session.get(CA, int(value))
+    except (ValueError, TypeError):
+        ca = None
+    if ca is None:
+        ca = CA.query.filter_by(refid=str(value)).first()
+    return ca
+
+
 def _status_rollback():
     """Reset the session after a failed status probe.
 
@@ -400,41 +421,40 @@ def get_system_status():
         logger.debug('ACME status check failed')
         status['acme'] = {'status': 'offline', 'message': 'Not configured'}
     
-    # SCEP: the same rules as api/scep_protocol.get_scep_service. The global
-    # toggle gates every endpoint, profiles included; an enabled SCEP with
-    # neither a global CA nor an enabled profile cannot serve an enrollment
-    # (#328: the tile used to be hardcoded online).
+    # SCEP: the same rules as api/scep_protocol.get_scep_service (#328: the
+    # tile used to be hardcoded online). The global toggle gates every
+    # endpoint, profiles included, and only the literal 'true' (or no row at
+    # all) enables it. A CA the endpoint would refuse (no key, no
+    # certificate, offline, HSM-backed) does not count as serving, nor does
+    # an enabled profile bound to such a CA.
     try:
+        from models.scep import ScepProfile
         scep_enabled = db.session.execute(
             text("SELECT value FROM system_config WHERE key = 'scep_enabled'")
         ).scalar()
-        if scep_enabled == 'false':
+        if scep_enabled is not None and scep_enabled != 'true':
             status['scep'] = {'status': 'offline', 'message': 'Disabled'}
         else:
             scep_ca_id = db.session.execute(
                 text("SELECT value FROM system_config WHERE key = 'scep_ca_id'")
             ).scalar()
-            global_ca = None
-            if scep_ca_id and scep_ca_id != '0':
-                try:
-                    global_ca = db.session.get(CA, int(scep_ca_id))
-                except (ValueError, TypeError):
-                    global_ca = None
-                if global_ca is None:
-                    global_ca = CA.query.filter_by(refid=str(scep_ca_id)).first()
-            profile_count = db.session.execute(
-                text("SELECT COUNT(*) FROM scep_profiles WHERE enabled = true")
-            ).scalar() or 0
-            if global_ca is not None and profile_count:
-                msg = f'Configured, {profile_count} profile(s)'
-            elif global_ca is not None:
-                msg = 'Configured'
-            elif profile_count:
-                msg = f'{profile_count} profile(s)'
-            else:
-                msg = None
-            if msg:
-                status['scep'] = {'status': 'online', 'message': msg}
+            global_ca = _scep_global_ca(scep_ca_id)
+            global_ok = global_ca is not None and _scep_ca_usable(global_ca)
+            enabled_profiles = ScepProfile.query.filter_by(enabled=True).all()
+            usable_profiles = 0
+            for profile in enabled_profiles:
+                profile_ca = CA.query.filter_by(refid=profile.ca_refid).first()
+                if profile_ca is not None and _scep_ca_usable(profile_ca):
+                    usable_profiles += 1
+            if global_ok and usable_profiles:
+                status['scep'] = {'status': 'online',
+                                  'message': f'Configured, {usable_profiles} profile(s)'}
+            elif global_ok:
+                status['scep'] = {'status': 'online', 'message': 'Configured'}
+            elif usable_profiles:
+                status['scep'] = {'status': 'online', 'message': f'{usable_profiles} profile(s)'}
+            elif global_ca is not None or enabled_profiles:
+                status['scep'] = {'status': 'warning', 'message': 'Enabled, CA not usable'}
             else:
                 status['scep'] = {'status': 'warning', 'message': 'Enabled, no CA assigned'}
     except Exception:

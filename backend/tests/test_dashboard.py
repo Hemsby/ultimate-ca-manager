@@ -585,7 +585,49 @@ class TestSystemStatusScep:
 
     def test_dangling_ca_id_is_a_warning(self, auth_client, scep_config):
         scep_config(scep_enabled='true', scep_ca_id='999999')
-        assert _status(auth_client, 'scep')[0] == 'warning'
+        assert _status(auth_client, 'scep') == ('warning', 'Enabled, no CA assigned')
+
+    def test_any_value_but_true_disables(self, auth_client, scep_config):
+        """The endpoint only honours the literal 'true'; so must the tile."""
+        scep_config(scep_enabled='0', scep_ca_id=None)
+        assert _status(auth_client, 'scep') == ('offline', 'Disabled')
+
+    def test_offline_ca_is_not_usable(self, app, auth_client, scep_config, create_ca):
+        from models import db, CA
+        ca = create_ca(cn='SCEP offline CA')
+        scep_config(scep_enabled='true', scep_ca_id=str(ca['id']))
+        with app.app_context():
+            row = db.session.get(CA, ca['id'])
+            row.offline = True
+            db.session.commit()
+        try:
+            assert _status(auth_client, 'scep') == ('warning', 'Enabled, CA not usable')
+        finally:
+            with app.app_context():
+                row = db.session.get(CA, ca['id'])
+                row.offline = False
+                db.session.commit()
+
+    def test_profile_on_offline_ca_is_not_counted(self, app, auth_client, scep_config, create_ca):
+        from models import db, CA
+        from models.scep import ScepProfile
+        ca = create_ca(cn='SCEP profile offline CA')
+        scep_config(scep_enabled='true', scep_ca_id=None)
+        with app.app_context():
+            ca_row = db.session.get(CA, ca['id'])
+            ca_row.offline = True
+            profile = ScepProfile(name='offline-profile', url_slug='offline-profile',
+                                  ca_refid=ca_row.refid, enabled=True)
+            db.session.add(profile)
+            db.session.commit()
+            pid = profile.id
+        try:
+            assert _status(auth_client, 'scep') == ('warning', 'Enabled, CA not usable')
+        finally:
+            with app.app_context():
+                db.session.delete(db.session.get(ScepProfile, pid))
+                db.session.get(CA, ca['id']).offline = False
+                db.session.commit()
 
     def test_enabled_profile_counts_as_configured(self, app, auth_client, scep_config, create_ca):
         from models import db, CA

@@ -197,6 +197,44 @@ class TestProfileConfig:
             _clear_profiles(app)
 
 
+class TestBoundTemplateCannotBeDeleted:
+    """A profile keeps only the numeric id; SQLite reuses it for the next
+    template, so a binding left behind would silently apply a foreign
+    template. Deletion is refused until the profile is unbound."""
+
+    def test_single_delete_refused_then_allowed(self, app, auth_client):
+        tpl_id = _mk_template(app, 'acme-bound-del', ['digitalSignature'], ['clientAuth'])
+        _install_profiles(app, {'mtls': {'validity_days': 30, 'template_id': tpl_id}})
+        try:
+            r = auth_client.delete(f'/api/v2/templates/{tpl_id}')
+            assert r.status_code == 409, r.data
+            assert 'ACME profile' in r.get_data(as_text=True) and 'mtls' in r.get_data(as_text=True)
+        finally:
+            _clear_profiles(app)
+        r = auth_client.delete(f'/api/v2/templates/{tpl_id}')
+        assert r.status_code == 204, r.data
+
+    def test_bulk_delete_reports_the_binding(self, app, auth_client):
+        tpl_id = _mk_template(app, 'acme-bound-bulk', ['digitalSignature'], ['clientAuth'])
+        _install_profiles(app, {'mtls': {'validity_days': 30, 'template_id': tpl_id}})
+        try:
+            r = auth_client.post('/api/v2/templates/bulk/delete',
+                                 data=json.dumps({'ids': [tpl_id]}), content_type=CONTENT_JSON)
+            assert r.status_code == 200, r.data
+            body = r.get_json()
+            failed = body.get('data', body).get('failed') or []
+            assert any(f['id'] == tpl_id and 'ACME profile' in f['error'] for f in failed), body
+            with app.app_context():
+                assert db.session.get(CertificateTemplate, tpl_id) is not None
+        finally:
+            _clear_profiles(app)
+            with app.app_context():
+                tpl = db.session.get(CertificateTemplate, tpl_id)
+                if tpl:
+                    db.session.delete(tpl)
+                    db.session.commit()
+
+
 class TestSignCsrWithTemplate:
     """TrustStoreService.sign_csr(template_ext=...)."""
 
@@ -247,11 +285,22 @@ class TestSignCsrWithTemplate:
         assert _eku(cert) == {ExtendedKeyUsageOID.CLIENT_AUTH}
 
     def test_template_with_only_refused_ekus_falls_back_to_type_default(self, app, create_ca):
+        """A policy entirely refused is still a policy: the CSR's own request
+        (clientAuth here) must not slip back in; the cert_type default does."""
         ca = create_ca(cn='ACME tpl CA 5')
         key = rsa.generate_private_key(65537, 2048, default_backend())
-        cert = self._sign(app, ca, _csr(key, 'only-ocsp.test'), {
-            'extended_key_usage': ['OCSPSigning']})
+        csr = _csr(key, 'only-ocsp.test', [
+            (x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH]), False)])
+        cert = self._sign(app, ca, csr, {'extended_key_usage': ['OCSPSigning']})
         assert _eku(cert) == {ExtendedKeyUsageOID.SERVER_AUTH}
+
+    def test_template_without_eku_policy_keeps_csr_ekus(self, app, create_ca):
+        ca = create_ca(cn='ACME tpl CA 5b')
+        key = rsa.generate_private_key(65537, 2048, default_backend())
+        csr = _csr(key, 'no-policy.test', [
+            (x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH]), False)])
+        cert = self._sign(app, ca, csr, {'key_usage': ['digitalSignature']})
+        assert _eku(cert) == {ExtendedKeyUsageOID.CLIENT_AUTH}
 
     def test_admin_path_keeps_sensitive_template_ekus(self, app, create_ca):
         ca = create_ca(cn='ACME tpl CA 6')
@@ -313,6 +362,30 @@ class TestCertificateServiceTemplate:
             cert = x509.load_pem_x509_certificate(base64.b64decode(signed.crt), default_backend())
         assert _eku(cert) == {ExtendedKeyUsageOID.CLIENT_AUTH}
         assert _ku(cert) == {'digital_signature'}
+
+    def test_ed25519_key_diverges_from_an_rsa_template(self, app, create_ca, mtls_template):
+        from cryptography.hazmat.primitives.asymmetric import ed25519
+        from services.cert_service import CertificateService
+        ca = create_ca(cn='ACME tpl ed25519 CA')
+        key = ed25519.Ed25519PrivateKey.generate()
+        csr = (x509.CertificateSigningRequestBuilder()
+               .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'ed.test')]))
+               .sign(key, None, default_backend()))
+        with app.app_context():
+            ca_row = db.session.get(CA, ca['id'])
+            row = Certificate(
+                refid='acme-tpl-ed25519', descr='ed.test', caref=ca_row.refid,
+                csr=base64.b64encode(csr.public_bytes(serialization.Encoding.PEM)).decode(),
+                cert_type='server_cert', source='acme', created_by='acme')
+            db.session.add(row)
+            db.session.flush()
+            signed = CertificateService.sign_csr(
+                cert_id=row.id, caref=ca_row.refid, cert_type='server_cert',
+                validity_days=30, digest='sha256', username='acme',
+                template_id=mtls_template)
+            db.session.commit()
+            assert 'key_type' in signed.template_overrides_list
+            assert 'validity_days' not in signed.template_overrides_list
 
     def test_deleted_template_does_not_break_signing(self, app, create_ca):
         from services.cert_service import CertificateService

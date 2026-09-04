@@ -133,6 +133,21 @@ def template_binding_error(profile_name, template_id):
     return None
 
 
+def profiles_bound_to_template(template_id):
+    """Names of the ACME profiles bound to *template_id* (empty if none).
+
+    Used by the template delete routes: a deleted template must not leave a
+    binding behind, since the profile keeps only the numeric id and SQLite
+    hands that id to the next template created, which would silently put a
+    foreign template's KU/EKU on every certificate issued under the profile.
+    """
+    return sorted(
+        name for name, spec in _raw_config().items()
+        if isinstance(spec, dict)
+        and _coerce_template_id(spec.get('template_id')) == template_id
+    )
+
+
 def _sanitize(name, spec):
     """Normalise one profile entry, or return None when unusable."""
     if not isinstance(name, str) or not name or len(name) > _MAX_NAME_LEN:

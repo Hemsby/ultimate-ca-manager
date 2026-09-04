@@ -624,7 +624,7 @@ def _normalize_key_type_label(value):
     if lowered in _EC_CURVE_LABELS:
         return f'EC-{_EC_CURVE_LABELS[lowered]}'
     uppered = v.upper()
-    if uppered.startswith(('RSA-', 'EC-')):
+    if uppered.startswith(('RSA-', 'EC-')) or uppered in ('ED25519', 'ED448'):
         return uppered
     return None
 

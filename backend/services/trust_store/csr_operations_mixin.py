@@ -201,7 +201,7 @@ _TEMPLATE_KU_FLAGS = {
 
 
 def _template_key_purposes(template_ext, allow_sensitive_ekus=False):
-    """(KeyUsage or None, [EKU OIDs]) a bound template imposes on a leaf.
+    """(KeyUsage or None, EKU OIDs or None) a bound template imposes on a leaf.
 
     Mirrors what the issue form (#226) and SCEP profiles (#228) do with a
     template's ``extensions_template``: a non-empty ``key_usage`` list
@@ -209,11 +209,15 @@ def _template_key_purposes(template_ext, allow_sensitive_ekus=False):
     replaces its EKUs. CA bits are never taken from a template. EKUs the
     protocol paths never hand out (OCSPSigning, timeStamping, anyEKU,
     Smartcard Logon) are dropped with a warning unless the caller is the
-    admin Sign-CSR path; a template left with no usable EKU imposes none,
-    so the cert_type default applies rather than an unrestricted leaf.
+    admin Sign-CSR path.
+
+    The EKU result distinguishes "the template has no EKU policy" (None:
+    the CSR's own EKUs apply, filtered as usual) from "it has one but every
+    entry was refused" ([]: the CSR's request must not slip back in; the
+    caller issues the cert_type default profile instead).
     """
     if not isinstance(template_ext, dict):
-        return None, []
+        return None, None
     from utils.eku_validation import normalize_extra_ekus, to_object_identifiers
 
     usage = None
@@ -232,9 +236,10 @@ def _template_key_purposes(template_ext, allow_sensitive_ekus=False):
         if any(flags.values()):
             usage = x509.KeyUsage(**flags)
 
-    ekus = []
+    ekus = None
     eku_names = template_ext.get('extended_key_usage')
     if isinstance(eku_names, list) and eku_names:
+        ekus = []
         oid_strs, err = normalize_extra_ekus(eku_names)
         if err:
             raise ValueError(f'Invalid template EKUs: {err}')
@@ -688,7 +693,7 @@ class CSROperationsMixin:
         # A template bound to the issuance context (an ACME profile): its
         # KU/EKU replace the CSR's, the operator bound that policy to the
         # endpoint explicitly (same rule as SCEP profiles, #228). Leaves only.
-        tpl_ku, tpl_ekus = (None, [])
+        tpl_ku, tpl_ekus = (None, None)
         if not issuing_ca and template_ext:
             tpl_ku, tpl_ekus = _template_key_purposes(template_ext, allow_sensitive_ekus)
 
@@ -723,7 +728,7 @@ class CSROperationsMixin:
                 )
                 continue
             if extension.oid == ExtensionOID.EXTENDED_KEY_USAGE and not issuing_ca:
-                if tpl_ekus:
+                if tpl_ekus is not None:
                     continue  # the bound template governs Extended Key Usage
                 safe_ekus, dropped_oids = _filter_csr_ekus(
                     extension.value, cert_type, allow_sensitive_ekus,
@@ -828,16 +833,25 @@ class CSROperationsMixin:
             existing_eku = None
             csr_has_eku = False
 
-        if tpl_ekus:
+        if tpl_ekus is not None:
             # The bound template governs Extended Key Usage (the CSR's own
             # was skipped in the copy loop); operator extra_ekus still merge
             # on top, as on the issue form. Renewal at par does not apply:
             # the template is the policy, prior EKUs outside it are not
-            # resurrected.
-            builder = builder.add_extension(
-                x509.ExtendedKeyUsage(merge_eku_lists(tpl_ekus, extra_oids)),
-                critical=False,
+            # resurrected. A template whose every EKU was refused imposes
+            # the cert_type default profile, never the CSR's request.
+            if not tpl_ekus:
+                logger.warning(
+                    "sign_csr: every template EKU was refused for certificate "
+                    "type %r; issuing its default profile instead", cert_type,
+                )
+            merged = merge_eku_lists(
+                tpl_ekus or _default_ekus_for_cert_type(cert_type), extra_oids
             )
+            if merged:
+                builder = builder.add_extension(
+                    x509.ExtendedKeyUsage(merged), critical=False
+                )
         elif not csr_has_eku:
             base_eku = _default_ekus_for_cert_type(cert_type)
             # Renewal at par applies to a CSR that requests nothing as well:
