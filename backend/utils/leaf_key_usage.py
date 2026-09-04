@@ -9,12 +9,12 @@ Ed25519/Ed448 to the signature bits.
 
 UCM's leaf profiles were written with RSA in mind and asserted
 keyEncipherment on every server-class certificate whatever the key, so an
-ECDSA leaf carried a bit it cannot honour, two certificates from one CA
-differed depending on which profile happened to apply on each issuance
-path, and certificate linters flagged the result. Every leaf issuance path
+ECDSA leaf carried a bit it cannot honour unless a template with the bit
+deselected was used, which an ACME order (no template to select) could not
+do, and certificate linters flagged the result. Every leaf issuance path
 (issue form, approval workflow, Sign CSR, ACME, EST, SCEP, WSTEP) now routes
 its KeyUsage through this module, so the same key gets the same bits
-whichever way it arrives.
+whichever way it arrives, with no configuration needed.
 """
 from typing import Iterable, Optional
 

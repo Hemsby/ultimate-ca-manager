@@ -1,10 +1,10 @@
 """Issue #327: keyUsage must follow the key algorithm on every leaf path.
 
 An ECDSA leaf issued over ACME carried ``digitalSignature, keyEncipherment``
-while the same CA's UI-issued ECDSA leaf could carry ``digitalSignature``
-only. keyEncipherment is RSA key transport and an EC key cannot honour it
-(RFC 5480 §3), so every leaf path now routes its KeyUsage through
-``utils.leaf_key_usage``:
+with no way to constrain it: an ACME order selects no template, and only a
+template with the bit deselected avoided it on the UI path. keyEncipherment
+is RSA key transport and an EC key cannot honour it (RFC 5480 §3), so every
+leaf path now routes its KeyUsage through ``utils.leaf_key_usage``:
 
 * the issue form (cert_create), the approval workflow (policies), the
   low-level create_certificate, sign_csr (ACME / EST / WSTEP / Sign CSR)
