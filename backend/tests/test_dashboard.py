@@ -504,3 +504,141 @@ class TestCertificateTrend:
         r = auth_client.get(f'{DASH}/certificate-trend?days=200')
         data = assert_success(r)
         assert len(data['trend']) <= 90
+
+
+# ============================================================
+# System status reflects the real SCEP / SMTP configuration (#328, #329)
+# ============================================================
+
+def _set_config(app, key, value):
+    from models import db, SystemConfig
+    with app.app_context():
+        row = SystemConfig.query.filter_by(key=key).first()
+        if value is None:
+            if row:
+                db.session.delete(row)
+        elif row:
+            row.value = value
+        else:
+            db.session.add(SystemConfig(key=key, value=value))
+        db.session.commit()
+
+
+@pytest.fixture
+def scep_config(app):
+    """Set SCEP config keys for a test, restore the previous values after."""
+    from models import SystemConfig
+    keys = ('scep_enabled', 'scep_ca_id')
+    with app.app_context():
+        saved = {k: (SystemConfig.query.filter_by(key=k).first() or SystemConfig()).value
+                 for k in keys}
+    def _set(**values):
+        for k, v in values.items():
+            _set_config(app, k, v)
+    yield _set
+    for k in keys:
+        _set_config(app, k, saved[k])
+
+
+@pytest.fixture
+def smtp_config(app):
+    """Replace the smtp_config row for a test, remove it after."""
+    from models import db
+    from models.email_notification import SMTPConfig
+    def _set(**fields):
+        with app.app_context():
+            SMTPConfig.query.delete()
+            if fields:
+                db.session.add(SMTPConfig(**fields))
+            db.session.commit()
+    yield _set
+    with app.app_context():
+        SMTPConfig.query.delete()
+        db.session.commit()
+
+
+def _status(auth_client, service):
+    data = assert_success(auth_client.get(f'{DASH}/system-status'))
+    return data[service]['status'], data[service]['message']
+
+
+class TestSystemStatusScep:
+    """#328: the SCEP tile used to be hardcoded 'online'."""
+
+    def test_disabled_reports_offline(self, auth_client, scep_config):
+        scep_config(scep_enabled='false', scep_ca_id=None)
+        assert _status(auth_client, 'scep') == ('offline', 'Disabled')
+
+    def test_enabled_without_ca_is_a_warning(self, auth_client, scep_config):
+        scep_config(scep_enabled='true', scep_ca_id=None)
+        assert _status(auth_client, 'scep') == ('warning', 'Enabled, no CA assigned')
+
+    def test_default_without_key_is_enabled(self, auth_client, scep_config):
+        """No scep_enabled row = enabled, like the protocol endpoint."""
+        scep_config(scep_enabled=None, scep_ca_id=None)
+        assert _status(auth_client, 'scep')[0] == 'warning'
+
+    def test_enabled_with_ca_is_online(self, auth_client, scep_config, create_ca):
+        ca = create_ca(cn='SCEP status CA')
+        scep_config(scep_enabled='true', scep_ca_id=str(ca['id']))
+        assert _status(auth_client, 'scep') == ('online', 'Configured')
+
+    def test_dangling_ca_id_is_a_warning(self, auth_client, scep_config):
+        scep_config(scep_enabled='true', scep_ca_id='999999')
+        assert _status(auth_client, 'scep')[0] == 'warning'
+
+    def test_enabled_profile_counts_as_configured(self, app, auth_client, scep_config, create_ca):
+        from models import db, CA
+        from models.scep import ScepProfile
+        ca = create_ca(cn='SCEP profile status CA')
+        scep_config(scep_enabled='true', scep_ca_id=None)
+        with app.app_context():
+            ca_row = db.session.get(CA, ca['id'])
+            profile = ScepProfile(name='status-profile', url_slug='status-profile',
+                                  ca_refid=ca_row.refid, enabled=True)
+            db.session.add(profile)
+            db.session.commit()
+            pid = profile.id
+        try:
+            assert _status(auth_client, 'scep') == ('online', '1 profile(s)')
+        finally:
+            with app.app_context():
+                db.session.delete(db.session.get(ScepProfile, pid))
+                db.session.commit()
+
+
+class TestSystemStatusSmtp:
+    """#329: the SMTP tile read system_config keys nothing writes."""
+
+    def test_no_row_is_not_configured(self, auth_client, smtp_config):
+        smtp_config()
+        assert _status(auth_client, 'smtp') == ('offline', 'Not configured')
+
+    def test_working_setup_is_online(self, auth_client, smtp_config):
+        smtp_config(smtp_host='mail.example.test', smtp_port=25, smtp_from='ucm@example.test',
+                    smtp_auth=False, enabled=True)
+        assert _status(auth_client, 'smtp') == ('online', 'Host: mail.example.test')
+
+    def test_host_set_but_disabled_is_a_warning(self, auth_client, smtp_config):
+        smtp_config(smtp_host='mail.example.test', smtp_port=25, smtp_from='ucm@example.test',
+                    enabled=False)
+        assert _status(auth_client, 'smtp') == ('warning', 'Configured but disabled')
+
+    def test_missing_from_address_is_a_warning(self, auth_client, smtp_config):
+        smtp_config(smtp_host='mail.example.test', smtp_port=25, smtp_from='', enabled=True)
+        assert _status(auth_client, 'smtp')[0] == 'warning'
+
+
+class TestForgotPasswordUsesSmtpConfig:
+    """#329: the same stale key made every reset request answer 503."""
+
+    def test_configured_smtp_lets_the_request_through(self, client, app, smtp_config):
+        smtp_config(smtp_host='mail.example.test', smtp_port=25, smtp_from='ucm@example.test',
+                    enabled=True)
+        r = client.post('/api/v2/auth/forgot-password', json={'email': 'nobody@example.com'})
+        assert r.status_code == 200
+
+    def test_unconfigured_smtp_still_refuses(self, client, smtp_config):
+        smtp_config()
+        r = client.post('/api/v2/auth/forgot-password', json={'email': 'nobody@example.com'})
+        assert r.status_code == 503

@@ -400,8 +400,47 @@ def get_system_status():
         logger.debug('ACME status check failed')
         status['acme'] = {'status': 'offline', 'message': 'Not configured'}
     
-    # SCEP is always available if UCM is running
-    status['scep'] = {'status': 'online', 'message': 'Endpoint available'}
+    # SCEP: the same rules as api/scep_protocol.get_scep_service. The global
+    # toggle gates every endpoint, profiles included; an enabled SCEP with
+    # neither a global CA nor an enabled profile cannot serve an enrollment
+    # (#328: the tile used to be hardcoded online).
+    try:
+        scep_enabled = db.session.execute(
+            text("SELECT value FROM system_config WHERE key = 'scep_enabled'")
+        ).scalar()
+        if scep_enabled == 'false':
+            status['scep'] = {'status': 'offline', 'message': 'Disabled'}
+        else:
+            scep_ca_id = db.session.execute(
+                text("SELECT value FROM system_config WHERE key = 'scep_ca_id'")
+            ).scalar()
+            global_ca = None
+            if scep_ca_id and scep_ca_id != '0':
+                try:
+                    global_ca = db.session.get(CA, int(scep_ca_id))
+                except (ValueError, TypeError):
+                    global_ca = None
+                if global_ca is None:
+                    global_ca = CA.query.filter_by(refid=str(scep_ca_id)).first()
+            profile_count = db.session.execute(
+                text("SELECT COUNT(*) FROM scep_profiles WHERE enabled = true")
+            ).scalar() or 0
+            if global_ca is not None and profile_count:
+                msg = f'Configured, {profile_count} profile(s)'
+            elif global_ca is not None:
+                msg = 'Configured'
+            elif profile_count:
+                msg = f'{profile_count} profile(s)'
+            else:
+                msg = None
+            if msg:
+                status['scep'] = {'status': 'online', 'message': msg}
+            else:
+                status['scep'] = {'status': 'warning', 'message': 'Enabled, no CA assigned'}
+    except Exception:
+        _status_rollback()
+        logger.debug('SCEP status check failed')
+        status['scep'] = {'status': 'offline', 'message': 'Status unknown'}
     
     # EST status - check if configured
     try:
@@ -471,23 +510,27 @@ def get_system_status():
         _status_rollback()
         status['auto_renewal'] = {'status': 'offline', 'message': 'Disabled'}
     
-    # SMTP / Email notifications status
+    # SMTP / Email notifications status. The configuration lives in the
+    # smtp_config row Settings > Email writes, not in system_config keys
+    # (#329: the tile read keys nothing ever wrote, so a working SMTP setup
+    # showed as "Not configured"). Same readiness rules as the sender:
+    # enabled, with host, port and From address.
     try:
-        smtp_host = db.session.execute(
-            text("SELECT value FROM system_config WHERE key = 'email_smtp_host'")
-        ).scalar()
-        smtp_enabled = db.session.execute(
-            text("SELECT value FROM system_config WHERE key = 'email_enabled'")
-        ).scalar()
-        if smtp_enabled == 'true' and smtp_host:
-            status['smtp'] = {'status': 'online', 'message': f'Host: {smtp_host}'}
-        elif smtp_host:
-            status['smtp'] = {'status': 'warning', 'message': 'Configured but disabled'}
-        else:
+        from models.email_notification import SMTPConfig
+        smtp = SMTPConfig.query.first()
+        smtp_host = (smtp.smtp_host or '').strip() if smtp else ''
+        if not smtp_host:
             status['smtp'] = {'status': 'offline', 'message': 'Not configured'}
+        elif not smtp.enabled:
+            status['smtp'] = {'status': 'warning', 'message': 'Configured but disabled'}
+        elif not (smtp.smtp_port and (smtp.smtp_from or '').strip()):
+            status['smtp'] = {'status': 'warning', 'message': 'Enabled, port or From address missing'}
+        else:
+            status['smtp'] = {'status': 'online', 'message': f'Host: {smtp_host}'}
     except Exception:
         _status_rollback()
-        status['smtp'] = {'status': 'offline', 'message': 'Not configured'}
+        logger.debug('SMTP status check failed')
+        status['smtp'] = {'status': 'offline', 'message': 'Status unknown'}
     
     # Webhooks status
     try:

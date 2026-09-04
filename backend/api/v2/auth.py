@@ -243,14 +243,22 @@ def verify():
 # ============================================================================
 
 def _is_email_configured():
-    """Check if email/SMTP is configured"""
-    from models import SystemConfig
+    """Whether a password-reset mail can actually go out.
+
+    Reads the smtp_config row Settings > Email writes, with the sender's own
+    readiness rule (enabled, host, port, From): the old check looked at a
+    system_config 'smtp_host' key nothing wrote, so the reset was refused on
+    every install (#329).
+    """
+    from models.email_notification import SMTPConfig
     try:
-        smtp_config = SystemConfig.query.filter_by(key='smtp_host').first()
-        smtp_host = smtp_config.value if smtp_config else ''
-        return bool(smtp_host and smtp_host.strip())
+        smtp = SMTPConfig.query.first()
+        return bool(
+            smtp and smtp.enabled and (smtp.smtp_host or '').strip()
+            and smtp.smtp_port and (smtp.smtp_from or '').strip()
+        )
     except Exception as e:
-        logger.warning(f"Failed to read smtp_host SystemConfig, treating email as not configured: {e}")
+        logger.warning(f"Failed to read SMTP configuration, treating email as not configured: {e}")
         return False
 
 
