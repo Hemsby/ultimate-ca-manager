@@ -11,7 +11,7 @@ import {
   LoadingSpinner, StatusIndicator,
   CompactStats, CompactHeader
 } from '../components'
-import { acmeService, casService, certificatesService } from '../services'
+import { acmeService, casService, certificatesService, templatesService } from '../services'
 import { useNotification } from '../contexts'
 import { usePermission } from '../hooks'
 import { formatDate, downloadBlob, publicBaseUrl } from '../lib/utils'
@@ -107,6 +107,15 @@ export default function ACMEPage() {
 
   useEffect(() => {
     loadData()
+  }, [])
+
+  // Templates a certificate profile may bind (CA templates excluded, as for
+  // SCEP profiles); loaded once, independently of the ACME data refreshes.
+  const [templates, setTemplates] = useState([])
+  useEffect(() => {
+    templatesService.getAll()
+      .then(res => setTemplates((res.data || []).filter(tpl => tpl.template_type !== 'ca')))
+      .catch(() => setTemplates([]))
   }, [])
 
   // Poll status for an order running the background auto-poll flow (DNS-01 with
@@ -1205,6 +1214,7 @@ export default function ACMEPage() {
           <ConfigTab
             acmeSettings={acmeSettings}
             cas={cas}
+            templates={templates}
             updateSetting={updateSetting}
             onSaveConfig={handleSaveConfig}
             saving={saving}

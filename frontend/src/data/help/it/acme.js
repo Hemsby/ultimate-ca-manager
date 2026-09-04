@@ -37,6 +37,7 @@ export default {
           { label: 'E-mail dell\'account (v2.218)', text: 'L\'e-mail di contatto di un account locale può essere modificata dal suo pannello di dettaglio. Secondo la RFC 8555 il contatto appartiene al client ACME, quindi il suo prossimo aggiornamento dell\'account può sovrascrivere il valore' },
           { label: 'Cronologia', text: 'Traccia tutti gli ordini di emissione certificati ACME' },
                   { label: 'Ordini locali (v2.217)', text: 'La scheda Local orders elenca gli ordini del server integrato con filtro di stato, eliminazione singola e pulizia; gli ordini scaduti non emessi vengono eliminati automaticamente ogni 6 ore, e un digest di firma predefinito si applica agli ordini senza profilo. Dalla v2.218 la pulizia rimuove anche le sfide sorelle rimaste in attesa delle autorizzazioni già convalidate' },
+                  { label: 'Profili e modelli (v2.221)', text: 'I profili di certificato (draft-ietf-acme-profiles) sono pubblicati nella directory e scelti dal client per ogni ordine. Ogni profilo fissa validità e digest e può associare un modello di certificato, i cui KU/EKU governano quindi il certificato emesso' },
         ]
       },
       {

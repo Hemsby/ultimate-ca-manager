@@ -16,6 +16,17 @@ from utils.file_naming import cert_cert_path, cert_key_path, cert_csr_path, ca_c
 
 logger = logging.getLogger(__name__)
 
+
+def _csr_key_type_label(public_key):
+    """The CSR key in the form compute_template_overrides normalizes: an RSA
+    size ('2048') or an OpenSSL curve name ('secp256r1'); None if neither."""
+    from cryptography.hazmat.primitives.asymmetric import ec, rsa
+    if isinstance(public_key, rsa.RSAPublicKey):
+        return str(public_key.key_size)
+    if isinstance(public_key, ec.EllipticCurvePublicKey):
+        return public_key.curve.name
+    return None
+
 try:
     from security.encryption import decrypt_private_key, encrypt_private_key
     from utils.key_codec import load_pem_bytes
@@ -147,6 +158,7 @@ class CSRMixin:
         username: str = 'system',
         extra_ekus: list = None,
         allow_sensitive_ekus: bool = False,
+        template_id: int = None,
     ) -> Certificate:
         """
         Sign a CSR with a CA
@@ -159,6 +171,9 @@ class CSRMixin:
             digest: Hash algorithm
             username: User signing
             extra_ekus: Additional EKU OIDs
+            template_id: Certificate template bound to the issuance context
+                (an ACME profile): its KU/EKU govern the leaf and the
+                certificate records the link, as on the issue form
 
         Returns:
             Updated Certificate with signed cert (or new CA record for intermediate_ca)
@@ -220,6 +235,24 @@ class CSRMixin:
         aia_ca_issuers_urls = [url.replace('{ca_refid}', ca.url_ref) for url in ca.get_aia_urls()] if ca.aia_ca_issuers_enabled else None
         cps_uri = ca.cps_uri if ca.cps_enabled and ca.cps_uri else None
         cps_oid = ca.cps_oid if cps_uri else None
+
+        # A template bound to the issuance context (ACME profile, #327
+        # follow-up). A template deleted after being bound must not break
+        # issuance: it is simply not applied, like a removed ACME profile.
+        template = None
+        template_ext = None
+        if template_id:
+            from models.certificate_template import CertificateTemplate
+            from services.template_service import template_extensions
+            template = db.session.get(CertificateTemplate, template_id)
+            if template is None:
+                logger.warning(
+                    "sign_csr: template %s no longer exists, signing without it",
+                    template_id,
+                )
+            else:
+                template_ext = template_extensions(template)
+
         cert_pem = TrustStoreService.sign_csr(
             csr_pem=csr_pem,
             ca_cert=ca_cert,
@@ -235,6 +268,7 @@ class CSRMixin:
             ocsp_must_staple=getattr(certificate, 'ocsp_must_staple', False) or False,
             extra_ekus=extra_ekus,
             allow_sensitive_ekus=allow_sensitive_ekus,
+            template_ext=template_ext,
         )
 
         # Parse signed certificate
@@ -279,6 +313,20 @@ class CSRMixin:
         certificate.serial_number = str(cert.serial_number)
         certificate.valid_from = cert.not_valid_before
         certificate.valid_to = cert.not_valid_after
+
+        # Keep the template link and record the divergences from its
+        # defaults (#258), as the issue form and approval paths do. The key
+        # is the requester's own, so it diverges whenever it is not the
+        # template's declared type.
+        if template is not None:
+            from services.template_service import compute_template_overrides
+            certificate.template_id = template.id
+            certificate.template_overrides = compute_template_overrides(
+                template,
+                key_type=_csr_key_type_label(csr_obj.public_key()),
+                validity_days=validity_days,
+                digest=digest,
+            )
 
         # Store SANs
         if san_dns_list:

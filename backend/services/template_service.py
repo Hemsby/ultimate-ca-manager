@@ -578,6 +578,22 @@ class TemplateService:
 # template's extensions are imposed, not overridable (issue #226).
 _TEMPLATE_OVERRIDABLE_FIELDS = ('key_type', 'validity_days', 'digest')
 
+
+def template_extensions(template):
+    """A template's ``extensions_template`` as a dict ({} when unset or unusable).
+
+    Tolerates the double-encoded JSON older import payloads stored, like the
+    issuance paths that parse the column inline.
+    """
+    raw = getattr(template, 'extensions_template', None)
+    try:
+        for _ in range(2):
+            if isinstance(raw, str):
+                raw = json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
 _EC_CURVE_LABELS = {
     'prime256v1': 'P256',
     'secp256r1': 'P256',

@@ -43,6 +43,7 @@ class TestAcmeProfilesSettings:
         body = auth_client.get(self.URL).get_json()['data']
         assert body['profiles']['short'] == {
             'description': '7-day', 'validity_days': 7, 'digest': 'sha384',
+            'template_id': None,
         }
 
     def test_defaults_are_filled_in_on_read(self, auth_client):

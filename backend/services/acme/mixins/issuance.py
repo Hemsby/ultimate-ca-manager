@@ -566,7 +566,9 @@ class IssuanceMixin:
             
             # Issuance parameters come from the order's selected ACME profile
             # (draft-ietf-acme-profiles); with no profile these are UCM's
-            # historical ACME defaults (90 days, sha256).
+            # historical ACME defaults (90 days, sha256, no template). A
+            # profile may bind a certificate template whose KU/EKU then
+            # govern the leaf (#327 follow-up).
             from services.acme import profiles as acme_profiles
             params = acme_profiles.issuance_params(getattr(order, 'profile', None))
 
@@ -576,7 +578,8 @@ class IssuanceMixin:
                 cert_type='server_cert',
                 validity_days=params['validity_days'],
                 digest=params['digest'],
-                username='acme'
+                username='acme',
+                template_id=params.get('template_id'),
             )
             
             return True, signed_cert.id, None

@@ -581,6 +581,7 @@ export const helpContent = {
           { label: 'Account e-mail (v2.218)', text: 'The contact e-mail of a local account can be edited from its detail panel. Per RFC 8555 the contact belongs to the ACME client, so its next account update may overwrite the value' },
           { label: 'History', text: 'Track all ACME certificate issuance orders' },
                   { label: 'Local orders (v2.217)', text: 'The Local orders tab lists the built-in server orders with a status filter, per-order delete and a purge action; expired non-issued orders are purged automatically every 6 hours, and a default signing digest applies to orders without a profile. Since v2.218 the purge also removes leftover pending sibling challenges of already-validated authorizations' },
+                  { label: 'Profiles and templates (v2.221)', text: 'Certificate profiles (draft-ietf-acme-profiles) are advertised in the directory and selected by the client per order. Each profile sets validity and digest and can bind a certificate template, whose key usage and extended key usage then govern the issued certificate' },
         ]
       },
       {

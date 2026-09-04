@@ -62,7 +62,7 @@ export function TosPreview({ body }) {
   )
 }
 
-export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConfig, saving, revokeSuperseded, onRevokeSupersededChange, onToggleRevokeOnRenewal, canWrite }) {
+export default function ConfigTab({ acmeSettings, cas, templates = [], updateSetting, onSaveConfig, saving, revokeSuperseded, onRevokeSupersededChange, onToggleRevokeOnRenewal, canWrite }) {
   const { t } = useTranslation()
   const [editOpen, setEditOpen] = useState(false)
   const [editTitle, setEditTitle] = useState(acmeSettings.terms_of_service?.title || '')
@@ -126,7 +126,9 @@ export default function ConfigTab({ acmeSettings, cas, updateSetting, onSaveConf
             value={acmeSettings.profiles || {}}
             onChange={(profiles) => updateSetting('profiles', profiles)}
             disabled={!canWrite}
+            templates={templates}
           />
+          <p className="text-xs text-text-tertiary">{t('acme.profileTemplateHelp')}</p>
           <Select
             label={t('acme.defaultDigest')}
             value={acmeSettings.default_digest || 'sha256'}

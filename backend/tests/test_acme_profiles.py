@@ -89,7 +89,7 @@ class TestProfileConfiguration:
         """A profile removed after the order must not break finalize."""
         with app.app_context():
             params = acme_profiles.issuance_params('gone')
-            assert params == {'validity_days': 90, 'digest': 'sha256'}
+            assert params == {'validity_days': 90, 'digest': 'sha256', 'template_id': None}
             assert acme_profiles.issuance_params(None)['validity_days'] == 90
 
 
@@ -137,7 +137,7 @@ class TestNewOrderProfileSelection:
             assert order.profile == 'shortlived'
             # The profile drives the issuance parameters used at finalize.
             params = acme_profiles.issuance_params(order.profile)
-            assert params == {'validity_days': 7, 'digest': 'sha384'}
+            assert params == {'validity_days': 7, 'digest': 'sha384', 'template_id': None}
 
     def test_unknown_profile_is_refused(self, client, acme_account, configured_profiles):
         response = self._order(client, acme_account, {

@@ -9,6 +9,9 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+### Added
+- ACME certificate profiles can bind a certificate template. An ACME order carries no template, so the built-in server could only ever issue the server certificate defaults; a profile (draft-ietf-acme-profiles) now has a Template field, and the bound template's key usage and extended key usage govern every certificate issued under that profile, on top of the key-algorithm rule. Validity and digest stay those of the profile. The issued certificate keeps the template link and records its divergences from the template defaults, as certificates from the issue form do. CA templates and templates carrying OCSP signing, timestamping, any-purpose or smartcard logon EKUs are refused at save time with a 400; a template deleted after being bound is ignored at issuance rather than failing the order. `POST`/`PATCH /api/v2/acme/settings` accept `template_id` per profile and `GET` returns it (#327)
+
 ### Fixed
 - Certificate key usage now follows the key algorithm on every issuance path. An ECDSA leaf carried `keyEncipherment`, which is RSA key transport and cannot be performed with an EC key (RFC 5480 §3), unless it was issued from a template with the bit deselected; an ACME order has no template to select, so an ACME client got the bit regardless of key algorithm, and certificate linters flagged the result. A non-RSA key now never receives `keyEncipherment` or `dataEncipherment`, whether the built-in profile, the template or the CSR asked for them: a TLS server or client certificate on an EC key gets `digitalSignature` only, on the issue form, the approval workflow, Sign CSR, ACME, EST, SCEP and WSTEP alike, and an S/MIME certificate on an EC key keeps its encryption intent as `keyAgreement`, the bit ECDH-based S/MIME clients require on an EC recipient certificate. RSA certificates are unchanged (#327, reported by @JoseGoncalves)
 

@@ -37,6 +37,7 @@ export default {
           { label: 'Correo de la cuenta (v2.218)', text: 'El correo de contacto de una cuenta local puede editarse desde su panel de detalle. Según la RFC 8555 el contacto pertenece al cliente ACME, por lo que su próxima actualización de cuenta puede sobrescribir el valor' },
           { label: 'Historial', text: 'Rastrea todas las órdenes de emisión de certificados ACME' },
                   { label: 'Pedidos locales (v2.217)', text: 'La pestaña Local orders lista los pedidos del servidor integrado con filtro de estado, borrado unitario y purga; los pedidos caducados no emitidos se purgan automáticamente cada 6 horas, y un digest de firma por defecto se aplica a los pedidos sin perfil. Desde la v2.218 la purga elimina también los desafíos hermanos pendientes que quedan en autorizaciones ya validadas' },
+                  { label: 'Perfiles y plantillas (v2.221)', text: 'Los perfiles de certificado (draft-ietf-acme-profiles) se publican en el directorio y el cliente elige uno por pedido. Cada perfil fija validez y digest y puede vincular una plantilla de certificado, cuyos KU/EKU gobiernan entonces el certificado emitido' },
         ]
       },
       {
