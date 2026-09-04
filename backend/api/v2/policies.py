@@ -15,6 +15,7 @@ import logging
 import base64
 import uuid
 from utils.datetime_utils import utc_now
+from utils.leaf_key_usage import key_usage_for_key
 from services.audit_service import AuditService
 from security.encryption import encrypt_private_key
 from services.template_service import compute_template_overrides
@@ -247,7 +248,12 @@ def _issue_approved_certificate(approval):
             raise ValueError(f'Invalid template EKUs: {tpl_err}')
         base_ekus = to_object_identifiers(tpl_oid_strs)
 
-    builder = builder.add_extension(x509.KeyUsage(**ku_flags), critical=True)
+    # Same key-type clamp as the direct issue path (#327): no keyEncipherment
+    # on an EC key, keyAgreement instead for an S/MIME one.
+    builder = builder.add_extension(
+        key_usage_for_key(new_key.public_key(), x509.KeyUsage(**ku_flags), base_ekus),
+        critical=True,
+    )
     if base_ekus:
         builder = builder.add_extension(x509.ExtendedKeyUsage(base_ekus), critical=False)
     

@@ -10,6 +10,7 @@ from auth.unified import require_auth
 from utils.response import success_response, error_response, created_response
 from utils.dn_validation import validate_dn_field
 from utils.eku_validation import normalize_extra_ekus, to_object_identifiers, merge_eku_lists
+from utils.leaf_key_usage import key_usage_for_key
 from models import Certificate, CertificateTemplate, CA, db
 from services.trust_store.constants import HASH_ALGORITHMS
 from services.trust_store.constraints_mixin import validate_name_constraints
@@ -316,7 +317,6 @@ def create_certificate():
                     ku_flags[flag] = True
             if not any(ku_flags.values()):
                 ku_flags = profile['ku']
-        builder = builder.add_extension(x509.KeyUsage(**ku_flags), critical=True)
 
         base_ekus = profile['eku']
         tpl_eku = tpl_ext.get('extended_key_usage')
@@ -332,6 +332,13 @@ def create_certificate():
         if extra_err:
             return error_response(f'Invalid extra_ekus: {extra_err}', 400)
         eku_oids = merge_eku_lists(base_ekus, to_object_identifiers(extra_oid_strs))
+        # The profile / template KU is written for RSA; bits the generated
+        # key cannot honour (keyEncipherment on EC) are cleared (#327). Added
+        # after the EKU is known because an S/MIME EC leaf keeps keyAgreement.
+        builder = builder.add_extension(
+            key_usage_for_key(new_key.public_key(), x509.KeyUsage(**ku_flags), eku_oids),
+            critical=True,
+        )
         # EKU is SEQUENCE SIZE (1..MAX) — omit the extension entirely when empty
         if eku_oids:
             builder = builder.add_extension(x509.ExtendedKeyUsage(eku_oids), critical=False)

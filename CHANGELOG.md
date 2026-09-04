@@ -7,6 +7,11 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- Certificate key usage now follows the key algorithm on every issuance path. An ECDSA leaf issued over ACME, EST, SCEP, WSTEP, Sign CSR, the issue form or the approval workflow carried `keyEncipherment`, which is RSA key transport and cannot be performed with an EC key (RFC 5480 §3), so two certificates from the same CA could differ in key usage depending on the path and certificate linters flagged the ECDSA ones. A non-RSA key now never receives `keyEncipherment` or `dataEncipherment`, whether the profile, the template or the CSR asked for them: a TLS server or client certificate on an EC key gets `digitalSignature` only, and an S/MIME certificate on an EC key keeps its encryption intent as `keyAgreement`, the bit ECDH-based S/MIME clients require on an EC recipient certificate. RSA certificates are unchanged (#327, reported by @JoseGoncalves)
+
 ## [2.220] - 2026-09-04
 
 ### Added

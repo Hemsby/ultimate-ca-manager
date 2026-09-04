@@ -13,6 +13,7 @@ from cryptography.hazmat.backends import default_backend
 
 from utils.datetime_utils import utc_now, cert_not_before
 from utils.x509_aki import authority_key_identifier_from_issuer
+from utils.leaf_key_usage import constrain_builder_key_usage
 from .constants import HASH_ALGORITHMS
 from .key_operations_mixin import KeyOperationsMixin
 from .constraints_mixin import ConstraintsMixin
@@ -794,6 +795,14 @@ class CSROperationsMixin:
                 x509.ExtendedKeyUsage(merged), critical=existing_eku.critical
             )
             builder = new_builder
+
+        if not issuing_ca:
+            # RFC 5480 §3: a non-RSA key cannot honour keyEncipherment /
+            # dataEncipherment, whether the CSR asked for them or the
+            # cert_type default above did (#327). Applied once the EKU is
+            # settled, because an S/MIME leaf on an EC key keeps its
+            # encryption intent as keyAgreement instead of losing it.
+            builder = constrain_builder_key_usage(builder)
 
         # CRL Distribution Points
         all_cdp = cdp_urls or ([cdp_url] if cdp_url else [])

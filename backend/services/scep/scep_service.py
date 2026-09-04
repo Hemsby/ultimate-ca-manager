@@ -24,6 +24,7 @@ from config.settings import Config
 from models import CA, Certificate, SCEPRequest, db
 from services.crl_service import CRLService
 from utils.dn_parse import subject_common_name
+from utils.leaf_key_usage import constrain_builder_key_usage
 from utils.key_codec import load_pem_bytes
 from utils.datetime_utils import utc_now
 from utils.file_naming import cert_cert_path
@@ -1283,6 +1284,11 @@ class SCEPService:
                 # below or not at all.
         except x509.ExtensionNotFound:
             pass
+
+        # Whether the KeyUsage came from the template or the CSR, bits the
+        # enrollee's key type cannot honour (keyEncipherment on an EC key)
+        # are cleared here, as on every other leaf path (#327).
+        builder = constrain_builder_key_usage(builder)
 
         builder = builder.add_extension(
             x509.BasicConstraints(ca=False, path_length=None), critical=True

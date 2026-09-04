@@ -12,6 +12,7 @@ from cryptography.hazmat.backends import default_backend
 
 from utils.datetime_utils import utc_now, cert_not_before
 from utils.x509_aki import authority_key_identifier_from_issuer
+from utils.leaf_key_usage import key_usage_for_key
 from .constants import HASH_ALGORITHMS
 from .constraints_mixin import ConstraintsMixin
 from .key_operations_mixin import KeyOperationsMixin
@@ -67,83 +68,51 @@ class CertificateCreationMixin:
             critical=True,
         )
 
-        # Key Usage based on cert type
+        # Key Usage / Extended Key Usage based on cert type
+        _leaf_bits = dict(
+            key_cert_sign=False, crl_sign=False,
+            encipher_only=False, decipher_only=False,
+        )
         if cert_type == 'ca_cert':
-            builder = builder.add_extension(
-                x509.KeyUsage(
-                    digital_signature=True, key_encipherment=False,
-                    content_commitment=False, data_encipherment=False,
-                    key_agreement=False, key_cert_sign=True, crl_sign=True,
-                    encipher_only=False, decipher_only=False,
-                ),
-                critical=True,
+            usage = x509.KeyUsage(
+                digital_signature=True, key_encipherment=False,
+                content_commitment=False, data_encipherment=False,
+                key_agreement=False, key_cert_sign=True, crl_sign=True,
+                encipher_only=False, decipher_only=False,
             )
+            ekus = []
         elif cert_type == 'usr_cert' or cert_type == 'client_cert':
-            builder = builder.add_extension(
-                x509.KeyUsage(
-                    digital_signature=True, key_encipherment=True,
-                    content_commitment=True, data_encipherment=False,
-                    key_agreement=False, key_cert_sign=False, crl_sign=False,
-                    encipher_only=False, decipher_only=False,
-                ),
-                critical=True,
+            usage = x509.KeyUsage(
+                digital_signature=True, key_encipherment=True,
+                content_commitment=True, data_encipherment=False,
+                key_agreement=False, **_leaf_bits,
             )
-            builder = builder.add_extension(
-                x509.ExtendedKeyUsage([
-                    x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH,
-                ]),
-                critical=False,
-            )
-        elif cert_type == 'server_cert':
-            builder = builder.add_extension(
-                x509.KeyUsage(
-                    digital_signature=True, key_encipherment=True,
-                    content_commitment=False, data_encipherment=False,
-                    key_agreement=False, key_cert_sign=False, crl_sign=False,
-                    encipher_only=False, decipher_only=False,
-                ),
-                critical=True,
-            )
-            builder = builder.add_extension(
-                x509.ExtendedKeyUsage([
-                    x509.oid.ExtendedKeyUsageOID.SERVER_AUTH,
-                ]),
-                critical=False,
-            )
+            ekus = [x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH]
         elif cert_type == 'combined_server_client' or cert_type == 'combined_cert':
-            builder = builder.add_extension(
-                x509.KeyUsage(
-                    digital_signature=True, key_encipherment=True,
-                    content_commitment=True, data_encipherment=False,
-                    key_agreement=False, key_cert_sign=False, crl_sign=False,
-                    encipher_only=False, decipher_only=False,
-                ),
-                critical=True,
+            usage = x509.KeyUsage(
+                digital_signature=True, key_encipherment=True,
+                content_commitment=True, data_encipherment=False,
+                key_agreement=False, **_leaf_bits,
             )
-            builder = builder.add_extension(
-                x509.ExtendedKeyUsage([
-                    x509.oid.ExtendedKeyUsageOID.SERVER_AUTH,
-                    x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH,
-                ]),
-                critical=False,
-            )
+            ekus = [
+                x509.oid.ExtendedKeyUsageOID.SERVER_AUTH,
+                x509.oid.ExtendedKeyUsageOID.CLIENT_AUTH,
+            ]
         else:
             cert_type = 'server_cert'
-            builder = builder.add_extension(
-                x509.KeyUsage(
-                    digital_signature=True, key_encipherment=True,
-                    content_commitment=False, data_encipherment=False,
-                    key_agreement=False, key_cert_sign=False, crl_sign=False,
-                    encipher_only=False, decipher_only=False,
-                ),
-                critical=True,
+            usage = x509.KeyUsage(
+                digital_signature=True, key_encipherment=True,
+                content_commitment=False, data_encipherment=False,
+                key_agreement=False, **_leaf_bits,
             )
-            builder = builder.add_extension(
-                x509.ExtendedKeyUsage([
-                    x509.oid.ExtendedKeyUsageOID.SERVER_AUTH,
-                ]),
-                critical=False,
-            )
+            ekus = [x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]
+        if not is_ca:
+            # Profiles above are RSA-shaped; clear what the generated key
+            # cannot honour (keyEncipherment on EC), as on every leaf path (#327)
+            usage = key_usage_for_key(private_key.public_key(), usage, ekus)
+        builder = builder.add_extension(usage, critical=True)
+        if ekus:
+            builder = builder.add_extension(x509.ExtendedKeyUsage(ekus), critical=False)
 
         # Subject Alternative Names
         san_list = []
