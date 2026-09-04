@@ -90,6 +90,12 @@ class RestoreCoreMixin:
         self._restore_groups(backup_data, results)
         self._restore_custom_roles(backup_data, results)
         self._restore_templates(backup_data, results)
+        # Settings came back before the templates: point the ACME profile
+        # template bindings at the templates of the exported names, since
+        # the numeric ids in the backup belong to the source instance.
+        db.session.flush()
+        from services.acme import profiles as acme_profiles
+        results['acme_profile_bindings'] = acme_profiles.remap_template_bindings()
         self._restore_truststore(backup_data, results)
 
         # Auth restores

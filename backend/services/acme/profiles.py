@@ -148,6 +148,88 @@ def profiles_bound_to_template(template_id):
     )
 
 
+def export_config_json():
+    """The stored profile map as JSON for a backup, template bindings by name.
+
+    A backup carries templates without their numeric ids, and restores them
+    by name, so the id a profile stores means nothing on another instance
+    (or on this one after the templates table was rebuilt). Each bound
+    profile is exported with the template's current name alongside the id;
+    ``remap_template_bindings`` resolves it back after the templates are
+    restored. Returns None when nothing is stored.
+    """
+    raw = _raw_config()
+    if not raw:
+        return None
+    from models import db
+    from models.certificate_template import CertificateTemplate
+    exported = {}
+    for name, spec in raw.items():
+        if isinstance(spec, dict):
+            spec = dict(spec)
+            template_id = _coerce_template_id(spec.get('template_id'))
+            template = db.session.get(CertificateTemplate, template_id) if template_id else None
+            if template is not None:
+                spec['template_name'] = template.name
+            else:
+                spec.pop('template_name', None)
+        exported[name] = spec
+    return json.dumps(exported)
+
+
+def remap_template_bindings():
+    """Re-resolve profile template bindings after a backup restore.
+
+    Runs once the templates are back: a binding that carries a
+    ``template_name`` is pointed at the template of that name (the portable
+    key, since templates restore by name); a name that no longer matches
+    any template, or an id without a name that resolves to nothing, is
+    cleared rather than left to designate whatever template now holds that
+    id. Returns the number of profiles whose binding changed.
+    """
+    from models import db, SystemConfig
+    from models.certificate_template import CertificateTemplate
+    row = SystemConfig.query.filter_by(key=CONFIG_KEY).first()
+    if not row or not row.value:
+        return 0
+    try:
+        raw = json.loads(row.value)
+    except (TypeError, ValueError):
+        return 0
+    if not isinstance(raw, dict):
+        return 0
+    changed = 0
+    for name, spec in raw.items():
+        if not isinstance(spec, dict):
+            continue
+        template_id = _coerce_template_id(spec.get('template_id'))
+        template_name = spec.get('template_name')
+        if not template_id and not template_name:
+            continue
+        template = None
+        if isinstance(template_name, str) and template_name:
+            template = CertificateTemplate.query.filter_by(name=template_name).first()
+            if template is None:
+                logger.warning(
+                    "ACME profile %r: template %r not found after restore, "
+                    "binding cleared", name, template_name,
+                )
+        elif template_id:
+            template = db.session.get(CertificateTemplate, template_id)
+            if template is None:
+                logger.warning(
+                    "ACME profile %r: template id %s not found after restore, "
+                    "binding cleared", name, template_id,
+                )
+        new_id = template.id if template is not None else None
+        if new_id != template_id:
+            changed += 1
+        spec['template_id'] = new_id
+        spec.pop('template_name', None)
+    row.value = json.dumps(raw)
+    return changed
+
+
 def _sanitize(name, spec):
     """Normalise one profile entry, or return None when unusable."""
     if not isinstance(name, str) or not name or len(name) > _MAX_NAME_LEN:

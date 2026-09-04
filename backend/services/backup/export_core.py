@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 from models import db, SystemConfig, User, CA, Certificate
+from services.acme import profiles as acme_profiles
 from models.acme_models import AcmeAccount, AcmeEabCredential
 from models.webauthn import WebAuthnCredential
 from models.group import Group
@@ -59,6 +60,12 @@ class ExportCoreMixin:
                 except Exception:
                     import base64
                     val = base64.b64encode(val).decode('utf-8')
+
+            # ACME profiles bind templates by numeric id, which the backup
+            # cannot carry (templates export and restore by name): export
+            # the binding with the template name, remapped after restore.
+            if sc.key == acme_profiles.CONFIG_KEY:
+                val = acme_profiles.export_config_json() or val
 
             config[sc.key] = val
 

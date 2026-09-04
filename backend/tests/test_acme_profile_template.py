@@ -197,6 +197,104 @@ class TestProfileConfig:
             _clear_profiles(app)
 
 
+class TestBackupPortability:
+    """A backup carries the binding by template name, not by numeric id."""
+
+    def test_export_adds_the_template_name(self, app, mtls_template):
+        _install_profiles(app, {
+            'mtls': {'validity_days': 30, 'template_id': mtls_template},
+            'plain': {'validity_days': 90},
+            'dangling': {'validity_days': 30, 'template_id': 999999, 'template_name': 'stale'},
+        })
+        try:
+            with app.app_context():
+                exported = json.loads(acme_profiles.export_config_json())
+                assert exported['mtls']['template_name'] == 'acme-mtls-tpl'
+                assert exported['mtls']['template_id'] == mtls_template
+                assert 'template_name' not in exported['plain']
+                assert 'template_name' not in exported['dangling']
+        finally:
+            _clear_profiles(app)
+
+    def test_export_of_the_settings_section_carries_the_name(self, app, mtls_template):
+        from services.backup_service import BackupService
+        _install_profiles(app, {'mtls': {'validity_days': 30, 'template_id': mtls_template}})
+        try:
+            with app.app_context():
+                settings = BackupService()._export_configuration(True)['settings']
+                assert json.loads(settings[acme_profiles.CONFIG_KEY])['mtls']['template_name'] == 'acme-mtls-tpl'
+        finally:
+            _clear_profiles(app)
+
+    def test_remap_points_at_the_template_of_that_name(self, app, mtls_template):
+        _install_profiles(app, {
+            'mtls': {'validity_days': 30, 'template_id': 424242, 'template_name': 'acme-mtls-tpl'},
+            'gone': {'validity_days': 30, 'template_id': 424243, 'template_name': 'no-such-template'},
+            'idonly': {'validity_days': 30, 'template_id': mtls_template},
+            'dangling': {'validity_days': 30, 'template_id': 424244},
+            'plain': {'validity_days': 90},
+        })
+        try:
+            with app.app_context():
+                changed = acme_profiles.remap_template_bindings()
+                db.session.commit()
+                assert changed == 3
+                profiles = acme_profiles.get_profiles()
+                assert profiles['mtls']['template_id'] == mtls_template
+                assert profiles['gone']['template_id'] is None
+                assert profiles['idonly']['template_id'] == mtls_template
+                assert profiles['dangling']['template_id'] is None
+                assert profiles['plain']['template_id'] is None
+                stored = json.loads(SystemConfig.query.filter_by(key=acme_profiles.CONFIG_KEY).first().value)
+                assert all('template_name' not in spec for spec in stored.values())
+        finally:
+            _clear_profiles(app)
+
+    def test_round_trip_restores_the_binding_by_name(self, app):
+        """Full backup → source template gone, id slot taken by a decoy →
+        restore: the profile follows the template name, not the old id."""
+        from services.backup import BackupService
+        include = {k: False for k in (
+            'cas', 'certificates', 'users', 'configuration', 'acme_accounts',
+            'acme_eab_credentials', 'email_password', 'groups', 'custom_roles',
+            'certificate_templates', 'trusted_certificates', 'sso_providers',
+            'hsm_providers', 'api_keys', 'smtp_config', 'notification_config',
+            'certificate_policies', 'auth_certificates', 'dns_providers',
+            'acme_domains', 'acme_local_domains', 'https_server')}
+        include.update(configuration=True, certificate_templates=True)
+        password = 'roundtrip-password-123'
+        tpl_id = _mk_template(app, 'acme-rt-tpl', ['digitalSignature'], ['clientAuth'])
+        _install_profiles(app, {'mtls': {'validity_days': 30, 'template_id': tpl_id}})
+        decoy_id = None
+        try:
+            with app.app_context():
+                blob = BackupService().create_backup(password, include=include)
+            _clear_profiles(app)
+            with app.app_context():
+                db.session.delete(db.session.get(CertificateTemplate, tpl_id))
+                db.session.commit()
+            decoy_id = _mk_template(app, 'acme-rt-decoy', ['digitalSignature'], ['serverAuth'])
+            with app.app_context():
+                BackupService().restore_backup(blob, password)
+                restored = CertificateTemplate.query.filter_by(name='acme-rt-tpl').first()
+                assert restored is not None
+                assert acme_profiles.get_profiles()['mtls']['template_id'] == restored.id
+                tpl_id = restored.id
+        finally:
+            _clear_profiles(app)
+            with app.app_context():
+                for tid in (tpl_id, decoy_id):
+                    tpl = db.session.get(CertificateTemplate, tid) if tid else None
+                    if tpl:
+                        db.session.delete(tpl)
+                db.session.commit()
+
+    def test_remap_without_config_is_a_noop(self, app):
+        _clear_profiles(app)
+        with app.app_context():
+            assert acme_profiles.remap_template_bindings() == 0
+
+
 class TestBoundTemplateCannotBeDeleted:
     """A profile keeps only the numeric id; SQLite reuses it for the next
     template, so a binding left behind would silently apply a foreign
