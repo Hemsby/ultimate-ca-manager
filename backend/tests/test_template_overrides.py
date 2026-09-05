@@ -64,7 +64,7 @@ class TestNormalizeKeyTypeLabel:
         assert _normalize_key_type_label('secp384r1') == 'EC-P384'
 
     def test_unknown_or_empty(self):
-        assert _normalize_key_type_label('ed25519') == 'ED25519'  # Edwards keys are template key types too (review 05/09)
+        assert _normalize_key_type_label('ed25519') == 'ED25519'  # a CSR key for the divergence tracker; not a template key type since #332
         assert _normalize_key_type_label('') is None
         assert _normalize_key_type_label(None) is None
 
