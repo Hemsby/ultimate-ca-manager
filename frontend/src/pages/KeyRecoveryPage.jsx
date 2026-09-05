@@ -70,7 +70,7 @@ export default function KeyRecoveryPage() {
       const blob = await keyRecoveryService.recover(recoverFor.id, password, legacy)
       downloadBlob(blob, `${recoverFor.cert_cn || recoverFor.cert_refid || 'recovered'}.p12`)
       showSuccess(t('keyRecovery.recovered'))
-      setRecoverFor(null); setPassword('')
+      setRecoverFor(null); setPassword(''); setLegacy(false)
       await load()
     } catch (e) {
       showError(e.message || t('keyRecovery.actionFailed'))
@@ -131,7 +131,7 @@ export default function KeyRecoveryPage() {
                       </>
                     )}
                     {r.status === 'approved' && canRecover && (
-                      <Button type="button" size="sm" variant="primary" disabled={busy === r.id} onClick={() => { setRecoverFor(r); setPassword('') }}>
+                      <Button type="button" size="sm" variant="primary" disabled={busy === r.id} onClick={() => { setRecoverFor(r); setPassword(''); setLegacy(false) }}>
                         <DownloadSimple size={14} /> {t('keyRecovery.recover')}
                       </Button>
                     )}
@@ -143,7 +143,7 @@ export default function KeyRecoveryPage() {
         )}
       </div>
 
-      <Modal open={!!recoverFor} onClose={() => { setRecoverFor(null); setPassword('') }} title={t('keyRecovery.recoverTitle')}>
+      <Modal open={!!recoverFor} onClose={() => { setRecoverFor(null); setPassword(''); setLegacy(false) }} title={t('keyRecovery.recoverTitle')}>
         <div className="p-4 space-y-3">
           <p className="flex items-start gap-1.5 text-xs text-text-secondary">
             <Warning size={14} className="mt-0.5 shrink-0 text-status-warning" />
@@ -170,7 +170,7 @@ export default function KeyRecoveryPage() {
             </div>
           </label>
           <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" variant="secondary" onClick={() => { setRecoverFor(null); setPassword('') }}>{t('common.cancel')}</Button>
+            <Button type="button" variant="secondary" onClick={() => { setRecoverFor(null); setPassword(''); setLegacy(false) }}>{t('common.cancel')}</Button>
             <Button type="button" variant="primary" disabled={busy === recoverFor?.id || password.length < 8} onClick={doRecover}>
               <DownloadSimple size={16} /> {t('keyRecovery.download')}
             </Button>

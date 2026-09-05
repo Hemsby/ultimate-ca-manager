@@ -60,6 +60,7 @@ export default function AccountPage() {
   const [mtlsCreating, setMtlsCreating] = useState(false)
   const [mtlsResult, setMtlsResult] = useState(null)
   const [mtlsP12Password, setMtlsP12Password] = useState('')
+  const [mtlsP12Legacy, setMtlsP12Legacy] = useState(false)  // PKCS#12 3DES/SHA-1 profile (#331)
   const [mtlsP12Downloading, setMtlsP12Downloading] = useState(false)
   const [mtlsForm, setMtlsForm] = useState({ name: '', validity_days: 365, ca_id: '' })
   const [mtlsTab, setMtlsTab] = useState('generate')
@@ -424,6 +425,7 @@ export default function AccountPage() {
     setShowMTLSModal(false)
     setMtlsResult(null)
     setMtlsP12Password('')
+    setMtlsP12Legacy(false)
     setMtlsP12Downloading(false)
     setMtlsForm({ name: '', validity_days: 365, ca_id: '' })
     setMtlsImportForm({ name: '', pem: '' })
@@ -494,7 +496,7 @@ export default function AccountPage() {
     }
   }
 
-  const handleDownloadMTLSPkcs12 = async (certId, certName, password) => {
+  const handleDownloadMTLSPkcs12 = async (certId, certName, password, legacy = false) => {
     if (!password || password.length < 8) {
       showError(t('tools.pkcs12PasswordRequired'))
       return
@@ -504,6 +506,7 @@ export default function AccountPage() {
       const blob = await accountService.downloadMTLSCertificate(certId, {
         format: 'pkcs12',
         password,
+        legacy,
       })
       downloadBlob(blob, `${certName || 'mtls-cert'}.p12`)
       showSuccess(t('userCertificates.exportSuccess'))
@@ -1170,6 +1173,18 @@ export default function AccountPage() {
                 onChange={(e) => setMtlsP12Password(e.target.value)}
                 helperText={t('export.formatP12Desc')}
               />
+              <label className="flex items-center gap-2.5 px-1 py-1 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={mtlsP12Legacy}
+                  onChange={(e) => setMtlsP12Legacy(e.target.checked)}
+                  className="w-4 h-4 rounded accent-accent-primary"
+                />
+                <div>
+                  <div className="text-sm text-text-primary">{t('export.legacyPkcs12')}</div>
+                  <div className="text-xs text-text-tertiary">{t('export.legacyPkcs12Desc')}</div>
+                </div>
+              </label>
               <div className="flex flex-wrap gap-2 justify-between pt-4 border-t border-border">
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" variant="outline" size="sm" onClick={() => {
@@ -1189,6 +1204,7 @@ export default function AccountPage() {
                       mtlsResult.id,
                       mtlsResult.name,
                       mtlsP12Password,
+                      mtlsP12Legacy,
                     )}
                   >
                     <Download size={16} className="mr-1" />

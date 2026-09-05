@@ -160,6 +160,7 @@ export default function UserCertificatesPage() {
       showSuccess(t('userCertificates.exportSuccess'))
       setShowExportModal(false)
       setExportPassword('')
+      setExportLegacy(false)
     } catch (error) {
       showError(error.message || t('userCertificates.exportFailed'))
     } finally {
@@ -282,7 +283,7 @@ export default function UserCertificatesPage() {
     {
       label: t('common.export'),
       icon: Download,
-      onClick: () => { setExportCert(row); setExportFormat('pem'); setShowExportModal(true) },
+      onClick: () => { setExportCert(row); setExportFormat('pem'); setExportLegacy(false); setShowExportModal(true) },
     },
     ...(canWrite('user_certificates') && row.status !== 'revoked' ? [{
       label: t('userCertificates.actions.revoke'),
@@ -321,11 +322,11 @@ export default function UserCertificatesPage() {
       </div>
 
       <div className="flex flex-wrap gap-2 pt-3 border-t border-border">
-        <Button type="button" size="sm" onClick={() => { setExportCert(selectedCert); setExportFormat('pem'); setShowExportModal(true) }}>
+        <Button type="button" size="sm" onClick={() => { setExportCert(selectedCert); setExportFormat('pem'); setExportLegacy(false); setShowExportModal(true) }}>
           <Download size={14} /> {t('userCertificates.actions.exportPEM')}
         </Button>
         {selectedCert.has_private_key && (
-          <Button type="button" size="sm" variant="secondary" onClick={() => { setExportCert(selectedCert); setExportFormat('pkcs12'); setShowExportModal(true) }}>
+          <Button type="button" size="sm" variant="secondary" onClick={() => { setExportCert(selectedCert); setExportFormat('pkcs12'); setExportLegacy(false); setShowExportModal(true) }}>
             <Certificate size={14} /> {t('userCertificates.actions.exportPKCS12')}
           </Button>
         )}
@@ -408,7 +409,7 @@ export default function UserCertificatesPage() {
       {/* Export Modal */}
       <Modal
         open={showExportModal}
-        onClose={() => { setShowExportModal(false); setExportPassword('') }}
+        onClose={() => { setShowExportModal(false); setExportPassword(''); setExportLegacy(false) }}
         title={t('userCertificates.exportTitle')}
         size="sm"
       >
@@ -456,7 +457,7 @@ export default function UserCertificatesPage() {
             </label>
           )}
           <div className="flex justify-end gap-2 pt-2 border-t border-border">
-            <Button type="button" variant="secondary" onClick={() => { setShowExportModal(false); setExportPassword('') }}>
+            <Button type="button" variant="secondary" onClick={() => { setShowExportModal(false); setExportPassword(''); setExportLegacy(false) }}>
               {t('common.cancel')}
             </Button>
             <Button type="button" onClick={handleExport} loading={exporting} disabled={exporting}>
