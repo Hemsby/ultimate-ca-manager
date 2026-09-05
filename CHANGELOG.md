@@ -7,7 +7,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
-## [Unreleased]
+## [2.221] - 2026-09-05
 
 ### Added
 - ACME certificate profiles can bind a certificate template. An ACME order carries no template, so the built-in server could only ever issue the server certificate defaults; a profile (draft-ietf-acme-profiles) now has a Template field, and the bound template's key usage and extended key usage govern every certificate issued under that profile, on top of the key-algorithm rule. Validity and digest stay those of the profile. The issued certificate keeps the template link and records its divergences from the template defaults, as certificates from the issue form do. CA templates and templates carrying OCSP signing, timestamping, any-purpose or smartcard logon EKUs are refused at save time with a 400, and a template bound to a profile cannot be deleted until the profile is unbound, so a reused template id can never put a foreign template's key usage on ACME certificates; a template edited into an all-refused EKU set yields the server certificate default, never the CSR's own request. Backups carry a profile's template binding by template name and re-resolve it against the restored templates, since template ids are not portable between instances. `PATCH /api/v2/acme/settings` accepts `template_id` per profile and `GET` returns it (#327)
