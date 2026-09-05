@@ -228,7 +228,8 @@ class ImportExportMixin:
         export_format: str = 'pem',
         include_key: bool = False,
         include_chain: bool = False,
-        password: Optional[str] = None
+        password: Optional[str] = None,
+        legacy: bool = False,
     ) -> bytes:
         """
         Export certificate with multiple format options
@@ -260,7 +261,7 @@ class ImportExportMixin:
 
             key_pem = load_pem_bytes(certificate.prv, context=f"certificate {certificate.id}")
             return TrustStoreService.export_pkcs12(
-                cert_pem, key_pem, password, certificate.descr
+                cert_pem, key_pem, password, certificate.descr, legacy=legacy
             )
 
         elif export_format == 'der':

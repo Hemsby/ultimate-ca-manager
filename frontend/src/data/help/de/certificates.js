@@ -35,6 +35,7 @@ export default {
           { label: 'Sperre aufheben', text: 'Ein mit dem Grund „Zertifikat gesperrt" widerrufenes Zertifikat entsperren — stellt den gültigen Status wieder her' },
           { label: 'Widerrufen & Ersetzen', text: 'Widerrufen und sofort ein Ersatzzertifikat ausstellen' },
           { label: 'Exportieren', text: 'Im PEM-, DER- oder PKCS#12-Format herunterladen' },
+          { label: 'PKCS#12-Kompatibilitätsmodus (v2.222)', text: 'Die Exportdialoge bieten ein 3DES/SHA-1-Profil für Importer, die das AES-256-Standardarchiv als falsches Passwort ablehnen: Android 15 und älter, macOS 14 und älter, Windows Server 2016 und älter, altes Java. Standardmäßig aus, schützt die Datei schwächer' },
           { label: 'Vergleichen', text: 'Zwei Zertifikate nebeneinander vergleichen' },
         ]
       },

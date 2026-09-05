@@ -4105,6 +4105,8 @@
     "formatDerDesc": "バイナリ形式、コンパクト",
     "formatP7bDesc": "証明書チェーンバンドル",
     "formatP12Desc": "証明書+鍵を暗号化コンテナに格納",
+    "legacyPkcs12": "互換モード（3DES/SHA-1）",
+    "legacyPkcs12Desc": "Android 15 以前、macOS 14 以前、Windows Server 2016 以前、8u301 / 11.0.1 より前の Java 向け。これらは既定の AES-256 アーカイブを「パスワードが違う」として拒否します。ファイルの保護は弱くなるため、エクスポートごとに選択してください。",
     "formatKeyDesc": "PEM形式の秘密鍵のみ",
     "formats": {
       "privateKey": "秘密鍵"

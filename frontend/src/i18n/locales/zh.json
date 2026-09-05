@@ -4105,6 +4105,8 @@
     "formatDerDesc": "二进制格式，紧凑",
     "formatP7bDesc": "证书链捆绑包",
     "formatP12Desc": "证书+密钥加密容器",
+    "legacyPkcs12": "兼容模式（3DES/SHA-1）",
+    "legacyPkcs12Desc": "适用于 Android 15 及更早版本、macOS 14 及更早版本、Windows Server 2016 及更早版本、8u301 / 11.0.1 之前的 Java：它们会把默认的 AES-256 归档当作密码错误而拒绝。对文件的保护较弱，请按需在每次导出时选择。",
     "formatKeyDesc": "仅PEM编码的私钥",
     "formats": {
       "privateKey": "私钥"

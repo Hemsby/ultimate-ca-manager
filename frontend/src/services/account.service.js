@@ -96,12 +96,12 @@ export const accountService = {
     return apiClient.delete(`/mtls/certificates/${certId}`)
   },
 
-  async downloadMTLSCertificate(certId, { format = 'pem', password } = {}) {
+  async downloadMTLSCertificate(certId, { format = 'pem', password, legacy = false } = {}) {
     const fmt = (format === 'p12' ? 'pkcs12' : format).toLowerCase()
     if (fmt === 'pkcs12') {
       return apiClient.post(
         `/mtls/certificates/${certId}/download`,
-        { format: 'pkcs12', password },
+        { format: 'pkcs12', password, legacy },
         { responseType: 'blob' },
       )
     }

@@ -47,6 +47,9 @@ export function ExportModal({
   const [includeChain, setIncludeChain] = useState(true)
   const [includeKey, setIncludeKey] = useState(false)
   const [password, setPassword] = useState('')
+  // PKCS#12 compatibility profile (3DES/SHA-1) for importers that reject the
+  // AES-256/SHA-256 default as a wrong password (#331); per-export, off by default
+  const [legacy, setLegacy] = useState(false)
   const [exporting, setExporting] = useState(false)
 
   // Reset state when modal opens
@@ -56,6 +59,7 @@ export function ExportModal({
       setIncludeChain(true)
       setIncludeKey(false)
       setPassword('')
+      setLegacy(false)
       setExporting(false)
     }
   }, [open, defaultFormat])
@@ -82,6 +86,7 @@ export function ExportModal({
         includeChain,
         includeKey: effectiveIncludeKey,
         password: (isPkcs12 || isJks) ? password : undefined,
+        legacy: isPkcs12 ? legacy : undefined,
       })
       onClose()
     } catch {
@@ -187,6 +192,23 @@ export function ExportModal({
                 ? t('export.pkcs12Note', 'PKCS#12 always includes the private key')
                 : t('export.jksNote', 'JKS always includes the private key')}
             </div>
+          )}
+
+          {/* PKCS12 compatibility profile (#331) */}
+          {isPkcs12 && (
+            <label className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-bg-secondary transition-colors cursor-pointer">
+              <input
+                type="checkbox"
+                checked={legacy}
+                onChange={(e) => setLegacy(e.target.checked)}
+                className="w-4 h-4 rounded accent-accent-primary"
+                data-testid="export-legacy-pkcs12"
+              />
+              <div>
+                <div className="text-sm text-text-primary">{t('export.legacyPkcs12')}</div>
+                <div className="text-xs text-text-tertiary">{t('export.legacyPkcs12Desc')}</div>
+              </div>
+            </label>
           )}
 
           {/* No key notice for viewers */}

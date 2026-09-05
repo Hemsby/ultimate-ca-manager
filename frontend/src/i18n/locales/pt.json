@@ -4105,6 +4105,8 @@
     "formatDerDesc": "Formato binário, compacto",
     "formatP7bDesc": "Pacote de cadeia de certificados",
     "formatP12Desc": "Certificado + chave em contêiner criptografado",
+    "legacyPkcs12": "Modo de compatibilidade (3DES/SHA-1)",
+    "legacyPkcs12Desc": "Para Android 15 e anteriores, macOS 14 e anteriores, Windows Server 2016 e anteriores, Java anterior a 8u301 / 11.0.1: rejeitam o arquivo AES-256 por defeito como senha incorreta. Protege menos o ficheiro; escolha-o em cada exportação.",
     "formatKeyDesc": "Apenas a chave privada em formato PEM",
     "formats": {
       "privateKey": "Chave privada"

@@ -31,6 +31,7 @@ export default function KeyRecoveryPage() {
   const [busy, setBusy] = useState(null)
   const [recoverFor, setRecoverFor] = useState(null)
   const [password, setPassword] = useState('')
+  const [legacy, setLegacy] = useState(false)  // PKCS#12 3DES/SHA-1 profile (#331)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -66,7 +67,7 @@ export default function KeyRecoveryPage() {
     if (password.length < 8) { showError(t('keyRecovery.passwordTooShort')); return }
     setBusy(recoverFor.id)
     try {
-      const blob = await keyRecoveryService.recover(recoverFor.id, password)
+      const blob = await keyRecoveryService.recover(recoverFor.id, password, legacy)
       downloadBlob(blob, `${recoverFor.cert_cn || recoverFor.cert_refid || 'recovered'}.p12`)
       showSuccess(t('keyRecovery.recovered'))
       setRecoverFor(null); setPassword('')
@@ -156,6 +157,18 @@ export default function KeyRecoveryPage() {
             placeholder={t('keyRecovery.p12PasswordHint')}
             autoFocus
           />
+          <label className="flex items-center gap-2.5 px-1 py-1 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={legacy}
+              onChange={(e) => setLegacy(e.target.checked)}
+              className="w-4 h-4 rounded accent-accent-primary"
+            />
+            <div>
+              <div className="text-sm text-text-primary">{t('export.legacyPkcs12')}</div>
+              <div className="text-xs text-text-tertiary">{t('export.legacyPkcs12Desc')}</div>
+            </div>
+          </label>
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="secondary" onClick={() => { setRecoverFor(null); setPassword('') }}>{t('common.cancel')}</Button>
             <Button type="button" variant="primary" disabled={busy === recoverFor?.id || password.length < 8} onClick={doRecover}>

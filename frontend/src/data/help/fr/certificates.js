@@ -35,6 +35,7 @@ export default {
           { label: 'Lever la suspension', text: 'Annuler la suspension d\'un certificat révoqué avec le motif « Suspension de certificat » — restaure le statut valide' },
           { label: 'Révoquer et remplacer', text: 'Révoquer et émettre immédiatement un remplacement' },
           { label: 'Exporter', text: 'Télécharger au format PEM, DER, PKCS#12 ou JKS' },
+          { label: 'Mode compatibilité PKCS#12 (v2.222)', text: 'Les dialogues d\'export proposent un profil 3DES/SHA-1 pour les importeurs qui refusent l\'archive AES-256 par défaut comme un mot de passe incorrect : Android 15 et antérieur, macOS 14 et antérieur, Windows Server 2016 et antérieur, Java ancien. Désactivé par défaut, il protège moins bien le fichier' },
           { label: 'Comparer', text: 'Comparaison côte à côte de deux certificats' },
         ]
       },

@@ -15,10 +15,10 @@ export const mtlsService = {
   downloadCertificate: (id, format = 'pem') =>
     apiClient.get(`/mtls/certificates/${id}/download${buildQueryString({ format })}`),
 
-  downloadCertificatePkcs12: (id, password) =>
+  downloadCertificatePkcs12: (id, password, legacy = false) =>
     apiClient.post(
       `/mtls/certificates/${id}/download`,
-      { format: 'pkcs12', password },
+      { format: 'pkcs12', password, legacy },
       { responseType: 'blob' },
     ),
 }

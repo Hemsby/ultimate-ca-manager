@@ -23,7 +23,7 @@ export const keyRecoveryService = {
   },
 
   // Returns a PKCS#12 blob (the recovered key). Once, after approval.
-  async recover(id, password) {
-    return apiClient.post(`/key-recovery/${id}/recover`, { password }, { responseType: 'blob' })
+  async recover(id, password, legacy = false) {
+    return apiClient.post(`/key-recovery/${id}/recover`, { password, legacy }, { responseType: 'blob' })
   },
 }

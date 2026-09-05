@@ -175,6 +175,7 @@ export const helpContent = {
           { label: 'Remove Hold', text: 'Unhold a certificate revoked with "Certificate Hold" reason — restores it to valid status' },
           { label: 'Revoke & Replace', text: 'Revoke and immediately issue a replacement' },
           { label: 'Export', text: 'Download in PEM, DER, PKCS#12, or JKS format' },
+          { label: 'PKCS#12 compatibility mode (v2.222)', text: 'The export dialogs offer a 3DES/SHA-1 profile for importers that reject the default AES-256 archive as a wrong password: Android 15 and earlier, macOS 14 and earlier, Windows Server 2016 and earlier, old Java. Off by default, it protects the file less well' },
           { label: 'Compare', text: 'Side-by-side comparison of two certificates' },
         ]
       },

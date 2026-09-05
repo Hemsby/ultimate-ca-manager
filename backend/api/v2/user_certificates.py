@@ -11,6 +11,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
+from utils.pkcs12_export import legacy_flag, pkcs12_encryption
 from flask import Blueprint, Response, g, request
 
 from auth.unified import require_auth
@@ -285,9 +286,11 @@ def export_user_certificate(cert_id):
         password = data.get('password', '')
         include_key = bool(data.get('include_key', True))
         include_chain = bool(data.get('include_chain', True))
+        legacy = legacy_flag(data.get('legacy'))  # 3DES/SHA-1 profile (#331)
     else:
         export_format = request.args.get('format', 'pem').lower()
         password = request.args.get('password', '')
+        legacy = False
         include_key = request.args.get('include_key', 'true').lower() == 'true'
         include_chain = request.args.get('include_chain', 'true').lower() == 'true'
         # SECURITY: never accept passwords via query string (proxy access logs).
@@ -339,7 +342,7 @@ def export_user_certificate(cert_id):
                 key=private_key,
                 cert=x509_cert,
                 cas=ca_certs if ca_certs else None,
-                encryption_algorithm=serialization.BestAvailableEncryption(password.encode())
+                encryption_algorithm=pkcs12_encryption(password, legacy),
             )
 
             AuditService.log_action(

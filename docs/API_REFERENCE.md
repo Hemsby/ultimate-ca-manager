@@ -618,8 +618,14 @@ GET /api/v2/certificates/{cert_id}/export?format=pem
 # PEM with private key
 GET /api/v2/certificates/{cert_id}/export?format=pem&include_key=true
 
-# PKCS12 (PFX)
-GET /api/v2/certificates/{cert_id}/export?format=pkcs12&password=export-password
+# PKCS12 (PFX): POST with a JSON body, the password never goes in the query string
+POST /api/v2/certificates/{cert_id}/export
+{"format": "pkcs12", "password": "export-password", "include_chain": true}
+
+# PKCS12 compatibility profile (3DES/SHA-1) for Android 15 and earlier, macOS 14 and
+# earlier, Windows Server 2016 and earlier, Java before 8u301 / 11.0.1 (#331)
+POST /api/v2/certificates/{cert_id}/export
+{"format": "pkcs12", "password": "export-password", "legacy": true}
 
 # DER format
 GET /api/v2/certificates/{cert_id}/export?format=der
@@ -845,6 +851,7 @@ GET /api/v2/user-certificates/{id}/export?format=pkcs12&password=mypassword
 | include_key | bool | Include private key (default: true) |
 | include_chain | bool | Include CA chain (default: true) |
 | password | string | PKCS12 password (required for pkcs12, min 8 chars) |
+| legacy | bool | PKCS12 compatibility profile, 3DES/SHA-1 instead of AES-256/SHA-256 (default: false) |
 
 **Response** `200`: Binary file download with `Content-Disposition` header.
 

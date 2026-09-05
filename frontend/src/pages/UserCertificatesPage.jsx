@@ -47,6 +47,7 @@ export default function UserCertificatesPage() {
   const [showExportModal, setShowExportModal] = useState(false)
   const [exportCert, setExportCert] = useState(null)
   const [exportFormat, setExportFormat] = useState('pem')
+  const [exportLegacy, setExportLegacy] = useState(false)  // PKCS#12 3DES/SHA-1 profile (#331)
   const [exportPassword, setExportPassword] = useState('')
   const [exporting, setExporting] = useState(false)
 
@@ -149,7 +150,10 @@ export default function UserCertificatesPage() {
     try {
       const blob = await userCertificatesService.export(
         exportCert.id, exportFormat,
-        { password: (exportFormat === 'pkcs12' || exportFormat === 'jks') ? exportPassword : undefined }
+        {
+          password: (exportFormat === 'pkcs12' || exportFormat === 'jks') ? exportPassword : undefined,
+          legacy: exportFormat === 'pkcs12' ? exportLegacy : undefined,
+        }
       )
       const ext = { pkcs12: 'p12', jks: 'jks' }[exportFormat] || 'pem'
       downloadBlob(blob, `${exportCert.name || 'certificate'}.${ext}`)
@@ -436,6 +440,20 @@ export default function UserCertificatesPage() {
               onChange={(e) => setExportPassword(e.target.value)}
               helperText={t('userCertificates.exportPasswordMin')}
             />
+          )}
+          {exportFormat === 'pkcs12' && (
+            <label className="flex items-center gap-2.5 px-1 py-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={exportLegacy}
+                onChange={(e) => setExportLegacy(e.target.checked)}
+                className="w-4 h-4 rounded accent-accent-primary"
+              />
+              <div>
+                <div className="text-sm text-text-primary">{t('export.legacyPkcs12')}</div>
+                <div className="text-xs text-text-tertiary">{t('export.legacyPkcs12Desc')}</div>
+              </div>
+            </label>
           )}
           <div className="flex justify-end gap-2 pt-2 border-t border-border">
             <Button type="button" variant="secondary" onClick={() => { setShowExportModal(false); setExportPassword('') }}>

@@ -18,6 +18,7 @@ from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
+from utils.pkcs12_export import legacy_flag, pkcs12_encryption
 
 from auth.unified import require_auth
 from auth.permissions import has_permission
@@ -197,6 +198,7 @@ def recover_key(rid):
     password = data.get('password') or ''
     if len(password) < 8:
         return error_response('A PKCS#12 password of at least 8 characters is required', 400)
+    legacy = legacy_flag(data.get('legacy'))  # 3DES/SHA-1 profile (#331)
 
     cert = db.session.get(Certificate, req.cert_id)
     if not cert or not cert.prv:
@@ -214,7 +216,7 @@ def recover_key(rid):
         p12 = pkcs12.serialize_key_and_certificates(
             name=(cert.subject_cn or cert.refid or 'recovered').encode(),
             key=private_key, cert=cert_obj, cas=chain or None,
-            encryption_algorithm=serialization.BestAvailableEncryption(password.encode()),
+            encryption_algorithm=pkcs12_encryption(password, legacy),
         )
     except Exception as e:
         logger.error(f"Key recovery {rid} failed to build PKCS12: {e}")

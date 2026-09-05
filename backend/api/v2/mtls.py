@@ -15,6 +15,7 @@ from cryptography import x509 as cx509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
+from utils.pkcs12_export import legacy_flag, pkcs12_encryption
 
 from auth.unified import require_auth, has_permission
 from config.settings import is_docker, restart_ucm_service
@@ -326,9 +327,11 @@ def download_mtls_certificate(cert_id):
         data = request.get_json() or {}
         fmt = str(data.get('format', 'pem')).lower()
         password = data.get('password', '')
+        legacy = legacy_flag(data.get('legacy'))  # 3DES/SHA-1 profile (#331)
     else:
         fmt = request.args.get('format', 'pem')
         password = request.args.get('password', '')
+        legacy = False
         # SECURITY: never accept PKCS12 passwords via query string (proxy logs).
         if password or fmt in ('p12', 'pkcs12'):
             if password:
@@ -398,7 +401,7 @@ def download_mtls_certificate(cert_id):
             key=private_key,
             cert=x509_cert,
             cas=ca_certs if ca_certs else None,
-            encryption_algorithm=serialization.BestAvailableEncryption(password.encode()),
+            encryption_algorithm=pkcs12_encryption(password, legacy),
         )
 
         AuditService.log_action(

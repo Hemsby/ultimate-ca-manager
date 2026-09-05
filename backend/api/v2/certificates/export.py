@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, ec
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.serialization import pkcs12
+from utils.pkcs12_export import legacy_flag, pkcs12_encryption
 
 from models import db, Certificate, CA
 from models.truststore import TrustedCertificate
@@ -165,10 +166,12 @@ def export_all_certificates():
         export_format = data.get('format', 'pem').lower()
         include_chain = bool(data.get('include_chain', False))
         password = data.get('password')
+        legacy = legacy_flag(data.get('legacy'))  # 3DES/SHA-1 profile (#331)
     else:
         export_format = request.args.get('format', 'pem').lower()
         include_chain = request.args.get('include_chain', 'false').lower() == 'true'
         password = request.args.get('password')
+        legacy = False
 
     certificates = Certificate.query.filter(Certificate.crt.isnot(None)).all()
     if not certificates:
@@ -249,11 +252,15 @@ def export_certificate(cert_id):
         include_key = bool(data.get('include_key', False))
         include_chain = bool(data.get('include_chain', False))
         password = data.get('password')
+        # PKCS#12 compatibility profile (3DES/SHA-1) for importers that
+        # reject the AES-256/SHA-256 default (#331)
+        legacy = legacy_flag(data.get('legacy'))
     else:
         export_format = request.args.get('format', 'pem').lower()
         include_key = request.args.get('include_key', 'false').lower() == 'true'
         include_chain = request.args.get('include_chain', 'false').lower() == 'true'
         password = request.args.get('password')
+        legacy = False
         # SECURITY: never accept passwords via query string
         if password or export_format in ('pkcs12', 'pfx', 'jks'):
             if password:
@@ -364,7 +371,7 @@ def export_certificate(cert_id):
                 key=private_key,
                 cert=cert,
                 cas=_named_cas(ca_certs),
-                encryption_algorithm=serialization.BestAvailableEncryption(password.encode())
+                encryption_algorithm=pkcs12_encryption(password, legacy),
             )
 
             return Response(
@@ -425,7 +432,7 @@ def export_certificate(cert_id):
                 key=private_key,
                 cert=cert,
                 cas=_named_cas(ca_certs),
-                encryption_algorithm=serialization.BestAvailableEncryption(password.encode())
+                encryption_algorithm=pkcs12_encryption(password, legacy),
             )
 
             return Response(

@@ -8,6 +8,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
 from cryptography.hazmat.backends import default_backend
 
+from utils.pkcs12_export import pkcs12_encryption
+
 
 class ExportOperationsMixin:
     """Certificate export operations mixin"""
@@ -17,9 +19,14 @@ class ExportOperationsMixin:
         cert_pem: bytes,
         key_pem: bytes,
         password: str,
-        friendly_name: str = "Certificate"
+        friendly_name: str = "Certificate",
+        legacy: bool = False,
     ) -> bytes:
-        """Export certificate and key as PKCS#12."""
+        """Export certificate and key as PKCS#12.
+
+        ``legacy`` selects the 3DES/SHA-1 compatibility profile (see
+        utils.pkcs12_export) instead of the AES-256 default.
+        """
         cert = x509.load_pem_x509_certificate(cert_pem, default_backend())
         key = serialization.load_pem_private_key(
             key_pem, password=None, backend=default_backend()
@@ -30,7 +37,7 @@ class ExportOperationsMixin:
             key,
             cert,
             None,
-            serialization.BestAvailableEncryption(password.encode())
+            pkcs12_encryption(password, legacy),
         )
 
         return p12

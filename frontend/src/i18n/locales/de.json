@@ -4105,6 +4105,8 @@
     "formatDerDesc": "Binärformat, kompakt",
     "formatP7bDesc": "Zertifikatsketten-Bundle",
     "formatP12Desc": "Zertifikat + Schlüssel in verschlüsseltem Container",
+    "legacyPkcs12": "Kompatibilitätsmodus (3DES/SHA-1)",
+    "legacyPkcs12Desc": "Für Android 15 und älter, macOS 14 und älter, Windows Server 2016 und älter, Java vor 8u301 / 11.0.1: sie lehnen das AES-256-Standardarchiv als falsches Passwort ab. Schützt die Datei schwächer; pro Export wählen.",
     "formatKeyDesc": "Nur der private Schlüssel im PEM-Format",
     "formats": {
       "privateKey": "Privater Schlüssel"

@@ -95,7 +95,8 @@ describe('casService', () => {
       format: 'pem',
       include_key: true,
       include_chain: true,
-      password: undefined
+      password: undefined,
+      legacy: false,
     })
     expect(call[2]).toEqual({ responseType: 'blob' })
   })
@@ -201,7 +202,8 @@ describe('certificatesService', () => {
       format: 'pkcs12',
       include_key: false,
       include_chain: false,
-      password: 'test'
+      password: 'test',
+      legacy: false,
     })
     expect(call[2]).toEqual({ responseType: 'blob' })
   })

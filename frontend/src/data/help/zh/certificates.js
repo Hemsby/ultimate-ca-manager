@@ -35,6 +35,7 @@ export default {
           { label: '解除挂起', text: '对以"证书挂起"原因吊销的证书解除挂起——恢复为有效状态' },
           { label: '吊销并替换', text: '吊销并立即签发替代证书' },
           { label: '导出', text: '以 PEM、DER 或 PKCS#12 格式下载' },
+          { label: 'PKCS#12 兼容模式 (v2.222)', text: '导出对话框提供 3DES/SHA-1 配置，供把默认 AES-256 归档当作密码错误而拒绝的导入端使用：Android 15 及更早、macOS 14 及更早、Windows Server 2016 及更早、旧版 Java。默认关闭，对文件的保护较弱' },
           { label: '对比', text: '两张证书的并排对比' },
         ]
       },

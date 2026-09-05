@@ -55,7 +55,8 @@ class CAExportMixin:
         export_format: str = 'pem',
         include_key: bool = False,
         include_chain: bool = False,
-        password: str = None
+        password: str = None,
+        legacy: bool = False,
     ) -> bytes:
         """
         Export CA with multiple format options.
@@ -66,6 +67,7 @@ class CAExportMixin:
             include_key: Include private key (PEM only)
             include_chain: Include certificate chain (PEM only)
             password: Password for PKCS#12
+            legacy: PKCS#12 compatibility profile (3DES/SHA-1) instead of AES-256
 
         Returns:
             Export bytes
@@ -91,7 +93,7 @@ class CAExportMixin:
             prv_decrypted = decrypt_private_key(ca.prv)
             key_pem = base64.b64decode(prv_decrypted)
             return TrustStoreService.export_pkcs12(
-                cert_pem, key_pem, password, ca.descr
+                cert_pem, key_pem, password, ca.descr, legacy=legacy
             )
 
         elif export_format == 'der':
