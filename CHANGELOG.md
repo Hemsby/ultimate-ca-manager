@@ -7,7 +7,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ---
 
-## [Unreleased]
+## [2.222] - 2026-09-06
 
 ### Added
 - PKCS#12 exports gained a compatibility mode. UCM's PKCS#12 archives use the OpenSSL 3 profile (PBES2 with AES-256-CBC, PBKDF2-SHA256 and an HMAC-SHA256 integrity check), which Android 15 and earlier, macOS 14 and earlier, Windows Server 2016 and earlier and Java before 8u301 / 11.0.1 cannot read and report as a wrong password. A Compatibility mode checkbox on the export dialogs (certificates, CAs, the user portal, mTLS downloads and key recovery) switches that archive to the 3DES/SHA-1 profile these importers accept, the same LegacyDES profile cert-manager and go-pkcs12 offer. The API takes it as `legacy: true` alongside `password`. AES-256 stays the default and the checkbox is a per-export choice, since the legacy profile protects the archive less well (#331, requested by @MakosHD)
