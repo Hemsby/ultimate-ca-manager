@@ -14,6 +14,7 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 - Audit log retention: the daily purge failed whenever it had something to delete, and the Settings › Audit field was disabled and its value ignored. The retention is now stored and nothing is purged until an administrator sets one; `archive_before_delete`, which was never implemented, is refused by the API.
 - CSRs › History: "Download certificate" downloaded the signing request instead of the certificate. It now downloads the certificate, and the request has its own button (#389, reported by @lengqing5977).
 - Settings › Email: saving cleared the test recipient, which defaulted to the sender address. It now stays filled in and defaults to the signed-in user's email (#386, reported by @lengqing5977).
+- Docker: a bind-mounted data directory the container cannot write to stopped startup with "check volume permissions". The message now names its owner and the fix (`chown -R 1000:1000`), and the installation guide documents it (#386).
 
 ## [2.237] - 2026-10-09
 

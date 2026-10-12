@@ -185,8 +185,10 @@ fi
 
 # Check data directory permissions
 if [ ! -w "$DATA_PATH" ]; then
-    echo -e "${RED}❌ Data directory is not writable!${NC}"
-    echo "   Please check volume permissions"
+    echo -e "${RED}❌ Data directory $DATA_PATH is not writable by UID $(id -u)${NC}"
+    echo "   It belongs to UID $(stat -c %u "$DATA_PATH" 2>/dev/null || echo '?'). With a bind mount, give it to UID 1000 on the host:"
+    echo "     chown -R 1000:1000 <host directory>"
+    echo "   or use a named volume, which Docker creates with the right owner."
     exit 1
 fi
 

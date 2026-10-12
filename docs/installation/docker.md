@@ -162,8 +162,11 @@ docker run -v ucm-data:/opt/ucm/data ...
 
 ```bash
 mkdir -p /opt/ucm/data
+chown -R 1000:1000 /opt/ucm/data
 docker run -v /opt/ucm/data:/opt/ucm/data ...
 ```
+
+The container runs as UID 1000 and cannot change the owner of a bind-mounted directory, so a directory left to root (or created by Docker on the first run) is refused at startup. Give it to UID 1000 as above rather than opening it to everyone with `chmod 777`; the same applies to a host directory mounted on `/etc/ucm`.
 
 ### Data Structure
 
