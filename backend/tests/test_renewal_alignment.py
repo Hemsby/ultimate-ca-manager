@@ -439,3 +439,24 @@ class TestWaitingCertificates:
         monkeypatch.setattr(AutoRenewalService, 'waiting_certificates', staticmethod(lambda config: waiting))
         with app.app_context():
             assert AutoRenewalService.run_auto_renewal()['waiting'] == waiting
+
+    def test_a_certificate_the_run_renews_is_not_counted_as_waiting(self, app, create_ca, monkeypatch):
+        from services.auto_renewal_service import AutoRenewalService
+        ca = create_ca(cn='Renewal waiting run CA')
+        # A 7-day certificate with 1 day left: due now, and once renewed its
+        # 7 fresh days still fall inside the 14-day window
+        rid = _craft_row(app, ca['id'], rsa.generate_private_key(65537, 2048), 'wait-run.example.test',
+                         key_usage=_ku(digital_signature=True, key_encipherment=True),
+                         days=1, issued_days_ago=6)
+        monkeypatch.setattr(AutoRenewalService, 'get_renewal_config', staticmethod(lambda: dict(self.CONFIG)))
+        try:
+            with app.app_context():
+                before = AutoRenewalService.waiting_certificates(self.CONFIG)
+                due = [c for c in AutoRenewalService.get_certificates_for_renewal() if c.id == rid]
+                assert due
+                monkeypatch.setattr(AutoRenewalService, 'get_certificates_for_renewal', staticmethod(lambda: due))
+                stats = AutoRenewalService.run_auto_renewal()
+                assert stats['renewed'] == 1, stats
+                assert stats['waiting'] == before
+        finally:
+            _drop(app, rid)

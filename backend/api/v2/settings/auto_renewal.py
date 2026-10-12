@@ -152,7 +152,8 @@ def run_auto_renewal_now():
     Trigger an immediate auto-renewal pass (manual run).
 
     Returns the same stats dict produced by the scheduled task:
-        {renewed, failed, skipped, errors[]}
+        {renewed, failed, skipped, errors[],
+         waiting{not_yet_due, no_private_key, source_excluded}}
     """
     try:
         stats = AutoRenewalService.run_auto_renewal()

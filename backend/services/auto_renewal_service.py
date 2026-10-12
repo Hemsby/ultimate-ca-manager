@@ -150,7 +150,9 @@ class AutoRenewalService:
         """Count the certificates expiring within the window that this pass
         leaves alone, by reason, so a run that renews nothing says why."""
         now = utc_now()
-        certs = Certificate.query.filter(
+        rows = db.session.query(
+            Certificate.prv, Certificate.source, Certificate.valid_from, Certificate.valid_to,
+        ).filter(
             Certificate.revoked.is_(False),
             (Certificate.archived.is_(False)) | (Certificate.archived.is_(None)),
             Certificate.crt.isnot(None),
@@ -159,7 +161,7 @@ class AutoRenewalService:
             Certificate.valid_to >= now,
         ).all()
         waiting = {'not_yet_due': 0, 'no_private_key': 0, 'source_excluded': 0}
-        for cert in certs:
+        for cert in rows:
             if not cert.prv:
                 waiting['no_private_key'] += 1
             elif cert.source not in config['renewal_sources']:
@@ -273,7 +275,10 @@ class AutoRenewalService:
         # refused, or deleted it, which is then skipped)
         listed = [(c.id, c.serial_number) for c in certs]
 
-        stats = {'renewed': 0, 'failed': 0, 'skipped': 0, 'errors': []}
+        # Counted before the batch: a short certificate renewed here would
+        # otherwise come back as not yet due
+        stats = {'renewed': 0, 'failed': 0, 'skipped': 0, 'errors': [],
+                 'waiting': AutoRenewalService.waiting_certificates(config)}
         # CRLs are published once per CA after the batch — every renewal adds a
         # superseded serial that only reaches relying parties through a CRL.
         renewed_carefs = set()
@@ -329,7 +334,6 @@ class AutoRenewalService:
                 })
 
         AutoRenewalService._publish_crls(renewed_carefs)
-        stats['waiting'] = AutoRenewalService.waiting_certificates(config)
 
         logger.info(f"Auto-renewal complete: {stats['renewed']} renewed, {stats['failed']} failed")
 

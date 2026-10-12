@@ -644,7 +644,7 @@ export default function CSRsPage() {
 
   // Row actions for pending
   const pendingRowActions = useCallback((row) => [
-    { label: t('csrs.downloadCSR'), icon: Download, onClick: () => handleDownload(row.id, `${row.cn || 'csr'}.pem`) },
+    { label: t('csrs.downloadCSR'), icon: Download, onClick: () => handleDownload(row.id, `${row.cn || 'csr'}.csr`) },
     ...(canExportKey && row.has_private_key ? [
       { label: t('csrs.downloadKey'), icon: Key, onClick: () => handleDownloadKey(row) }
     ] : []),
@@ -754,7 +754,7 @@ export default function CSRsPage() {
               canWrite={canWrite}
               canDelete={canDelete}
               onSign={() => openModal('sign')}
-              onDownload={() => handleDownload(selectedCSR.id, `${selectedCSR.cn || 'csr'}.pem`)}
+              onDownload={() => handleDownload(selectedCSR.id, `${selectedCSR.cn || 'csr'}.csr`)}
               onDownloadKey={canExportKey && selectedCSR.has_private_key ? () => handleDownloadKey(selectedCSR) : undefined}
               onDelete={() => handleDelete(selectedCSR.id)}
               onUploadKey={() => setShowKeyModal(true)}
