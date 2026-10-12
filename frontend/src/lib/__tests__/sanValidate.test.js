@@ -47,3 +47,24 @@ describe('sanValidate CN auto-SAN', () => {
     expect(err?.key).toBe('csrs.sanUriInvalid')
   })
 })
+
+describe('sanRowsToPayload (#389)', () => {
+  it('groups the rows by type and leaves blanks out', async () => {
+    const { sanRowsToPayload } = await import('../sanValidate')
+    expect(sanRowsToPayload([
+      { type: 'Email', value: ' a@example.com ' },
+      { type: 'DNS', value: 'a.example.com' },
+      { type: 'DNS', value: '' },
+      { type: 'IP', value: '10.0.0.1' },
+      { type: 'URI', value: 'https://example.com' },
+      { type: 'DNS', value: 'b.example.com' },
+    ])).toEqual({
+      san_email: ['a@example.com'],
+      san_dns: ['a.example.com', 'b.example.com'],
+      san_ip: ['10.0.0.1'],
+      san_uri: ['https://example.com'],
+    })
+    expect(sanRowsToPayload([])).toEqual({})
+    expect(sanRowsToPayload([{ type: 'UPN', value: 'u@d.local' }])).toEqual({})
+  })
+})

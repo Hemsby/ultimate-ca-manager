@@ -241,6 +241,37 @@ describe('CSRsPage — finding a new CSR/certificate (#368)', () => {
     await waitFor(() => expect(showWarning).toHaveBeenCalledWith('Validity shortened to 5 days'))
   })
 
+  it('sends the names added to the request (#389)', async () => {
+    const user = userEvent.setup()
+    sign.mockResolvedValue({ data: { id: 203 } })
+    await openSignModal()
+    await selectCA(user)
+
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByText('certificates.addSan'))
+    fireEvent.change(within(dialog).getByPlaceholderText('admin@example.com'), {
+      target: { value: 'jane@example.com' },
+    })
+    clickSignSubmit()
+    await waitFor(() => expect(sign).toHaveBeenCalled())
+    expect(sign.mock.calls[0][5]).toEqual({ san_email: ['jane@example.com'] })
+  })
+
+  it('refuses a malformed added name before sending anything', async () => {
+    const user = userEvent.setup()
+    await openSignModal()
+    await selectCA(user)
+
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByText('certificates.addSan'))
+    fireEvent.change(within(dialog).getByPlaceholderText('admin@example.com'), {
+      target: { value: 'https://not-an-email.example' },
+    })
+    clickSignSubmit()
+    await new Promise(r => setTimeout(r, 50))
+    expect(sign).not.toHaveBeenCalled()
+  })
+
   const openMscaSignModal = async () => {
     renderPage()
     await waitFor(() => expect(getAll).toHaveBeenCalled())

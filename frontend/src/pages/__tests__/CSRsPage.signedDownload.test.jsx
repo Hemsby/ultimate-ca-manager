@@ -50,7 +50,7 @@ vi.mock('../../hooks', async () => {
   return {
     useModals: common.useModals,
     usePermission: () => ({
-      canWrite: () => false, canDelete: () => false, canRead: () => true,
+      canWrite: () => mockCanWrite, canDelete: () => false, canRead: () => true,
       hasPermission: (p) => permissions.includes(p),
     }),
   }
@@ -58,6 +58,8 @@ vi.mock('../../hooks', async () => {
 
 const SIGNED = { id: 42, common_name: 'signed.example.com', cn: 'signed.example.com', signed_by: 'CA 1', days_remaining: 300 }
 const csrDownload = vi.fn()
+const resubmit = vi.fn()
+let mockCanWrite = false
 const certExport = vi.fn()
 
 vi.mock('../../services', () => ({
@@ -67,6 +69,7 @@ vi.mock('../../services', () => ({
     getById: () => Promise.resolve({ data: SIGNED }),
     download: (...a) => csrDownload(...a),
     downloadKey: vi.fn(),
+    resubmit: (...a) => resubmit(...a),
   },
   certificatesService: { export: (...a) => certExport(...a) },
   casService: { getAll: vi.fn().mockResolvedValue({ data: [] }) },
@@ -104,6 +107,20 @@ describe('CSRsPage history: downloads', () => {
     fireEvent.click(screen.getByRole('button', { name: /csrs\.downloadCSR/ }))
     await waitFor(() => expect(csrDownload).toHaveBeenCalledWith(42))
     expect(certExport).not.toHaveBeenCalled()
+  })
+
+  it('"Sign again" puts the request back in the pending list (#389)', async () => {
+    mockCanWrite = true
+    resubmit.mockReset().mockResolvedValue({ data: { id: 77 } })
+    await openSigned()
+    fireEvent.click(screen.getByRole('button', { name: /csrs\.signAgain/ }))
+    await waitFor(() => expect(resubmit).toHaveBeenCalledWith(42))
+    mockCanWrite = false
+  })
+
+  it('offers no "Sign again" without write:csrs', async () => {
+    await openSigned()
+    expect(screen.queryByRole('button', { name: /csrs\.signAgain/ })).toBeNull()
   })
 
   it('offers no certificate download without read:certificates', async () => {

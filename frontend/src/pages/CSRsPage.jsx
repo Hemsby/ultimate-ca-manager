@@ -23,7 +23,7 @@ import { useNotification } from '../contexts'
 import { usePermission, useModals } from '../hooks'
 import { useMobile } from '../contexts/MobileContext'
 import { extractData, formatDate, cn , downloadBlob} from '../lib/utils'
-import { getSanValidationError } from '../lib/sanValidate'
+import { getSanValidationError, sanRowsToPayload } from '../lib/sanValidate'
 import { daysSinceExpiry, expiryVariant, hasExpiry } from '../lib/expiry'
 import { VALIDITY } from '../constants/config'
 import { signingCas } from '../lib/caSelection'
@@ -64,6 +64,8 @@ export default function CSRsPage() {
   const [signCA, setSignCA] = useState('')
   const [signCertType, setSignCertType] = useState('server')
   const [signExtraEkus, setSignExtraEkus] = useState([])
+  // Names added to the request's own at signing (#389)
+  const [signSans, setSignSans] = useState([])
   const [knownEkus, setKnownEkus] = useState([])
   useEffect(() => {
     let cancelled = false
@@ -222,14 +224,39 @@ export default function CSRsPage() {
     }
   }
 
+  // Added names belong to one signing: another request starts without them
+  useEffect(() => { setSignSans([]) }, [selectedCSR?.id])
+
+  // A device that keeps its key often cannot produce its request twice (#389)
+  const handleSignAgain = async (row) => {
+    try {
+      const created = await csrsService.resubmit(row.id)
+      showSuccess(t('csrs.signAgainDone'))
+      loadData()
+      openCreatedCSR(created)
+    } catch (error) {
+      showError(error.message || t('csrs.signAgainFailed'))
+    }
+  }
+
   const handleSign = async () => {
     if (signMode === 'local') {
       if (!signCA) {
         showError(t('common.selectCA'))
         return
       }
+      const addedSans = signCertType === 'intermediate_ca' ? [] : signSans
+      const sanError = addedSans
+        .map(s => getSanValidationError(s.type, s.value))
+        .find(Boolean)
+      if (sanError) {
+        showError(t(sanError.key, sanError.params))
+        return
+      }
       try {
-        const signed = await csrsService.sign(selectedCSR.id, signCA, validityDays, signCertType, signExtraEkus)
+        const signed = await csrsService.sign(
+          selectedCSR.id, signCA, validityDays, signCertType, signExtraEkus, sanRowsToPayload(addedSans))
+        setSignSans([])
         if (signed?.data?.approval_required) {
           // An issuance policy queued the signing for approval
           showWarning(t('certificates.approvalRequired', { policy: signed.data.policy_name }))
@@ -665,6 +692,7 @@ export default function CSRsPage() {
     { label: t('csrs.downloadCSR'), icon: FileText, onClick: () => handleDownload(row.id, `${row.cn || 'csr'}.csr`) },
     { label: t('common.viewInCertificates'), icon: Certificate, onClick: () => navigate(`/certificates?id=${row.id}`) },
     ...(canWrite('csrs') ? [
+      { label: t('csrs.signAgain'), icon: SignIn, onClick: () => handleSignAgain(row) },
       { label: t('csrs.rekey'), icon: ArrowsClockwise, onClick: () => handleRekey(row) }
     ] : [])
   ], [canWrite, canReadCertificates, t])
@@ -766,6 +794,7 @@ export default function CSRsPage() {
               cert={selectedCSR}
               onDownload={canReadCertificates ? () => handleDownloadCertificate(selectedCSR) : undefined}
               onDownloadCSR={() => handleDownload(selectedCSR.id, `${selectedCSR.cn || 'csr'}.csr`)}
+              onSignAgain={canWrite('csrs') ? () => handleSignAgain(selectedCSR) : undefined}
               onRekey={canWrite('csrs') ? () => handleRekey(selectedCSR) : undefined}
               t={t}
             />
@@ -965,6 +994,22 @@ MIICijCCAXICAQAwRTELMAkGA1UEBhMCVVMx...
                 defaults={EKU_DEFAULTS_BY_TYPE[signCertType] || []}
                 knownEkus={knownEkus}
               />
+
+              {signCertType !== 'intermediate_ca' && (
+                <div>
+                  <label className="text-sm font-medium text-text-primary mb-1 block">
+                    {t('csrs.signAddNames')}
+                  </label>
+                  <p className="text-xs text-text-secondary mb-2">{t('csrs.signAddNamesHelp')}</p>
+                  <SanRows
+                    rows={signSans}
+                    onChange={setSignSans}
+                    types={['Email', 'DNS', 'IP', 'URI']}
+                    allowEmpty
+                    t={t}
+                  />
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -1157,55 +1202,12 @@ MIICijCCAXICAQAwRTELMAkGA1UEBhMCVVMx...
             <label className="text-sm font-medium text-text-primary mb-2 block">
               {t('csrs.sansList')}
             </label>
-            <div className="space-y-2">
-              {genSans.map((san, i) => (
-                <div key={i} className="flex gap-2 items-center">
-                  <Select
-                    options={[
-                      { value: 'DNS', label: 'DNS' },
-                      { value: 'IP', label: 'IP' },
-                      { value: 'Email', label: 'Email' },
-                      { value: 'URI', label: 'URI' },
-                      { value: 'UPN', label: 'UPN' },
-                    ]}
-                    value={san.type}
-                    onChange={(val) => {
-                      const updated = [...genSans]
-                      updated[i].type = val
-                      setGenSans(updated)
-                    }}
-                    className="w-24 shrink-0"
-                  />
-                  <Input
-                    value={san.value}
-                    onChange={(e) => {
-                      const updated = [...genSans]
-                      updated[i].value = e.target.value
-                      setGenSans(updated)
-                    }}
-                    placeholder={
-                      san.type === 'DNS' ? 'example.com'
-                      : san.type === 'IP' ? '10.0.0.1'
-                      : san.type === 'Email' ? 'admin@example.com'
-                      : san.type === 'UPN' ? 'user@domain.local'
-                      : 'https://example.com'
-                    }
-                    className="flex-1"
-                  />
-                  {genSans.length > 1 && (
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setGenSans(genSans.filter((_, j) => j !== i))}>
-                      <X size={14} />
-                    </Button>
-                  )}
-                </div>
-              ))}
-              <Button
-                type="button" variant="outline" size="sm"
-                onClick={() => setGenSans([...genSans, { type: 'DNS', value: '' }])}
-              >
-                <Plus size={14} /> {t('certificates.addSan')}
-              </Button>
-            </div>
+            <SanRows
+              rows={genSans}
+              onChange={setGenSans}
+              types={['DNS', 'IP', 'Email', 'URI', 'UPN']}
+              t={t}
+            />
           </div>
 
           <div className="flex justify-end gap-2 pt-4 border-t border-border">
@@ -1329,6 +1331,46 @@ MIIEvgIBADANBgkqhkiG9w0BAQE...
 // CSR DETAILS PANEL (for pending CSRs)
 // =============================================================================
 
+const SAN_PLACEHOLDERS = {
+  DNS: 'example.com', IP: '10.0.0.1', Email: 'admin@example.com',
+  UPN: 'user@domain.local', URI: 'https://example.com',
+}
+
+// Typed SAN rows; without `allowEmpty` the last row cannot be removed.
+function SanRows({ rows, onChange, types, allowEmpty = false, t }) {
+  const update = (i, patch) => onChange(rows.map((row, j) => (j === i ? { ...row, ...patch } : row)))
+  return (
+    <div className="space-y-2">
+      {rows.map((san, i) => (
+        <div key={i} className="flex gap-2 items-center">
+          <Select
+            options={types.map(type => ({ value: type, label: type }))}
+            value={san.type}
+            onChange={(val) => update(i, { type: val })}
+            className="w-24 shrink-0"
+          />
+          <Input
+            value={san.value}
+            onChange={(e) => update(i, { value: e.target.value })}
+            placeholder={SAN_PLACEHOLDERS[san.type]}
+            className="flex-1"
+          />
+          {(allowEmpty || rows.length > 1) && (
+            <Button type="button" variant="ghost" size="sm" aria-label={t('common.remove')}
+              onClick={() => onChange(rows.filter((_, j) => j !== i))}>
+              <X size={14} />
+            </Button>
+          )}
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm"
+        onClick={() => onChange([...rows, { type: types[0], value: '' }])}>
+        <Plus size={14} /> {t('certificates.addSan')}
+      </Button>
+    </div>
+  )
+}
+
 function CSRDetailsPanel({ csr, canWrite, canDelete, onSign, onDownload, onDownloadKey, onDelete, onUploadKey, onRekey, t }) {
   return (
     <div className="p-3 space-y-3">
@@ -1434,7 +1476,7 @@ function CSRDetailsPanel({ csr, canWrite, canDelete, onSign, onDownload, onDownl
 // SIGNED CSR DETAILS PANEL (for history)
 // =============================================================================
 
-function SignedCSRDetailsPanel({ cert, onDownload, onDownloadCSR, onRekey, t }) {
+function SignedCSRDetailsPanel({ cert, onDownload, onDownloadCSR, onSignAgain, onRekey, t }) {
   const navigate = useNavigate()
   // `|| 0` turned a null expiry date into a confident "0 days left", and
   // turned the old -1 "no expiry" sentinel into "Expired".
@@ -1478,6 +1520,11 @@ function SignedCSRDetailsPanel({ cert, onDownload, onDownloadCSR, onRekey, t }) 
         <Button type="button" size="sm" variant="secondary" onClick={onDownloadCSR}>
           <FileText size={14} /> {t('csrs.downloadCSR')}
         </Button>
+        {onSignAgain && (
+          <Button type="button" size="sm" variant="secondary" onClick={onSignAgain}>
+            <SignIn size={14} /> {t('csrs.signAgain')}
+          </Button>
+        )}
         <Button 
           type="button"
           size="sm" 

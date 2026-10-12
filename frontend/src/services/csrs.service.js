@@ -35,10 +35,16 @@ export const csrsService = {
     })
   },
 
-  async sign(id, ca_id, validity_days, cert_type = 'server', extra_ekus = []) {
-    const payload = { ca_id, validity_days, cert_type }
+  // extra_sans: { san_dns, san_ip, san_email, san_uri } added to the request's names
+  async sign(id, ca_id, validity_days, cert_type = 'server', extra_ekus = [], extra_sans = {}) {
+    const payload = { ca_id, validity_days, cert_type, ...extra_sans }
     if (Array.isArray(extra_ekus) && extra_ekus.length) payload.extra_ekus = extra_ekus
     return apiClient.post(`/csrs/${id}/sign`, payload)
+  },
+
+  // A signed request back in the pending list, to be signed again
+  async resubmit(id) {
+    return apiClient.post(`/csrs/${id}/resubmit`)
   },
 
   async delete(id) {

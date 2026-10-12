@@ -217,3 +217,20 @@ export function getSanValidationError(type, value, options = {}) {
       return null
   }
 }
+
+const SAN_PAYLOAD_KEYS = { DNS: 'san_dns', IP: 'san_ip', EMAIL: 'san_email', URI: 'san_uri' }
+
+/**
+ * Typed SAN rows ([{ type, value }]) as the sign route's lists
+ * (san_dns, san_ip, san_email, san_uri); blank rows and empty lists are left out.
+ */
+export function sanRowsToPayload(rows) {
+  const payload = {}
+  for (const { type, value } of rows || []) {
+    const key = SAN_PAYLOAD_KEYS[String(type || '').toUpperCase()]
+    const v = (value || '').trim()
+    if (!key || !v) continue
+    payload[key] = [...(payload[key] || []), v]
+  }
+  return payload
+}
