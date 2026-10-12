@@ -691,8 +691,10 @@ export default function CSRsPage() {
     ] : []),
     { label: t('csrs.downloadCSR'), icon: FileText, onClick: () => handleDownload(row.id, `${row.cn || 'csr'}.csr`) },
     { label: t('common.viewInCertificates'), icon: Certificate, onClick: () => navigate(`/certificates?id=${row.id}`) },
+    ...(canWrite('csrs') && canReadCertificates ? [
+      { label: t('csrs.signAgain'), icon: SignIn, onClick: () => handleSignAgain(row) }
+    ] : []),
     ...(canWrite('csrs') ? [
-      { label: t('csrs.signAgain'), icon: SignIn, onClick: () => handleSignAgain(row) },
       { label: t('csrs.rekey'), icon: ArrowsClockwise, onClick: () => handleRekey(row) }
     ] : [])
   ], [canWrite, canReadCertificates, t])
@@ -794,7 +796,7 @@ export default function CSRsPage() {
               cert={selectedCSR}
               onDownload={canReadCertificates ? () => handleDownloadCertificate(selectedCSR) : undefined}
               onDownloadCSR={() => handleDownload(selectedCSR.id, `${selectedCSR.cn || 'csr'}.csr`)}
-              onSignAgain={canWrite('csrs') ? () => handleSignAgain(selectedCSR) : undefined}
+              onSignAgain={canWrite('csrs') && canReadCertificates ? () => handleSignAgain(selectedCSR) : undefined}
               onRekey={canWrite('csrs') ? () => handleRekey(selectedCSR) : undefined}
               t={t}
             />
