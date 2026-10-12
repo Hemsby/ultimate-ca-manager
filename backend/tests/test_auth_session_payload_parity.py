@@ -90,6 +90,9 @@ class TestSessionFieldParity:
                       'timezone', 'date_format', 'show_time'):
             assert login_data[field] == verify_data[field], (
                 f'{field} differs between login and /verify')
+        # A reloaded page knows the user only from /verify (#386: the test
+        # email defaults to the signed-in user's address)
+        assert verify_data['user']['email'] == login_data['user']['email']
 
     def test_every_login_route_builds_its_body_from_the_shared_helper(self):
         """No endpoint may go back to hand-rolling the session dict."""
@@ -114,8 +117,9 @@ class TestPreservedContract:
         for field in ('authenticated', 'user_id', 'must_enroll_2fa',
                       'session_timeout', 'preferences'):
             assert field in data, f'/verify lost {field}'
-        # /verify has always returned a narrower user block than login does.
-        assert set(data['user']) == {'id', 'username', 'role'}
+        # /verify returns a narrower user block than login does, plus the
+        # email a reloaded page needs (#386).
+        assert set(data['user']) == {'id', 'username', 'email', 'role'}
 
     def test_login_keeps_the_wide_user_block(self, app):
         client = app.test_client()

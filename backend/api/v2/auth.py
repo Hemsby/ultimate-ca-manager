@@ -220,6 +220,7 @@ def verify():
             user_block={
                 'id': g.current_user.id,
                 'username': g.current_user.username,
+                'email': g.current_user.email,
                 'role': g.current_user.role
             },
             authenticated=True,
