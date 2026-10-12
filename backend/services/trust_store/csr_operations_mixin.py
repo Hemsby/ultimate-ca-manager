@@ -8,6 +8,7 @@ from typing import List, Optional, Tuple
 
 from cryptography import x509
 from utils.csr_extensions import csr_extensions
+from utils.san_parse import cn_looks_like_hostname
 from utils.eku_validation import add_ocsp_nocheck_if_responder
 from cryptography.x509.oid import NameOID, ExtensionOID
 from cryptography.hazmat.primitives import hashes, serialization
@@ -632,8 +633,8 @@ class CSROperationsMixin:
         (applies to naked and normal CSRs alike, since it identifies who
         authenticated, not what subject was requested).
         ``extra_san``: names the operator adds to the request's own (admin
-        Sign CSR only); with a request that names none, they replace the
-        names otherwise derived from its CN."""
+        Sign CSR only); with a request that names none, they join those its
+        CN implies, a CN that is not a hostname giving no DNS name."""
         from utils.eku_validation import normalize_extra_ekus, to_object_identifiers, merge_eku_lists
 
         # Load CSR
@@ -685,8 +686,11 @@ class CSROperationsMixin:
         elif has_csr_san:
             effective_sans = csr_sans
         elif extra_san:
-            # Names the operator gave replace those guessed from the CN (#389)
-            effective_sans = []
+            # The names the CN implies stay, but not a "DNS name" made of a
+            # person's name, which is what an S/MIME request's CN holds (#389)
+            effective_sans = [
+                n for n in _synthesize_san_from_subject(subject)
+                if not isinstance(n, x509.DNSName) or cn_looks_like_hostname(n.value)]
         else:
             effective_sans = _synthesize_san_from_subject(subject)
         if extra_san:

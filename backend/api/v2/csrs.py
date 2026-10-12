@@ -554,7 +554,7 @@ def import_csr():
         return error_response('Import failed', 500)
 
 @bp.route('/api/v2/csrs/<int:csr_id>/resubmit', methods=['POST'])
-@require_auth(['write:csrs'])
+@require_auth(['write:csrs', 'read:certificates'])
 def resubmit_csr(csr_id):
     """Put a signed request back in the pending list to be signed again (#389).
 
@@ -593,7 +593,9 @@ def resubmit_csr(csr_id):
         subject=csr.subject.rfc4514_string(),
         subject_cn=cn_attrs[0].value if cn_attrs else None,
         **{key: json.dumps(values) if values else None for key, values in buckets.items()},
-        source=signed.source,
+        # Signed here by an operator, whatever protocol issued the original:
+        # an inherited 'acme' would hide it from expiry alerts and renewals
+        source='manual' if signed.prv else 'upload',
         created_by=getattr(g.current_user, 'username', 'system'),
     )
     db.session.add(row)
@@ -856,6 +858,9 @@ def sign_csr(csr_id):
     JSON body:
         ca_id: ID of the CA to sign with
         validity_days: Number of days the certificate should be valid (default: 365)
+        cert_type: server, client, combined, code_signing, email or intermediate_ca
+        extra_ekus: EKU names or OIDs added to the type's own
+        san_dns, san_ip, san_email, san_uri: names added to the request's own
     """
     
     cert = db.session.get(Certificate, csr_id)

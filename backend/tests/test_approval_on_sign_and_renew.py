@@ -125,6 +125,9 @@ class TestSignCsr:
             r = _json(operator, 'post', f'/api/v2/csrs/{csr_id}/sign',
                       {'ca_id': ca['id'], 'validity_days': 30, 'san_email': ['ops@example.test']})
             approval_id = r.get_json()['data']['approval_id']
+            # The approver sees what is approved
+            summary = auth_client.get(f'/api/v2/approvals/{approval_id}').get_json()['data']['request_summary']
+            assert summary['extra_san'] == ['ops@example.test']
             r = _json(auth_client, 'post', f'/api/v2/approvals/{approval_id}/approve', {'comment': 'ok'})
             assert r.get_json()['data']['certificate_issued'] is True, r.get_json()
             with app.app_context():

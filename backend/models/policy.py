@@ -198,6 +198,8 @@ class ApprovalRequest(db.Model):
                     'csr_id': rd.get('csr_id'),
                     'certificate_id': rd.get('certificate_id'),
                     'extra_ekus': rd.get('extra_ekus') or [],
+                    # Names the requester added to a CSR's own (#389)
+                    'extra_san': [v for vs in (rd.get('extra_san') or {}).values() for v in vs],
                 }
             except Exception:
                 pass

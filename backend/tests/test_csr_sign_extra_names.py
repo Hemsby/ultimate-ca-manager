@@ -145,3 +145,35 @@ class TestSignAgain:
     def test_requires_write_permission(self, viewer_client, auth_client, create_ca):
         signed_id = self._signed(auth_client, create_ca, 'again-viewer.example.test')
         assert viewer_client.post(f'{CSRS}/{signed_id}/resubmit').status_code == 403
+
+    def test_the_copy_does_not_inherit_a_protocol_source(self, app, auth_client, create_ca):
+        """Signed again by an operator: an 'acme' label would hide it from
+        expiry alerts and renewals."""
+        signed_id = self._signed(auth_client, create_ca, 'again-source.example.test')
+        with app.app_context():
+            db.session.get(Certificate, signed_id).source = 'acme'
+            db.session.commit()
+        new_id = auth_client.post(f'{CSRS}/{signed_id}/resubmit').get_json()['data']['id']
+        with app.app_context():
+            assert db.session.get(Certificate, new_id).source == 'upload'
+
+    def test_importing_the_first_certificate_again_leaves_the_copy_pending(self, app, auth_client, create_ca):
+        """The copy shares the key of the certificate already issued: that
+        certificate must not complete it."""
+        signed_id = self._signed(auth_client, create_ca, 'again-import.example.test')
+        new_id = auth_client.post(f'{CSRS}/{signed_id}/resubmit').get_json()['data']['id']
+        with app.app_context():
+            pem = base64.b64decode(db.session.get(Certificate, signed_id).crt).decode()
+        r = auth_client.post('/api/v2/certificates/import', data={'pem_content': pem},
+                             content_type='multipart/form-data')
+        assert r.status_code in (200, 201, 409), r.get_json()
+        with app.app_context():
+            assert db.session.get(Certificate, new_id).crt is None
+
+
+def test_a_hostname_cn_keeps_its_name_when_an_ip_is_added(app, auth_client, create_ca):
+    ca = create_ca(cn='Extra names hostname CA')
+    csr_id = _upload(auth_client, _csr('host-ip.example.test'))
+    assert _sign(auth_client, csr_id, ca['id'], san_ip=['192.0.2.9']).status_code == 200
+    assert _sans(app, csr_id) == [
+        x509.DNSName('host-ip.example.test'), x509.IPAddress(ipaddress.ip_address('192.0.2.9'))]

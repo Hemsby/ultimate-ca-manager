@@ -486,9 +486,27 @@ def find_pending_csr_for_certificate(cert):
             )
         except Exception:
             continue
-        if spki == wanted:
+        if spki == wanted and not _issued_for_request(record.csr, cert):
             return record
     return None
+
+
+def _issued_for_request(stored_csr, cert):
+    """Whether a row already holds this very certificate for the same request:
+    a request put back to be signed again (#389) shares that certificate's key,
+    and importing the certificate again must not complete it."""
+    from models import Certificate
+    from utils.cert_status import signed_requests
+    der = cert.public_bytes(serialization.Encoding.DER)
+    for row in signed_requests().filter(Certificate.csr == stored_csr).all():
+        try:
+            pem = row.crt.encode('utf-8') if row.crt.startswith('-----BEGIN') else base64.b64decode(row.crt)
+            issued = x509.load_pem_x509_certificate(pem, default_backend())
+        except Exception:
+            continue
+        if issued.public_bytes(serialization.Encoding.DER) == der:
+            return True
+    return False
 
 
 def serialize_cert_to_pem(cert):

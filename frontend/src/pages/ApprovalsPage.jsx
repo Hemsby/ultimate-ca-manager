@@ -288,6 +288,12 @@ export default function ApprovalsPage() {
                   <div className="text-text-primary font-mono break-all">{selectedRequest.request_summary.extra_ekus.join(', ')}</div>
                 </>
               )}
+              {selectedRequest.request_summary.extra_san?.length > 0 && (
+                <>
+                  <div className="text-text-muted">{t('approvals.summaryExtraSan')}</div>
+                  <div className="text-text-primary font-mono break-all">{selectedRequest.request_summary.extra_san.join(', ')}</div>
+                </>
+              )}
             </>
           )}
           {selectedRequest.certificate_id && (
