@@ -11,6 +11,8 @@ export default {
           { label: 'Enviar CSR', text: 'Aceitar arquivos CSR codificados em PEM ou colar texto PEM' },
           { label: 'Revisar', text: 'Inspecionar sujeito, SANs, tipo de chave e assinatura antes de assinar' },
           { label: 'Assinar', text: 'Selecionar uma CA, tipo de certificado, definir período de validade e emitir o certificado' },
+          { label: 'Adicionar nomes', text: 'Ao assinar, adicione nomes de email, DNS, IP ou URI aos do pedido, por exemplo o endereço de email de um certificado S/MIME pedido a partir de um smartcard. Passam pelas restrições de nomes da CA, pelas políticas de emissão e pela aprovação como quaisquer outros' },
+          { label: 'Assinar novamente', text: 'No Histórico, volte a colocar um pedido assinado em Pendentes para o assinar de novo com outros EKUs, nomes ou validade, sem gerar uma nova chave' },
           { label: 'Baixar', text: 'Baixar o CSR original em formato PEM' },
           { label: 'Descarregar chave', text: 'Descarregar a chave privada de um CSR gerado no UCM, para a implantar junto de um certificado emitido por uma CA externa (requer a permissão read:private_keys)' },
         ]
@@ -19,7 +21,7 @@ export default {
         title: 'Abas',
         items: [
           { label: 'Pendentes', text: 'CSRs aguardando revisão e assinatura' },
-          { label: 'Histórico', text: 'CSRs previamente assinados ou rejeitados' },
+          { label: 'Histórico', text: 'Pedidos assinados com o respetivo certificado: descarregue um ou outro, ou assine o pedido novamente' },
         ]
       },
     ],
@@ -44,7 +46,7 @@ Requisições de Assinatura de Certificado (CSRs) permitem que sistemas externos
 CSRs aguardando revisão e assinatura. Novos CSRs aparecem aqui após o envio.
 
 ### Histórico
-CSRs previamente assinados ou rejeitados, com links para os certificados resultantes.
+Pedidos assinados, cada um com o certificado que produziu. **Descarregar certificado** e **Descarregar CSR** obtêm um ou outro, e **Assinar novamente** volta a colocar o pedido em Pendentes.
 
 ## Gerando um CSR
 
@@ -84,10 +86,13 @@ Clique em um CSR para visualizar:
 3. Escolha a **CA Assinante** (deve ter chave privada)
 4. Selecione o **Tipo de Certificado** (servidor, cliente, assinatura de código, e-mail)
 5. Defina o **período de validade** em dias
-5. Opcionalmente aplique um modelo para Key Usage e extensões
-6. Clique em **Assinar**
+6. Opcionalmente aplique um modelo para Key Usage e extensões
+7. Opcionalmente **Adicionar nomes** (email, DNS, IP, URI) aos do pedido
+8. Clique em **Assinar**
 
 O certificado resultante aparece na página de Certificados.
+
+> 💡 Um pedido gerado num smartcard traz muitas vezes apenas um CN. Para um certificado S/MIME, escolha o tipo Email e adicione o endereço: passa a ser o nome alternativo do sujeito do certificado. Os nomes adicionados passam pelas restrições de nomes da CA, pelas políticas de emissão e pela aprovação como quaisquer outros, e o aprovador vê-os.
 
 ### Assinatura por Microsoft CA
 
@@ -123,6 +128,12 @@ Para um certificado de uma CA pública ou de terceiros, mantenha a chave no UCM 
 O CSR passa de **Pendentes** para **Histórico**. Se o certificado tiver de ser instalado noutro local, **Descarregar Chave Privada** no CSR pendente fornece a chave (requer a permissão read:private_keys, como qualquer exportação direta de chave).
 
 > 💡 A correspondência é feita com base no par de chaves, pelo que continua a funcionar quando a CA reescreve o sujeito (muitas CAs públicas mantêm apenas o CN).
+
+## Assinar um Pedido Novamente
+
+Um dispositivo que guarda a sua chave, como um smartcard, muitas vezes não consegue produzir o mesmo pedido duas vezes. No **Histórico**, **Assinar novamente** volta a colocar o pedido guardado em **Pendentes**, com a mesma chave pública, para o assinar de novo com outros EKUs, nomes ou validade. O certificado já emitido fica como está: revogue-o se deixar de dever ser utilizado.
+
+> 💡 A renovação continua recusada para um certificado cuja chave privada o UCM não detém, pois revogaria o número de série que o dispositivo ainda apresenta.
 
 ## Adicionando uma Chave Privada
 

@@ -11,6 +11,8 @@ export default {
           { label: 'Cargar CSR', text: 'Aceptar archivos CSR codificados en PEM o pegar texto PEM' },
           { label: 'Revisar', text: 'Inspeccionar el sujeto, SAN, tipo de clave y firma antes de firmar' },
           { label: 'Firmar', text: 'Seleccionar una CA, tipo de certificado, establecer el período de validez y emitir el certificado' },
+          { label: 'Añadir nombres', text: 'Al firmar, añada nombres de correo, DNS, IP o URI a los de la solicitud, por ejemplo la dirección de correo de un certificado S/MIME solicitado desde una tarjeta inteligente. Pasan por las restricciones de nombres de la CA, las políticas de emisión y la aprobación como cualquier otro' },
+          { label: 'Firmar de nuevo', text: 'En Historial, devuelva una solicitud firmada a Pendientes para firmarla otra vez con otros EKU, nombres o validez, sin generar una clave nueva' },
           { label: 'Descargar', text: 'Descargar el CSR original en formato PEM' },
           { label: 'Descargar clave', text: 'Descargar la clave privada de un CSR generado en UCM, para desplegarla junto a un certificado emitido por una CA externa (requiere el permiso read:private_keys)' },
         ]
@@ -19,7 +21,7 @@ export default {
         title: 'Pestañas',
         items: [
           { label: 'Pendientes', text: 'CSR en espera de revisión y firma' },
-          { label: 'Historial', text: 'CSR previamente firmados o rechazados' },
+          { label: 'Historial', text: 'Solicitudes firmadas con su certificado: descargue uno u otro, o firme la solicitud de nuevo' },
         ]
       },
     ],
@@ -44,7 +46,7 @@ Las solicitudes de firma de certificado (CSR) permiten a los sistemas externos s
 CSR en espera de revisión y firma. Los nuevos CSR aparecen aquí tras la carga.
 
 ### Historial
-CSR previamente firmados o rechazados, con enlaces a los certificados resultantes.
+Solicitudes firmadas, cada una con el certificado que produjo. **Descargar certificado** y **Descargar CSR** obtienen uno u otro, y **Firmar de nuevo** devuelve la solicitud a Pendientes.
 
 ## Generar un CSR
 
@@ -84,10 +86,13 @@ Haga clic en un CSR para ver:
 3. Elija la **CA de firma** (debe poseer una clave privada)
 4. Seleccione el **tipo de certificado** (servidor, cliente, firma de código, correo electrónico)
 5. Establezca el **período de validez** en días
-5. Opcionalmente aplique una plantilla para el uso de clave y extensiones
-6. Haga clic en **Firmar**
+6. Opcionalmente aplique una plantilla para el uso de clave y extensiones
+7. Opcionalmente **Añadir nombres** (correo, DNS, IP, URI) a los de la solicitud
+8. Haga clic en **Firmar**
 
 El certificado resultante aparece en la página de Certificados.
+
+> 💡 Una solicitud generada en una tarjeta inteligente suele llevar solo un CN. Para un certificado S/MIME, elija el tipo «Email (S/MIME)» y añada la dirección: pasa a ser el nombre alternativo del sujeto del certificado. Los nombres añadidos pasan por las restricciones de nombres de la CA, las políticas de emisión y la aprobación como cualquier otro, y el aprobador los ve.
 
 ### Firma con Microsoft CA
 
@@ -123,6 +128,12 @@ Para un certificado de una CA pública o de terceros, conserve la clave en UCM y
 El CSR pasa de **Pendientes** a **Historial**. Si el certificado debe instalarse en otro lugar, **Descargar Clave Privada** en el CSR pendiente proporciona la clave (requiere el permiso read:private_keys, como toda exportación directa de clave).
 
 > 💡 La correspondencia se realiza sobre el par de claves, por lo que sigue funcionando cuando la CA reescribe el sujeto (muchas CA públicas conservan solo el CN).
+
+## Firmar una solicitud de nuevo
+
+Un dispositivo que conserva su clave, como una tarjeta inteligente, a menudo no puede producir dos veces la misma solicitud. En **Historial**, **Firmar de nuevo** devuelve la solicitud almacenada a **Pendientes**, con la misma clave pública, para firmarla otra vez con otros EKU, nombres o validez. El certificado ya emitido no se modifica: revóquelo si ya no debe usarse.
+
+> 💡 La renovación sigue rechazada para un certificado cuya clave privada UCM no posee, ya que revocaría el número de serie que el dispositivo sigue presentando.
 
 ## Añadir una clave privada
 

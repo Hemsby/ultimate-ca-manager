@@ -11,7 +11,9 @@ export default {
           { label: 'Carica CSR', text: 'Accetta file CSR codificati in PEM o incolla il testo PEM' },
           { label: 'Esamina', text: 'Ispeziona soggetto, SAN, tipo di chiave e firma prima della firma' },
           { label: 'Firma', text: 'Seleziona una CA, il tipo di certificato, imposta il periodo di validità ed emetti il certificato' },
-          { label: 'Scarica', text: 'Scarica il CSR originale in formato PEM' },
+          { label: 'Aggiungi nomi', text: 'In firma, aggiungi nomi email, DNS, IP o URI a quelli della richiesta, ad esempio l\'indirizzo email di un certificato S/MIME richiesto da una smartcard. Rispettano i vincoli di nome della CA, le policy di emissione e l\'approvazione come tutti gli altri' },
+          { label: 'Firma di nuovo', text: 'In Cronologia, rimetti in attesa una richiesta firmata per firmarla ancora con altri EKU, nomi o validità, senza generare una nuova chiave' },
+          { label: 'Scarica',text: 'Scarica il CSR originale in formato PEM' },
           { label: 'Scarica chiave', text: 'Scarica la chiave privata di un CSR generato in UCM, per distribuirla accanto a un certificato emesso da una CA esterna (richiede il permesso read:private_keys)' },
         ]
       },
@@ -19,7 +21,7 @@ export default {
         title: 'Schede',
         items: [
           { label: 'In attesa', text: 'CSR in attesa di revisione e firma' },
-          { label: 'Cronologia', text: 'CSR precedentemente firmati o rifiutati' },
+          { label: 'Cronologia', text: 'Richieste firmate con il loro certificato: scarica l\'uno o l\'altro, oppure firma di nuovo la richiesta' },
         ]
       },
     ],
@@ -44,7 +46,7 @@ Le richieste di firma certificato (CSR) consentono ai sistemi esterni di richied
 CSR in attesa di revisione e firma. I nuovi CSR appaiono qui dopo il caricamento.
 
 ### Cronologia
-CSR precedentemente firmati o rifiutati, con link ai certificati risultanti.
+Richieste firmate, ciascuna con il certificato prodotto. **Scarica certificato** e **Scarica CSR** permettono di ottenere l'uno o l'altro, e **Firma di nuovo** rimette la richiesta in In attesa.
 
 ## Generazione di un CSR
 
@@ -84,10 +86,13 @@ Clicca su un CSR per visualizzare:
 3. Scegli la **CA firmataria** (deve avere una chiave privata)
 4. Seleziona il **tipo di certificato** (server, client, firma codice, email)
 5. Imposta il **periodo di validità** in giorni
-5. Facoltativamente applica un template per Key Usage ed estensioni
-6. Clicca **Firma**
+6. Facoltativamente applica un template per Key Usage ed estensioni
+7. Facoltativamente **Aggiungi nomi** (email, DNS, IP, URI) a quelli della richiesta
+8. Clicca **Firma**
 
 Il certificato risultante appare nella pagina Certificati.
+
+> 💡 Una richiesta generata su una smartcard spesso contiene solo un CN. Per un certificato S/MIME, scegli il tipo Email e aggiungi l'indirizzo: diventa il Subject Alternative Name del certificato. I nomi aggiunti rispettano i vincoli di nome della CA, le policy di emissione e l'approvazione come tutti gli altri, e l'approvatore li vede.
 
 ### Firma con Microsoft CA
 
@@ -123,6 +128,12 @@ Per un certificato di una CA pubblica o di terze parti, mantieni la chiave in UC
 Il CSR passa da **In attesa** a **Cronologia**. Se il certificato deve essere installato altrove, **Scarica Chiave Privata** sul CSR in attesa fornisce la chiave (richiede il permesso read:private_keys, come ogni esportazione diretta di chiave).
 
 > 💡 La corrispondenza avviene sulla coppia di chiavi, quindi funziona anche quando la CA riscrive il soggetto (molte CA pubbliche conservano solo il CN).
+
+## Firmare di nuovo una richiesta
+
+Un dispositivo che conserva la propria chiave, come una smartcard, spesso non può produrre due volte la stessa richiesta. In **Cronologia**, **Firma di nuovo** rimette la richiesta memorizzata in **In attesa**, con la stessa chiave pubblica, per firmarla ancora con altri EKU, nomi o validità. Il certificato già emesso resta invariato: revocalo se non deve più essere usato.
+
+> 💡 Il rinnovo resta rifiutato per un certificato la cui chiave privata UCM non possiede, perché revocherebbe il seriale che il dispositivo presenta ancora.
 
 ## Aggiunta di una chiave privata
 

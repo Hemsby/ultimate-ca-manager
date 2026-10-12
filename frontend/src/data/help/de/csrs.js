@@ -11,7 +11,9 @@ export default {
           { label: 'CSR hochladen', text: 'PEM-kodierte CSR-Dateien akzeptieren oder PEM-Text einfügen' },
           { label: 'Prüfen', text: 'Betreff, SANs, Schlüsseltyp und Signatur vor dem Signieren überprüfen' },
           { label: 'Signieren', text: 'Eine CA auswählen, Zertifikatstyp festlegen, Gültigkeitsdauer einstellen und Zertifikat ausstellen' },
-          { label: 'Herunterladen', text: 'Den Original-CSR im PEM-Format herunterladen' },
+          { label: 'Namen hinzufügen', text: 'Beim Signieren E-Mail-, DNS-, IP- oder URI-Namen zu denen der Anfrage hinzufügen, zum Beispiel die E-Mail-Adresse eines S/MIME-Zertifikats, das von einer Smartcard angefordert wurde. Sie durchlaufen die Namenseinschränkungen der CA, die Ausstellungsrichtlinien und die Genehmigung wie alle anderen' },
+          { label: 'Erneut signieren', text: 'Im Verlauf eine signierte Anfrage zurück nach Ausstehend setzen, um sie mit anderen EKUs, Namen oder einer anderen Gültigkeit noch einmal zu signieren, ohne einen neuen Schlüssel zu erzeugen' },
+          { label: 'Herunterladen',text: 'Den Original-CSR im PEM-Format herunterladen' },
           { label: 'Schlüssel herunterladen', text: 'Den privaten Schlüssel eines in UCM generierten CSR herunterladen, um ihn neben einem von einer externen CA ausgestellten Zertifikat bereitzustellen (erfordert die Berechtigung read:private_keys)' },
         ]
       },
@@ -19,7 +21,7 @@ export default {
         title: 'Tabs',
         items: [
           { label: 'Ausstehend', text: 'CSRs, die auf Prüfung und Signierung warten' },
-          { label: 'Verlauf', text: 'Zuvor signierte oder abgelehnte CSRs' },
+          { label: 'Verlauf', text: 'Signierte Anfragen mit ihrem Zertifikat: beides lässt sich herunterladen, oder die Anfrage wird erneut signiert' },
         ]
       },
     ],
@@ -44,7 +46,7 @@ Certificate Signing Requests (CSRs) ermöglichen es externen Systemen, Zertifika
 CSRs, die auf Prüfung und Signierung warten. Neue CSRs erscheinen hier nach dem Hochladen.
 
 ### Verlauf
-Zuvor signierte oder abgelehnte CSRs, mit Links zu den resultierenden Zertifikaten.
+Signierte Anfragen, jeweils mit dem Zertifikat, das daraus entstanden ist. Mit **Zertifikat herunterladen** und **CSR herunterladen** erhalten Sie das eine oder das andere, und **Erneut signieren** setzt die Anfrage zurück nach Ausstehend.
 
 ## CSR generieren
 
@@ -84,10 +86,13 @@ Klicken Sie auf einen CSR, um zu sehen:
 3. Wählen Sie die **signierende CA** (muss einen privaten Schlüssel haben)
 4. Wählen Sie den **Zertifikatstyp** (Server, Client, Code-Signierung, E-Mail)
 5. Legen Sie die **Gültigkeitsdauer** in Tagen fest
-5. Wenden Sie optional ein Template für Key Usage und Erweiterungen an
-6. Klicken Sie auf **Signieren**
+6. Wenden Sie optional ein Template für Key Usage und Erweiterungen an
+7. Fügen Sie optional **Namen hinzufügen** (E-Mail, DNS, IP, URI) zu denen der Anfrage hinzu
+8. Klicken Sie auf **Signieren**
 
 Das resultierende Zertifikat erscheint auf der Zertifikatsseite.
+
+> 💡 Eine auf einer Smartcard erzeugte Anfrage enthält oft nur einen CN. Wählen Sie für ein S/MIME-Zertifikat den Typ E-Mail und fügen Sie die Adresse hinzu: Sie wird zum Subject Alternative Name des Zertifikats. Hinzugefügte Namen durchlaufen die Namenseinschränkungen der CA, die Ausstellungsrichtlinien und die Genehmigung wie alle anderen, und der Genehmiger sieht sie.
 
 ### Microsoft CA-Signierung
 
@@ -123,6 +128,12 @@ Für ein Zertifikat einer öffentlichen oder Drittanbieter-CA belassen Sie den S
 Der CSR wechselt von **Ausstehend** nach **Verlauf**. Muss das Zertifikat an anderer Stelle installiert werden, liefert **Privaten Schlüssel herunterladen** am ausstehenden CSR den Schlüssel (erfordert die Berechtigung read:private_keys, wie jeder direkte Schlüsselexport).
 
 > 💡 Der Abgleich erfolgt über das Schlüsselpaar und funktioniert daher auch, wenn die CA den Betreff umschreibt (viele öffentliche CAs behalten nur den CN).
+
+## Eine Anfrage erneut signieren
+
+Ein Gerät, das seinen Schlüssel behält, etwa eine Smartcard, kann dieselbe Anfrage oft nicht zweimal erzeugen. Im **Verlauf** setzt **Erneut signieren** die gespeicherte Anfrage mit demselben öffentlichen Schlüssel zurück nach **Ausstehend**, um sie mit anderen EKUs, Namen oder einer anderen Gültigkeit noch einmal zu signieren. Das bereits ausgestellte Zertifikat bleibt unverändert: Widerrufen Sie es, wenn es nicht mehr verwendet werden soll.
+
+> 💡 Die Erneuerung bleibt für ein Zertifikat abgelehnt, dessen privaten Schlüssel UCM nicht besitzt, da sie die Seriennummer widerrufen würde, die das Gerät weiterhin vorlegt.
 
 ## Privaten Schlüssel hinzufügen
 

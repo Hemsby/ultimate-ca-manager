@@ -469,7 +469,7 @@ Certificate Signing Requests (CSRs) allow external systems to request certificat
 CSRs awaiting review and signing. New CSRs appear here after upload.
 
 ### History
-Previously signed or rejected CSRs, with links to the resulting certificates.
+Signed requests, each with the certificate it produced. **Download certificate** and **Download CSR** get either one, and **Sign again** puts the request back in Pending.
 
 ## Generating a CSR
 
@@ -509,10 +509,13 @@ Click a CSR to view:
 3. Choose the **Signing CA** (must have a private key)
 4. Select the **Certificate Type** (server, client, code signing, email)
 5. Set the **validity period** in days
-5. Optionally apply a template for Key Usage and extensions
-6. Click **Sign**
+6. Optionally apply a template for Key Usage and extensions
+7. Optionally **Add names** (email, DNS, IP, URI) to those of the request
+8. Click **Sign**
 
 The resulting certificate appears in the Certificates page.
+
+> 💡 A request generated on a smart card often carries only a CN. For an S/MIME certificate, choose the Email type and add the address: it becomes the certificate's subject alternative name. Added names pass the CA name constraints, issuance policies and approval like any other, and the approver sees them.
 
 ### Microsoft CA Signing
 
@@ -548,6 +551,12 @@ For a certificate from a public or third-party CA, keep the key in UCM and send 
 The CSR moves from **Pending** to **History**. If the certificate must be installed elsewhere, **Download Private Key** on the pending CSR provides the key (requires the read:private_keys permission, like every direct key export).
 
 > 💡 The match is made on the key pair, so it still works when the CA rewrites the subject (many public CAs keep only the CN).
+
+## Signing a Request Again
+
+A device that keeps its key, such as a smart card, often cannot produce the same request twice. In **History**, **Sign again** puts the stored request back in **Pending**, with the same public key, to sign it once more with other EKUs, names or validity. The certificate already issued is left as it is: revoke it if it should no longer be used.
+
+> 💡 Renewal stays refused for a certificate whose private key UCM does not hold, since it would revoke the serial the device still presents.
 
 ## Adding a Private Key
 

@@ -11,6 +11,8 @@ export default {
           { label: 'Téléverser une CSR', text: 'Accepter des fichiers CSR encodés en PEM ou coller du texte PEM' },
           { label: 'Examiner', text: 'Inspecter le sujet, les SAN, le type de clé et la signature avant de signer' },
           { label: 'Signer', text: 'Sélectionner une CA, le type de certificat, définir la période de validité et émettre le certificat' },
+          { label: 'Ajouter des noms', text: 'À la signature, ajouter des noms e-mail, DNS, IP ou URI à ceux de la demande, par exemple l\'adresse e-mail d\'un certificat S/MIME demandé depuis une carte à puce. Ils passent les contraintes de noms de la CA, les politiques d\'émission et l\'approbation comme les autres' },
+          { label: 'Signer à nouveau', text: 'Dans Historique, remettre une demande signée en attente pour la signer une nouvelle fois avec d\'autres EKU, noms ou une autre validité, sans générer de nouvelle clé' },
           { label: 'Télécharger', text: 'Télécharger la CSR originale au format PEM' },
           { label: 'Télécharger la clé', text: 'Télécharger la clé privée d\'une CSR générée dans UCM, pour la déployer à côté d\'un certificat émis par une CA externe (nécessite la permission read:private_keys)' },
         ]
@@ -19,7 +21,7 @@ export default {
         title: 'Onglets',
         items: [
           { label: 'En attente', text: 'CSR en attente d\'examen et de signature' },
-          { label: 'Historique', text: 'CSR précédemment signées ou rejetées' },
+          { label: 'Historique', text: 'Demandes signées avec leur certificat : téléchargez l\'un ou l\'autre, ou signez la demande à nouveau' },
         ]
       },
     ],
@@ -44,7 +46,7 @@ Les demandes de signature de certificat (CSR) permettent aux systèmes externes 
 CSR en attente d'examen et de signature. Les nouvelles CSR apparaissent ici après le téléversement.
 
 ### Historique
-CSR précédemment signées ou rejetées, avec des liens vers les certificats résultants.
+Demandes signées, chacune avec le certificat qu'elle a produit. **Télécharger le certificat** et **Télécharger la CSR** récupèrent l'un ou l'autre, et **Signer à nouveau** remet la demande en attente.
 
 ## Générer une CSR
 
@@ -84,10 +86,13 @@ Cliquez sur une CSR pour voir :
 3. Choisissez la **CA de signature** (doit posséder une clé privée)
 4. Sélectionnez le **type de certificat** (serveur, client, signature de code, e-mail)
 5. Définissez la **période de validité** en jours
-5. Appliquez optionnellement un modèle pour l'utilisation de la clé et les extensions
-6. Cliquez sur **Signer**
+6. Appliquez optionnellement un modèle pour l'utilisation de la clé et les extensions
+7. **Ajoutez des noms** (e-mail, DNS, IP, URI) à ceux de la demande si nécessaire
+8. Cliquez sur **Signer**
 
 Le certificat résultant apparaît sur la page des certificats.
+
+> 💡 Une demande générée sur une carte à puce ne porte souvent qu'un CN. Pour un certificat S/MIME, choisissez le type « Email (S/MIME) » et ajoutez l'adresse : elle devient le nom alternatif du sujet du certificat. Les noms ajoutés passent les contraintes de noms de la CA, les politiques d'émission et l'approbation comme les autres, et l'approbateur les voit.
 
 ### Signature par Microsoft CA
 
@@ -123,6 +128,12 @@ Pour un certificat délivré par une CA publique ou tierce, conservez la clé da
 La CSR passe de **En attente** à **Historique**. Si le certificat doit être installé ailleurs, **Télécharger la clé privée** sur la CSR en attente fournit la clé (nécessite la permission read:private_keys, comme toute exportation directe de clé).
 
 > 💡 La correspondance se fait sur la paire de clés, elle fonctionne donc même lorsque la CA réécrit le sujet (beaucoup de CA publiques ne conservent que le CN).
+
+## Signer une demande à nouveau
+
+Un appareil qui garde sa clé, comme une carte à puce, ne peut souvent pas produire deux fois la même demande. Dans **Historique**, **Signer à nouveau** remet la demande conservée en **En attente**, avec la même clé publique, pour la signer une nouvelle fois avec d'autres EKU, noms ou une autre validité. Le certificat déjà émis reste inchangé : révoquez-le s'il ne doit plus servir.
+
+> 💡 Le renouvellement reste refusé pour un certificat dont UCM ne détient pas la clé privée, car il révoquerait le numéro de série que l'appareil présente encore.
 
 ## Ajouter une clé privée
 

@@ -293,6 +293,8 @@ export const helpContent = {
           { label: 'Upload CSR', text: 'Accept PEM-encoded CSR files or paste PEM text' },
           { label: 'Review', text: 'Inspect subject, SANs, key type, and signature before signing' },
           { label: 'Sign', text: 'Select a CA, certificate type, set validity period, and issue the certificate' },
+          { label: 'Add names', text: 'When signing, add email, DNS, IP or URI names to those of the request, for instance the email address of an S/MIME certificate requested from a smart card. They pass the CA name constraints, issuance policies and approval like any other' },
+          { label: 'Sign again', text: 'In History, put a signed request back in Pending to sign it once more with other EKUs, names or validity, without generating a new key' },
           { label: 'Download', text: 'Download the original CSR in PEM format' },
           { label: 'Download key', text: 'Download the private key of a CSR generated in UCM, to deploy it next to a certificate issued by an external CA (requires the read:private_keys permission)' },
         ]
@@ -302,7 +304,7 @@ export const helpContent = {
         icon: ListChecks,
         items: [
           { label: 'Pending', text: 'CSRs awaiting review and signing' },
-          { label: 'History', text: 'Previously signed or rejected CSRs' },
+          { label: 'History', text: 'Signed requests with their certificate: download either one, or sign the request again' },
         ]
       },
     ],
