@@ -8,7 +8,7 @@ import TagsInput from '../../components/ui/TagsInput'
 import EmailTemplateWindow from '../../components/EmailTemplateWindow'
 import { WarningCircle } from '@phosphor-icons/react'
 
-export default function EmailSection({ settings, updateSetting, handleSave, saving, canWrite, isMobile, emailTestResult, emailTesting, handleTestEmail, oauthDirty, setOauthDirty, oauthPresets, applyOAuthProviderPreset, handleSmtpOAuthAuthorize, handleSmtpOAuthRevoke, expiryAlerts, setExpiryAlerts, saveExpiryAlerts, triggerExpiryCheck, showTemplateEditor, setShowTemplateEditor }) {
+export default function EmailSection({ settings, updateSetting, handleSave, saving, canWrite, isMobile, emailTestResult, emailTesting, handleTestEmail, defaultTestRecipient, oauthDirty, setOauthDirty, oauthPresets, applyOAuthProviderPreset, handleSmtpOAuthAuthorize, handleSmtpOAuthRevoke, expiryAlerts, setExpiryAlerts, saveExpiryAlerts, triggerExpiryCheck, showTemplateEditor, setShowTemplateEditor }) {
   const { t } = useTranslation()
   const { showSuccess } = useNotification()
   const { copy } = useClipboard()
@@ -384,7 +384,7 @@ export default function EmailSection({ settings, updateSetting, handleSave, savi
                     type="email"
                     value={settings._testRecipient || ''}
                     onChange={(e) => updateSetting('_testRecipient', e.target.value)}
-                    placeholder={settings.smtp_from_email || 'admin@example.com'}
+                    placeholder={defaultTestRecipient || 'admin@example.com'}
                   />
                 </div>
                 <div className="col-span-full md:col-span-1 flex items-end gap-2">

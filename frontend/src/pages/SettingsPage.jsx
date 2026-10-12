@@ -28,7 +28,7 @@ import CertificatePickerModal from '../components/CertificatePickerModal'
 import CertificateInput from '../components/CertificateInput'
 import LanguageSelector from '../components/ui/LanguageSelector'
 import { settingsService, systemService, casService, ssoService, mtlsService, mscaService, adConnectorService } from '../services'
-import { useNotification, useMobile } from '../contexts'
+import { useAuth, useNotification, useMobile } from '../contexts'
 import { useServiceReconnect } from '../hooks'
 import { usePermission } from '../hooks'
 import { formatDate , downloadBlob} from '../lib/utils'
@@ -132,6 +132,7 @@ export function backupPasswordProblem(password, t) {
 
 export default function SettingsPage() {
   const { t } = useTranslation()
+  const { user } = useAuth()
   const { showSuccess, showError, showConfirm, showPrompt, showWarning } = useNotification()
   const { canWrite, hasPermission } = usePermission()
   const { isMobile } = useMobile()
@@ -315,8 +316,10 @@ export default function SettingsPage() {
       const generalSettings = generalRes.data || generalRes || {}
       const emailSettings = emailRes.data || {}
       
-      // Merge email settings with mapped field names
-      setSettings({
+      // Merge email settings with mapped field names. The test recipient is
+      // not a setting: keep what was typed across the reload a save triggers.
+      setSettings(prev => ({
+        _testRecipient: prev._testRecipient,
         ...generalSettings,
         smtp_host: emailSettings.smtp_host,
         smtp_port: emailSettings.smtp_port,
@@ -342,7 +345,7 @@ export default function SettingsPage() {
         smtp_oauth_token_url: emailSettings.smtp_oauth_token_url || '',
         smtp_oauth_scope: emailSettings.smtp_oauth_scope || '',
         smtp_oauth_redirect_uri: emailSettings.smtp_oauth_redirect_uri || '',
-      })
+      }))
       // Load OAuth provider presets in parallel (best-effort, non-blocking)
       settingsService.getSmtpOAuthProviders()
         .then(res => setOauthPresets(res?.data?.providers || res?.providers || {}))
@@ -1146,8 +1149,11 @@ export default function SettingsPage() {
     }
   }
 
+  // The sender is often an unattended mailbox: default to the signed-in user.
+  const defaultTestRecipient = user?.email || settings.smtp_from_email
+
   const handleTestEmail = async () => {
-    const testEmail = settings._testRecipient || settings.smtp_from_email
+    const testEmail = settings._testRecipient || defaultTestRecipient
     if (!testEmail) {
       setEmailTestResult({ success: false, message: t('settings.testRecipientRequired') })
       return
@@ -1499,6 +1505,7 @@ export default function SettingsPage() {
             emailTestResult={emailTestResult}
             emailTesting={emailTesting}
             handleTestEmail={handleTestEmail}
+            defaultTestRecipient={defaultTestRecipient}
             oauthDirty={oauthDirty}
             setOauthDirty={setOauthDirty}
             oauthPresets={oauthPresets}
