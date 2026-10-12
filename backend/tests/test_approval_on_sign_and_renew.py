@@ -113,6 +113,28 @@ class TestSignCsr:
             _drop_policy(app, pid)
             _drop_rows(app, csr_id)
 
+    def test_names_added_survive_the_approval(self, app, auth_client, create_ca, create_user):
+        """#389: the approved signature carries the names the operator added."""
+        import base64
+        from cryptography import x509
+        ca = create_ca(cn='Approval sign names CA')
+        pid = _policy(app, ca['id'], 'approval-sign-names')
+        csr_id = _csr_row(app, 'approval-names.example.test')
+        operator = _operator(app, create_user)
+        try:
+            r = _json(operator, 'post', f'/api/v2/csrs/{csr_id}/sign',
+                      {'ca_id': ca['id'], 'validity_days': 30, 'san_email': ['ops@example.test']})
+            approval_id = r.get_json()['data']['approval_id']
+            r = _json(auth_client, 'post', f'/api/v2/approvals/{approval_id}/approve', {'comment': 'ok'})
+            assert r.get_json()['data']['certificate_issued'] is True, r.get_json()
+            with app.app_context():
+                crt = x509.load_pem_x509_certificate(base64.b64decode(db.session.get(Certificate, csr_id).crt))
+            names = crt.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+            assert x509.RFC822Name('ops@example.test') in list(names)
+        finally:
+            _drop_policy(app, pid)
+            _drop_rows(app, csr_id)
+
     def test_admin_signs_directly(self, app, auth_client, create_ca):
         ca = create_ca(cn='Approval sign admin CA')
         pid = _policy(app, ca['id'], 'approval-sign-admin')

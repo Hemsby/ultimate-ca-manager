@@ -178,6 +178,7 @@ class CSRMixin:
         extra_ekus: list = None,
         allow_sensitive_ekus: bool = False,
         template_id: int = None,
+        extra_san: list = None,
     ) -> Certificate:
         """
         Sign a CSR with a CA
@@ -193,6 +194,7 @@ class CSRMixin:
             template_id: Certificate template bound to the issuance context
                 (an ACME profile): its KU/EKU govern the leaf and the
                 certificate records the link, as on the issue form
+            extra_san: x509 GeneralName entries added to the request's names
 
         Returns:
             Updated Certificate with signed cert (or new CA record for intermediate_ca)
@@ -291,6 +293,7 @@ class CSRMixin:
             extra_ekus=extra_ekus,
             allow_sensitive_ekus=allow_sensitive_ekus,
             template_ext=template_ext,
+            extra_san=extra_san,
         )
 
         # Parse signed certificate

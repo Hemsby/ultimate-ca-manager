@@ -21,6 +21,8 @@ from utils.sanitize import sanitize_filename
 from models import db, Certificate, CA
 from services.cert_service import CertificateService
 from services.deletion_blockers import parse_bulk_ids
+from utils.san_parse import (general_names_from_buckets, parse_extra_san_payload,
+                             san_buckets_from_general_names)
 from services.audit_service import AuditService
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
@@ -119,7 +121,7 @@ def _csr_identity(cert):
     return csr_cn, csr_dns, key_label
 
 
-def _policy_rule_refusal(ca, cert, template_id, validity_days):
+def _policy_rule_refusal(ca, cert, template_id, validity_days, extra_dns=()):
     """Issuance policy rules (#335) applied to a stored request: returns
     ``(refusal_message_or_None, validity_days)`` with the validity capped by
     the applicable policies. Shared by the unit and bulk Sign CSR routes.
@@ -130,6 +132,7 @@ def _policy_rule_refusal(ca, cert, template_id, validity_days):
     try:
         from services.policy_service import PolicyEvaluationService
         csr_cn, csr_dns, key_label = _csr_identity(cert)
+        csr_dns = csr_dns + [d for d in extra_dns if d not in csr_dns]
         requested = validity_days
         policies = PolicyEvaluationService.applicable_policies(ca.id, template_id, csr_cn, csr_dns)
         violations, validity_days, capped_by = PolicyEvaluationService.enforce_rules(
@@ -147,11 +150,14 @@ def _policy_rule_refusal(ca, cert, template_id, validity_days):
     return None, validity_days, notice
 
 
-def _approval_for_csr(user, ca, cert, data, validity_days, cert_type, extra_ekus, validity_notice=None):
+def _approval_for_csr(user, ca, cert, data, validity_days, cert_type, extra_ekus, validity_notice=None,
+                      extra_san=None):
     """Queue the signing for approval when a policy requires it: ``(policy,
     approval)`` or ``(None, None)``. Raises on evaluation error."""
     from services.approval_gate import queue_if_approval_required
     csr_cn, csr_dns, _key = _csr_identity(cert)
+    extra_dns = (extra_san or {}).get('san_dns') or []
+    csr_dns = csr_dns + [d for d in extra_dns if d not in csr_dns]
     return queue_if_approval_required(
         user, ca_id=ca.id, template_id=data.get('template_id'), cn=csr_cn, san_list=csr_dns,
         request_type='csr',
@@ -159,6 +165,8 @@ def _approval_for_csr(user, ca, cert, data, validity_days, cert_type, extra_ekus
             'csr_id': cert.id, 'ca_id': ca.id, 'cn': csr_cn, 'cert_type': cert_type,
             'validity_days': validity_days, 'extra_ekus': extra_ekus,
             'template_id': data.get('template_id'),
+            # Names added to the request's own (#389), signed as approved
+            'extra_san': extra_san,
             # The duration was already capped by policy: the approver is told
             'validity_notice': validity_notice,
         },
@@ -545,6 +553,65 @@ def import_csr():
         logger.error(f"CSR Import Error: {e}", exc_info=True)
         return error_response('Import failed', 500)
 
+@bp.route('/api/v2/csrs/<int:csr_id>/resubmit', methods=['POST'])
+@require_auth(['write:csrs'])
+def resubmit_csr(csr_id):
+    """Put a signed request back in the pending list to be signed again (#389).
+
+    A device that keeps its key, such as a smart card, often cannot produce
+    the request twice. The new row carries the same request, and the key when
+    the server holds it; the certificate already issued is left untouched.
+    """
+    signed = db.session.get(Certificate, csr_id)
+    if not signed or not signed.csr or not signed.crt:
+        return error_response('Signed request not found', 404)
+
+    # Already waiting to be signed again: answer with that row
+    waiting = pending_requests().filter(Certificate.csr == signed.csr).first()
+    if waiting is not None:
+        return success_response(data=waiting.to_dict(), message='Request already pending')
+
+    try:
+        csr = x509.load_pem_x509_csr(base64.b64decode(signed.csr), default_backend())
+        try:
+            names = csr.extensions.get_extension_for_oid(
+                x509.oid.ExtensionOID.SUBJECT_ALTERNATIVE_NAME).value
+        except x509.ExtensionNotFound:
+            names = []
+    except (ValueError, TypeError) as e:
+        logger.warning(f"Stored request {csr_id} cannot be read: {e}")
+        return error_response('The stored request cannot be read', 400)
+
+    buckets = san_buckets_from_general_names(names)
+    cn_attrs = csr.subject.get_attributes_for_oid(x509.oid.NameOID.COMMON_NAME)
+    row = Certificate(
+        refid=str(uuid.uuid4()),
+        descr=signed.descr,
+        csr=signed.csr,
+        crt=None,
+        prv=signed.prv,
+        subject=csr.subject.rfc4514_string(),
+        subject_cn=cn_attrs[0].value if cn_attrs else None,
+        **{key: json.dumps(values) if values else None for key, values in buckets.items()},
+        source=signed.source,
+        created_by=getattr(g.current_user, 'username', 'system'),
+    )
+    db.session.add(row)
+    ok, err = safe_commit(logger, "Failed to resubmit request")
+    if not ok:
+        return err
+
+    AuditService.log_action(
+        action='csr_resubmitted',
+        resource_type='csr',
+        resource_id=row.id,
+        resource_name=row.descr,
+        details=f'Request of certificate {signed.id} pending again as request {row.id}',
+        success=True,
+    )
+    return created_response(data=row.to_dict(), message='Request pending again')
+
+
 @bp.route('/api/v2/csrs/<int:csr_id>/export', methods=['GET', 'POST'])
 @require_auth(['read:csrs'])
 def export_csr(csr_id):
@@ -819,6 +886,13 @@ def sign_csr(csr_id):
         if _err:
             return error_response(f'Invalid extra_ekus: {_err}', 400)
         extra_ekus = _normalized
+
+    # Names added to the request's own: a CSR generated on a device often
+    # carries none, an S/MIME one needs its email address (#389)
+    extra_san, san_err = parse_extra_san_payload(data)
+    if san_err:
+        return error_response(san_err, 400)
+    extra_san = extra_san if any(extra_san.values()) else None
     
     # Map frontend cert_type to backend cert_type format
     cert_type_map = {
@@ -836,6 +910,8 @@ def sign_csr(csr_id):
     # one, and must require the same permission as POST /api/v2/cas. Without
     # this a principal holding only write:csrs / write:certificates could mint
     # an intermediate able to issue for arbitrary names.
+    if backend_cert_type in _CA_CERT_TYPES and extra_san:
+        return error_response('Names cannot be added when signing a CA certificate', 400)
     if backend_cert_type in _CA_CERT_TYPES:
         from auth.unified import has_permission
         if not has_permission('write:cas', getattr(g, 'permissions', []) or []):
@@ -865,7 +941,8 @@ def sign_csr(csr_id):
         return error_response('CA is revoked and can no longer sign', 400)
 
     refusal, validity_days, validity_notice = _policy_rule_refusal(
-        ca, cert, data.get('template_id'), validity_days)
+        ca, cert, data.get('template_id'), validity_days,
+        extra_dns=(extra_san or {}).get('san_dns') or ())
     if refusal:
         return error_response(refusal, 400)
     # An issuance policy that requires approval binds this path as it binds
@@ -873,7 +950,7 @@ def sign_csr(csr_id):
     try:
         policy, approval = _approval_for_csr(
             g.current_user, ca, cert, data, validity_days, backend_cert_type, extra_ekus,
-            validity_notice=validity_notice)
+            validity_notice=validity_notice, extra_san=extra_san)
     except Exception as e:
         logger.error(f"Policy evaluation failed for CSR {csr_id}; refusing to sign: {e}", exc_info=True)
         return error_response('Policy evaluation failed; the request was not signed', 500)
@@ -915,6 +992,7 @@ def sign_csr(csr_id):
             # protocol enrollees (ACME/EST) never get these EKUs
             allow_sensitive_ekus=True,
             username=getattr(g.current_user, 'username', 'system'),
+            extra_san=general_names_from_buckets(extra_san) if extra_san else None,
         )
         
         # Determine if result is a CA or Certificate
@@ -927,6 +1005,7 @@ def sign_csr(csr_id):
             resource_id=signed_result.id,
             resource_name=signed_result.descr if is_ca_result else cert.subject,
             details=f'CSR signed as {"Intermediate CA" if is_ca_result else "certificate"} by CA {ca.descr} (id={ca_id}), validity={validity_days} days'
+                    + (f', names added: {", ".join(v for vs in extra_san.values() for v in vs)}' if extra_san else '')
         )
         
         msg = 'CSR signed as Intermediate CA' if is_ca_result else 'CSR signed successfully'

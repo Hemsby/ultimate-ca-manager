@@ -592,6 +592,7 @@ class CSROperationsMixin:
         override_san: Optional[List[x509.GeneralName]] = None,
         requester_sid: Optional[str] = None,
         template_ext: Optional[dict] = None,
+        extra_san: Optional[List[x509.GeneralName]] = None,
     ) -> bytes:
         """Sign a CSR with a CA. ``renewal_of``: existing certificate this
         signing renews — its names are graced by NameConstraints validation.
@@ -629,7 +630,10 @@ class CSROperationsMixin:
         extension (KB5014754 strong certificate mapping) — only WSTEP's
         Kerberos binding passes this, independent of ``override_subject``
         (applies to naked and normal CSRs alike, since it identifies who
-        authenticated, not what subject was requested)."""
+        authenticated, not what subject was requested).
+        ``extra_san``: names the operator adds to the request's own (admin
+        Sign CSR only); with a request that names none, they replace the
+        names otherwise derived from its CN."""
         from utils.eku_validation import normalize_extra_ekus, to_object_identifiers, merge_eku_lists
 
         # Load CSR
@@ -680,8 +684,14 @@ class CSROperationsMixin:
             effective_sans = override_san
         elif has_csr_san:
             effective_sans = csr_sans
+        elif extra_san:
+            # Names the operator gave replace those guessed from the CN (#389)
+            effective_sans = []
         else:
             effective_sans = _synthesize_san_from_subject(subject)
+        if extra_san:
+            effective_sans = list(effective_sans) + [
+                n for n in extra_san if n not in effective_sans]
 
         ConstraintsMixin._validate_name_constraints(
             ca_cert, subject, effective_sans if effective_sans else None, renewal_of=renewal_of
@@ -803,8 +813,10 @@ class CSROperationsMixin:
             if extension.oid == ExtensionOID.SUBJECT_ALTERNATIVE_NAME:
                 # RFC 5280 §4.2.1.6: SAN MUST be critical when the subject
                 # is empty -- the CSR's flag cannot override that.
+                san_value = (x509.SubjectAlternativeName(effective_sans)
+                             if extra_san else extension.value)
                 builder = builder.add_extension(
-                    extension.value, extension.critical or len(subject) == 0
+                    san_value, extension.critical or len(subject) == 0
                 )
                 continue
             builder = builder.add_extension(extension.value, extension.critical)

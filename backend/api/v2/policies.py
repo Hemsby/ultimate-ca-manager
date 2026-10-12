@@ -21,6 +21,7 @@ from services.audit_service import AuditService
 from security.encryption import encrypt_private_key
 from services.template_service import compute_template_overrides
 from utils.key_codec import private_key_to_pem
+from utils.san_parse import general_names_from_buckets
 from utils.eku_validation import (add_ocsp_nocheck_if_responder, normalize_extra_ekus,
                                   to_object_identifiers, merge_eku_lists)
 from utils.cert_profiles import profile_for
@@ -211,6 +212,7 @@ def _issue_approved_csr(approval, data):
         extra_ekus=data.get('extra_ekus'),
         allow_sensitive_ekus=True,
         username=approval.requester.username if approval.requester else 'system',
+        extra_san=general_names_from_buckets(data['extra_san']) if data.get('extra_san') else None,
     )
     if isinstance(signed, CA):
         # An intermediate CA request: the result lives in the CA table, the

@@ -277,6 +277,30 @@ def _coerce_san_list(raw) -> List[str]:
     return []
 
 
+def general_names_from_buckets(buckets: SanBuckets) -> list:
+    """x509 GeneralName entries for the DNS, IP, URI and email buckets."""
+    from cryptography import x509
+    names = [x509.DNSName(v) for v in buckets.get('san_dns') or []]
+    names += [x509.IPAddress(ip_address(v)) for v in buckets.get('san_ip') or []]
+    names += [x509.UniformResourceIdentifier(v) for v in buckets.get('san_uri') or []]
+    names += [x509.RFC822Name(v) for v in buckets.get('san_email') or []]
+    return names
+
+
+def parse_extra_san_payload(data: dict) -> Tuple[SanBuckets, str | None]:
+    """Typed names an operator adds when signing a request (#389): DNS, IP,
+    email and URI lists, validated like the issue form's."""
+    buckets = _empty_buckets()
+    if data.get('san_upn'):
+        return buckets, 'san_upn cannot be added when signing a request'
+    for key in ('san_dns', 'san_ip', 'san_email', 'san_uri'):
+        raw = data.get(key)
+        if raw is not None and not isinstance(raw, (list, str)):
+            return buckets, f'{key} must be a list'
+        buckets[key] = _coerce_san_list(raw)
+    return buckets, validate_typed_san_buckets(buckets)
+
+
 def parse_cert_san_payload(data: dict) -> Tuple[SanBuckets, str | None]:
     """Parse/validate SAN fields from POST /api/v2/certificates."""
     buckets = _empty_buckets()
