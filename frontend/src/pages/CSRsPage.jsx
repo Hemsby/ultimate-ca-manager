@@ -18,7 +18,7 @@ import {
 } from '../components'
 import { SmartImportModal } from '../components/SmartImport'
 import { ResponsiveLayout, ResponsiveDataTable } from '../components/ui/responsive'
-import { csrsService, casService, templatesService, mscaService, ekuService } from '../services'
+import { csrsService, casService, templatesService, mscaService, ekuService, certificatesService } from '../services'
 import { useNotification } from '../contexts'
 import { usePermission, useModals } from '../hooks'
 import { useMobile } from '../contexts/MobileContext'
@@ -39,6 +39,7 @@ export default function CSRsPage() {
   // Direct private-key export is the admin-only read:private_keys scope,
   // as on the certificates page
   const canExportKey = hasPermission('read:private_keys')
+  const canReadCertificates = hasPermission('read:certificates')
   const [searchParams, setSearchParams] = useSearchParams()
   const { modals, open: openModal, close: closeModal } = useModals(['upload', 'sign', 'generate'])
   
@@ -405,6 +406,18 @@ export default function CSRsPage() {
 
   // The key of a CSR awaiting an external CA: needed next to the certificate
   // that CA returns (#341)
+  // A signed request's row holds both: its certificate comes from the
+  // certificate export, the CSR route only ever returns the request.
+  const handleDownloadCertificate = async (row) => {
+    try {
+      const blob = await certificatesService.export(row.id, 'pem')
+      downloadBlob(blob, `${row.cn || 'cert'}.crt`)
+      showSuccess(t('common.downloadSuccess'))
+    } catch (error) {
+      showError(error.message || t('csrs.downloadFailed'))
+    }
+  }
+
   const handleDownloadKey = async (row) => {
     try {
       const blob = await csrsService.downloadKey(row.id)
@@ -646,12 +659,15 @@ export default function CSRsPage() {
 
   // Row actions for history
   const historyRowActions = useCallback((row) => [
-    { label: t('common.downloadCertificate'), icon: Download, onClick: () => handleDownload(row.id, `${row.cn || 'cert'}.pem`) },
+    ...(canReadCertificates ? [
+      { label: t('common.downloadCertificate'), icon: Download, onClick: () => handleDownloadCertificate(row) }
+    ] : []),
+    { label: t('csrs.downloadCSR'), icon: FileText, onClick: () => handleDownload(row.id, `${row.cn || 'csr'}.csr`) },
     { label: t('common.viewInCertificates'), icon: Certificate, onClick: () => navigate(`/certificates?id=${row.id}`) },
     ...(canWrite('csrs') ? [
       { label: t('csrs.rekey'), icon: ArrowsClockwise, onClick: () => handleRekey(row) }
     ] : [])
-  ], [canWrite, t])
+  ], [canWrite, canReadCertificates, t])
 
   // Help content
   const helpContent = (
@@ -748,7 +764,8 @@ export default function CSRsPage() {
           ) : (
             <SignedCSRDetailsPanel 
               cert={selectedCSR}
-              onDownload={() => handleDownload(selectedCSR.id, `${selectedCSR.cn || 'cert'}.pem`)}
+              onDownload={canReadCertificates ? () => handleDownloadCertificate(selectedCSR) : undefined}
+              onDownloadCSR={() => handleDownload(selectedCSR.id, `${selectedCSR.cn || 'csr'}.csr`)}
               onRekey={canWrite('csrs') ? () => handleRekey(selectedCSR) : undefined}
               t={t}
             />
@@ -1417,7 +1434,7 @@ function CSRDetailsPanel({ csr, canWrite, canDelete, onSign, onDownload, onDownl
 // SIGNED CSR DETAILS PANEL (for history)
 // =============================================================================
 
-function SignedCSRDetailsPanel({ cert, onDownload, onRekey, t }) {
+function SignedCSRDetailsPanel({ cert, onDownload, onDownloadCSR, onRekey, t }) {
   const navigate = useNavigate()
   // `|| 0` turned a null expiry date into a confident "0 days left", and
   // turned the old -1 "no expiry" sentinel into "Expired".
@@ -1453,8 +1470,13 @@ function SignedCSRDetailsPanel({ cert, onDownload, onRekey, t }) {
 
       {/* Actions */}
       <div className="flex gap-2 flex-wrap">
-        <Button type="button" size="sm" variant="secondary" className="flex-1" onClick={onDownload}>
-          <Download size={14} /> {t('common.download')}
+        {onDownload && (
+          <Button type="button" size="sm" variant="secondary" className="flex-1" onClick={onDownload}>
+            <Download size={14} /> {t('common.downloadCertificate')}
+          </Button>
+        )}
+        <Button type="button" size="sm" variant="secondary" onClick={onDownloadCSR}>
+          <FileText size={14} /> {t('csrs.downloadCSR')}
         </Button>
         <Button 
           type="button"
