@@ -24,6 +24,7 @@ import { useMobile } from '../contexts/MobileContext'
 import { usePermission, useModals, usePersistedState } from '../hooks'
 import { formatDate, cn, daysRemaining, downloadBlob } from '../lib/utils'
 import { soleImported } from '../lib/importResult'
+import { runInBatches } from '../lib/bulkChunks'
 import { useOpenEntity } from '../hooks/useOpenEntity'
 export default function TrustStorePage() {
   const { t } = useTranslation()
@@ -40,6 +41,8 @@ export default function TrustStorePage() {
   const [certificates, setCertificates] = useState([])
   const [certStats, setCertStats] = useState({ total: 0, root_ca: 0, intermediate_ca: 0, expired: 0, valid: 0 })
   const [selectedCert, setSelectedCert] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [syncLimit, setSyncLimit] = useState(500)
   const [showImportModal, setShowImportModal] = useState(false)
@@ -240,6 +243,36 @@ export default function TrustStorePage() {
       }
     } catch (error) {
       showError(error.message || t('messages.errors.deleteFailed.truststore'))
+    }
+  }
+
+  // Only rows the current filters show: a selection made before narrowing
+  // them never removes what is no longer on screen (#388)
+  const handleBulkDelete = async () => {
+    const visible = new Set(filteredCertificates.map(c => c.id))
+    const ids = [...selectedIds].filter(id => visible.has(id))
+    if (ids.length === 0) return
+    const confirmed = await showConfirm(t('trustStore.confirmBulkRemove', { count: ids.length }), {
+      title: t('trustStore.confirmRemove'),
+      confirmText: t('common.delete'),
+      variant: 'danger'
+    })
+    if (!confirmed) return
+
+    setBulkDeleting(true)
+    try {
+      const result = await runInBatches(ids, batch => truststoreService.bulkDelete(batch))
+      const removed = result?.data?.success || []
+      const failed = result?.data?.failed || []
+      if (removed.length) showSuccess(t('trustStore.bulkRemoved', { count: removed.length }))
+      if (failed.length) showError(t('trustStore.bulkRemoveFailed', { count: failed.length }))
+      if (selectedCert && removed.includes(selectedCert.id)) setSelectedCert(null)
+      setSelectedIds(new Set())
+    } catch (error) {
+      showError(error.message || t('messages.errors.deleteFailed.truststore'))
+    } finally {
+      setBulkDeleting(false)
+      loadCertificates()
     }
   }
 
@@ -578,6 +611,14 @@ export default function TrustStorePage() {
           loading={loading}
           onRowClick={handleSelectCert}
           selectedId={selectedCert?.id}
+          multiSelect={canDelete('truststore')}
+          selectedIds={selectedIds}
+          onSelectionChange={setSelectedIds}
+          bulkActions={
+            <Button type="button" size="sm" variant="danger" onClick={handleBulkDelete} disabled={bulkDeleting}>
+              <Trash size={14} /> {t('trustStore.deleteSelected')}
+            </Button>
+          }
           searchable
           searchPlaceholder={t('common.searchCertificates')}
           searchKeys={['name', 'subject', 'issuer', 'purpose']}

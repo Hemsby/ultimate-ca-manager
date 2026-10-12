@@ -44,6 +44,10 @@ export const truststoreService = {
     })
   },
 
+  async bulkDelete(ids) {
+    return apiClient.post('/truststore/bulk/delete', { ids })
+  },
+
   // Alias for backwards compatibility
   async delete(id) {
     return this.remove(id)

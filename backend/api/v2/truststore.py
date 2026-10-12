@@ -11,6 +11,7 @@ from utils.sanitize import sanitize_filename
 from models import db
 from models.truststore import TrustedCertificate
 from services.audit_service import AuditService
+from services.deletion_blockers import parse_bulk_ids
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.backends import default_backend
@@ -361,6 +362,47 @@ def remove_trusted_certificate(cert_id):
         db.session.rollback()
         logger.error(f'Failed to remove certificate from trust store: {e}')
         return error_response('Failed to remove certificate', 500)
+
+
+@bp.route('/api/v2/truststore/bulk/delete', methods=['POST'])
+@require_auth(['delete:truststore'])
+def bulk_remove_trusted_certificates():
+    """Remove several certificates from the trust store in one transaction."""
+    ids, ids_error = parse_bulk_ids(request.get_json(silent=True))
+    if ids_error:
+        return ids_error
+
+    results = {'success': [], 'failed': []}
+    names = []
+    for cert_id in ids:
+        cert = None
+        if isinstance(cert_id, int) and not isinstance(cert_id, bool):
+            cert = db.session.get(TrustedCertificate, cert_id)
+        if cert is None:
+            results['failed'].append({'id': cert_id, 'error': 'Not found'})
+            continue
+        names.append(cert.name)
+        db.session.delete(cert)
+        results['success'].append(cert_id)
+
+    if results['success']:
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f'Failed to bulk remove certificates from trust store: {e}')
+            return error_response('Failed to remove certificates', 500)
+
+        AuditService.log_action(
+            action='truststore_bulk_remove',
+            resource_type='truststore',
+            resource_id=','.join(str(i) for i in results['success']),
+            resource_name=f'{len(results["success"])} certificates',
+            details=f'Removed {len(results["success"])} certificates from trust store: {", ".join(names)}',
+            success=True
+        )
+
+    return success_response(data=results, message=f'{len(results["success"])} certificates removed')
 
 
 @bp.route('/api/v2/truststore/sync', methods=['POST'])

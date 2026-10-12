@@ -9,6 +9,10 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+### Added
+
+- Trust store: certificates can be selected and removed together, for instance the system CAs filtered as expired; only the rows the current filters show are removed (#388, reported by @lengqing5977).
+
 ### Changed
 
 - Auto-renewal: "Run now" also reports the expiring certificates it left alone and why (not yet in the last third of their lifetime, private key not held by the server, source not selected), and the renewal window field states the last-third rule (#387, reported by @lengqing5977).
