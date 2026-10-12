@@ -501,7 +501,7 @@ export default function DashboardPage() {
           width={gridWidth}
           rowHeight={dynamicRowHeight}
           margin={[GRID_MARGIN, GRID_MARGIN]}
-          containerPadding={[0, 0]}
+          containerPadding={[1, 0]}
           onBreakpointChange={(bp) => setCurrentBreakpoint(bp)}
           dragConfig={{ enabled: editMode, handle: editMode ? '.widget-drag-handle' : undefined }}
           resizeConfig={{ enabled: editMode }}
