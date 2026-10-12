@@ -9,6 +9,10 @@ Starting with v2.48, UCM uses Major.Build versioning (e.g., 2.48, 2.49). Earlier
 
 ## [Unreleased]
 
+### Changed
+
+- Auto-renewal: "Run now" also reports the expiring certificates it left alone and why (not yet in the last third of their lifetime, private key not held by the server, source not selected), and the renewal window field states the last-third rule (#387, reported by @lengqing5977).
+
 ### Fixed
 
 - Audit log retention: the daily purge failed whenever it had something to delete, and the Settings › Audit field was disabled and its value ignored. The retention is now stored and nothing is purged until an administrator sets one; `archive_before_delete`, which was never implemented, is refused by the API.

@@ -146,6 +146,29 @@ class AutoRenewalService:
         return [c for c in certs if AutoRenewalService._in_renewal_window(c, config['days_before_expiry'])]
 
     @staticmethod
+    def waiting_certificates(config) -> dict:
+        """Count the certificates expiring within the window that this pass
+        leaves alone, by reason, so a run that renews nothing says why."""
+        now = utc_now()
+        certs = Certificate.query.filter(
+            Certificate.revoked.is_(False),
+            (Certificate.archived.is_(False)) | (Certificate.archived.is_(None)),
+            Certificate.crt.isnot(None),
+            Certificate.valid_to.isnot(None),
+            Certificate.valid_to <= now + timedelta(days=config['days_before_expiry']),
+            Certificate.valid_to >= now,
+        ).all()
+        waiting = {'not_yet_due': 0, 'no_private_key': 0, 'source_excluded': 0}
+        for cert in certs:
+            if not cert.prv:
+                waiting['no_private_key'] += 1
+            elif cert.source not in config['renewal_sources']:
+                waiting['source_excluded'] += 1
+            elif not AutoRenewalService._in_renewal_window(cert, config['days_before_expiry']):
+                waiting['not_yet_due'] += 1
+        return waiting
+
+    @staticmethod
     def _in_renewal_window(cert: Certificate, days_before_expiry: int) -> bool:
         """Never before the last third of the lifetime, as ARI and the OCSP
         responder do: otherwise a certificate about as long as the window is
@@ -306,6 +329,7 @@ class AutoRenewalService:
                 })
 
         AutoRenewalService._publish_crls(renewed_carefs)
+        stats['waiting'] = AutoRenewalService.waiting_certificates(config)
 
         logger.info(f"Auto-renewal complete: {stats['renewed']} renewed, {stats['failed']} failed")
 

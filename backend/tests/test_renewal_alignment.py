@@ -393,3 +393,49 @@ class TestConcurrentRenewal:
                 db.session.rollback()
         finally:
             _drop(app, rid)
+
+
+class TestWaitingCertificates:
+    """#387: a pass that renews nothing says what it left alone and why."""
+
+    CONFIG = {'enabled': True, 'days_before_expiry': 14, 'renewal_sources': ['manual']}
+
+    def _waiting(self, app):
+        from services.auto_renewal_service import AutoRenewalService
+        with app.app_context():
+            return AutoRenewalService.waiting_certificates(self.CONFIG)
+
+    def test_each_reason_is_counted(self, app, create_ca):
+        ca = create_ca(cn='Renewal waiting CA')
+        key = rsa.generate_private_key(65537, 2048)
+        ku = _ku(digital_signature=True, key_encipherment=True)
+        before = self._waiting(app)
+        rows = [
+            # A 7-day certificate with 6 days left: due only in its last third
+            _craft_row(app, ca['id'], key, 'wait-early.example.test', key_usage=ku, days=6),
+            _craft_row(app, ca['id'], key, 'wait-nokey.example.test', key_usage=ku, with_key=False, days=5),
+            _craft_row(app, ca['id'], key, 'wait-acme.example.test', key_usage=ku, source='acme',
+                       days=5, issued_days_ago=300),
+            # Due, so renewed rather than waiting
+            _craft_row(app, ca['id'], key, 'wait-due.example.test', key_usage=ku, days=5,
+                       issued_days_ago=300),
+            # Outside the window altogether
+            _craft_row(app, ca['id'], key, 'wait-far.example.test', key_usage=ku, days=40,
+                       with_key=False),
+        ]
+        try:
+            after = self._waiting(app)
+            assert {k: after[k] - before[k] for k in after} == {
+                'not_yet_due': 1, 'no_private_key': 1, 'source_excluded': 1,
+            }
+        finally:
+            _drop(app, *rows)
+
+    def test_the_run_reports_them(self, app, monkeypatch):
+        from services.auto_renewal_service import AutoRenewalService
+        monkeypatch.setattr(AutoRenewalService, 'get_renewal_config', staticmethod(lambda: dict(self.CONFIG)))
+        monkeypatch.setattr(AutoRenewalService, 'get_certificates_for_renewal', staticmethod(lambda: []))
+        waiting = {'not_yet_due': 2, 'no_private_key': 0, 'source_excluded': 1}
+        monkeypatch.setattr(AutoRenewalService, 'waiting_certificates', staticmethod(lambda config: waiting))
+        with app.app_context():
+            assert AutoRenewalService.run_auto_renewal()['waiting'] == waiting

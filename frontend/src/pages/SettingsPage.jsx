@@ -67,6 +67,7 @@ import AutoRenewalSection from './settings/AutoRenewalSection'
 import { setAppTimezone } from '../stores/timezoneStore'
 import { setDateFormat, setShowTime } from '../stores/dateFormatStore'
 import { reportSilentFailure } from '../lib/silentFailure'
+import { autoRenewalWaitingMessage } from '../lib/autoRenewalWaiting'
 
 // Settings categories with colors for visual distinction
 const BASE_SETTINGS_CATEGORIES = [
@@ -133,7 +134,7 @@ export function backupPasswordProblem(password, t) {
 export default function SettingsPage() {
   const { t } = useTranslation()
   const { user } = useAuth()
-  const { showSuccess, showError, showConfirm, showPrompt, showWarning } = useNotification()
+  const { showSuccess, showError, showInfo, showConfirm, showPrompt, showWarning } = useNotification()
   const { canWrite, hasPermission } = usePermission()
   const { isMobile } = useMobile()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -1100,6 +1101,8 @@ export default function SettingsPage() {
           failed: stats.failed || 0,
         })
       )
+      const waiting = autoRenewalWaitingMessage(stats.waiting, t)
+      if (waiting) showInfo(waiting)
     } catch (error) {
       showError(error.message || t('settings.autoRenewalRunFailed'))
     } finally {
