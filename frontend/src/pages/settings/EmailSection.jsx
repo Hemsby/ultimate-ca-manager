@@ -482,6 +482,13 @@ export default function EmailSection({ settings, updateSetting, handleSave, savi
             label={t('settings.includeRevoked')}
             size="sm"
           />
+          <ToggleSwitch
+            checked={!!expiryAlerts.exclude_acme}
+            onChange={(val) => setExpiryAlerts(prev => ({ ...prev, exclude_acme: val }))}
+            label={t('settings.excludeAcme')}
+            description={t('settings.excludeAcmeDesc')}
+            size="sm"
+          />
           {canWrite('settings') && (
             <div className="flex gap-2 pt-2">
               <Button type="button" variant="secondary" onClick={triggerExpiryCheck}>

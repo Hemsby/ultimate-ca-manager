@@ -3,6 +3,7 @@ scheduled job reads the saved configuration and fires each threshold once per
 validity period (#324)."""
 import importlib
 import json
+import os
 import sqlite3
 from datetime import timedelta
 from unittest.mock import MagicMock
@@ -86,13 +87,14 @@ def expiry_config(app):
         snapshot = None
         if config:
             snapshot = (config.enabled, config.days_before, config.alert_days,
-                        config.include_revoked, config.recipients)
+                        config.include_revoked, config.exclude_acme, config.recipients)
         else:
             config = NotificationConfig(type='cert_expiring')
             db.session.add(config)
         config.enabled = True
         config.set_alert_days([30, 14, 7, 1])
         config.include_revoked = False
+        config.exclude_acme = False
         config.recipients = json.dumps(['ops@example.com'])
         db.session.commit()
         config_id = config.id
@@ -101,7 +103,7 @@ def expiry_config(app):
         config = db.session.get(NotificationConfig, config_id)
         if snapshot:
             (config.enabled, config.days_before, config.alert_days,
-             config.include_revoked, config.recipients) = snapshot
+             config.include_revoked, config.exclude_acme, config.recipients) = snapshot
             db.session.commit()
         else:
             db.session.delete(config)
@@ -185,6 +187,30 @@ class TestThresholdEscalation:
             db.session.commit()
         _run(app)
         assert _thresholds_sent(app, refid) == [14]
+
+    def test_acme_certificates_follow_the_toggle(self, app, create_cert, expiry_config, smtp_spy):
+        """#386: ACME clients renew their own certificates."""
+        refids = {}
+        for source in ('acme', 'manual', None):
+            cert = create_cert(cn=f'expiry-source-{source}.example.com')
+            refids[source] = _set_validity(app, cert['id'], days_left=10)
+            with app.app_context():
+                db.session.get(Certificate, cert['id']).source = source
+                db.session.commit()
+
+        with app.app_context():
+            db.session.get(NotificationConfig, expiry_config).exclude_acme = True
+            db.session.commit()
+        _run(app)
+        assert _thresholds_sent(app, refids['acme']) == []
+        assert _thresholds_sent(app, refids['manual']) == [14]
+        assert _thresholds_sent(app, refids[None]) == [14]
+
+        with app.app_context():
+            db.session.get(NotificationConfig, expiry_config).exclude_acme = False
+            db.session.commit()
+        _run(app)
+        assert _thresholds_sent(app, refids['acme']) == [14]
 
     def test_disabled_or_without_recipients_sends_nothing(self, app, create_cert, expiry_config, smtp_spy):
         cert = create_cert(cn='expiry-disabled.example.com')
@@ -279,3 +305,48 @@ class TestModelIgnoresOutOfRangeThresholds:
             with pytest.raises(ValueError):
                 config.set_alert_days([999999999])
             db.session.rollback()
+
+
+def test_migration_094_adds_exclude_acme_off_by_default():
+    conn = sqlite3.connect(':memory:')
+    conn.execute('CREATE TABLE notification_config (id INTEGER PRIMARY KEY, type TEXT)')
+    conn.execute("INSERT INTO notification_config (type) VALUES ('cert_expiring')")
+    conn.commit()
+    migration = importlib.import_module('migrations.094_expiry_alerts_exclude_acme')
+    migration.upgrade(conn)
+    migration.upgrade(conn)  # idempotent
+    assert conn.execute('SELECT exclude_acme FROM notification_config').fetchone() == (0,)
+
+
+def test_exclude_acme_is_saved_and_validated(app, auth_client, expiry_config):
+    url = '/api/v2/system/alerts/expiry'
+    r = auth_client.put(url, json={'exclude_acme': 'yes'})
+    assert r.status_code == 400
+    r = auth_client.put(url, json={'exclude_acme': True})
+    assert r.status_code == 200, r.get_json()
+    assert auth_client.get(url).get_json()['data']['exclude_acme'] is True
+    with app.app_context():
+        assert db.session.get(NotificationConfig, expiry_config).exclude_acme is True
+
+
+@pytest.mark.postgres
+@pytest.mark.skipif(not os.getenv('UCM_TEST_PG_URL'), reason='UCM_TEST_PG_URL not set')
+def test_migration_094_on_postgresql():
+    from sqlalchemy import create_engine, text
+    schema = f'mig094_{os.getpid()}'
+    engine = create_engine(os.environ['UCM_TEST_PG_URL'])
+    try:
+        with engine.begin() as conn:
+            conn.execute(text(f'CREATE SCHEMA {schema}'))
+        with engine.begin() as conn:
+            conn.execute(text(f'SET LOCAL search_path TO {schema}'))
+            conn.execute(text('CREATE TABLE notification_config (id SERIAL PRIMARY KEY, type TEXT)'))
+            conn.execute(text("INSERT INTO notification_config (type) VALUES ('cert_expiring')"))
+            migration = importlib.import_module('migrations.094_expiry_alerts_exclude_acme')
+            migration.upgrade(conn)
+            migration.upgrade(conn)  # idempotent
+            assert conn.execute(text('SELECT exclude_acme FROM notification_config')).scalar() is False
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text(f'DROP SCHEMA IF EXISTS {schema} CASCADE'))
+        engine.dispose()

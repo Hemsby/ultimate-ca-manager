@@ -42,6 +42,8 @@ class NotificationSchedulerMixin:
         )
         if not config.include_revoked:
             query = query.filter(Certificate.revoked.isnot(True))
+        if config.exclude_acme:
+            query = query.filter(Certificate.source.is_distinct_from('acme'))
 
         expiring = []
         for cert in query.all():

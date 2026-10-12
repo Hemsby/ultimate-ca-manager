@@ -2619,6 +2619,8 @@
     "alertRecipientsPlaceholder": "admin@example.com",
     "smtpRequiredForAlerts": "Konfigurieren und testen Sie zuerst einen SMTP-Server, bevor Sie E-Mail-Benachrichtigungen aktivieren.",
     "includeRevoked": "Widerrufene Zertifikate einschließen",
+    "excludeAcme": "Über ACME ausgestellte Zertifikate auslassen",
+    "excludeAcmeDesc": "Ihre ACME-Clients erneuern sie selbst; alle anderen Zertifikate werden weiterhin gemeldet",
     "checkNow": "Jetzt prüfen",
     "checkFailed": "Fehler bei der Suche nach Updates",
     "updateInitiated": "Update auf v{{version}} gestartet...",

@@ -2619,6 +2619,8 @@
     "alertRecipientsPlaceholder": "admin@example.com",
     "smtpRequiredForAlerts": "メールアラートを有効にする前に、上記のSMTPサーバーを設定してテストしてください。",
     "includeRevoked": "失効済み証明書を含める",
+    "excludeAcme": "ACME で発行された証明書を除外",
+    "excludeAcmeDesc": "ACME クライアントが自動で更新します。その他の証明書は引き続きアラートの対象です",
     "checkNow": "今すぐチェック",
     "checkFailed": "アップデートの確認に失敗しました",
     "updateInitiated": "v{{version}}へのアップデートを開始しました...",

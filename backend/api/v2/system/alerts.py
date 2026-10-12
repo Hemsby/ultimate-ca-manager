@@ -25,6 +25,7 @@ def _alert_payload(config):
         'enabled': bool(config.enabled) if config else False,
         'alert_days': config.get_alert_days() if config else list(NotificationConfig.DEFAULT_ALERT_DAYS),
         'include_revoked': bool(config.include_revoked) if config else False,
+        'exclude_acme': bool(config.exclude_acme) if config else False,
         'recipients': _json.loads(config.recipients) if config and config.recipients else [],
     }
 
@@ -69,7 +70,7 @@ def update_expiry_alert_settings():
         from models.email_notification import NotificationConfig
         data = request.get_json() or {}
 
-        for flag in ('enabled', 'include_revoked'):
+        for flag in ('enabled', 'include_revoked', 'exclude_acme'):
             if flag in data and not isinstance(data[flag], bool):
                 return error_response(f'{flag} must be a boolean', 400)
         if 'alert_days' in data:
@@ -98,6 +99,8 @@ def update_expiry_alert_settings():
             config.set_alert_days(alert_days)
         if 'include_revoked' in data:
             config.include_revoked = data['include_revoked']
+        if 'exclude_acme' in data:
+            config.exclude_acme = data['exclude_acme']
         if recipients is not None:
             config.recipients = _json.dumps(recipients)
 

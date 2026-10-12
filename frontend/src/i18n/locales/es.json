@@ -2619,6 +2619,8 @@
     "alertRecipientsPlaceholder": "admin@example.com",
     "smtpRequiredForAlerts": "Configure y pruebe un servidor SMTP arriba antes de activar las alertas por correo.",
     "includeRevoked": "Incluir certificados revocados",
+    "excludeAcme": "Omitir los certificados emitidos por ACME",
+    "excludeAcmeDesc": "Sus clientes ACME los renuevan; las alertas siguen cubriendo todos los demás certificados",
     "checkNow": "Comprobar ahora",
     "checkFailed": "Error al verificar actualizaciones",
     "updateInitiated": "Actualización a v{{version}} iniciada...",

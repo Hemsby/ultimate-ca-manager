@@ -159,6 +159,9 @@ class NotificationConfig(db.Model):
     # validity period (#323). days_before mirrors the largest one.
     alert_days = db.Column(db.Text)
     include_revoked = db.Column(db.Boolean, default=False)
+    # cert_expiring only: skip certificates issued over ACME, which their
+    # clients renew themselves (#386)
+    exclude_acme = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     recipients = db.Column(db.Text)  # JSON array of email addresses
     subject_template = db.Column(db.String(255))
     description = db.Column(db.String(512))
@@ -204,6 +207,7 @@ class NotificationConfig(db.Model):
             "days_before": self.days_before,
             "alert_days": self.get_alert_days(),
             "include_revoked": bool(self.include_revoked),
+            "exclude_acme": bool(self.exclude_acme),
             "recipients": json.loads(self.recipients) if self.recipients else [],
             "subject_template": self.subject_template,
             "description": self.description,

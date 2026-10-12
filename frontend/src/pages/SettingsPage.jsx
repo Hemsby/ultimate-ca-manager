@@ -161,7 +161,7 @@ export default function SettingsPage() {
   const [isDocker, setIsDocker] = useState(false)  
   // Expiry alert settings
   const [expiryAlerts, setExpiryAlerts] = useState({
-    enabled: true, alert_days: [30, 14, 7, 1], include_revoked: false, recipients: []
+    enabled: true, alert_days: [30, 14, 7, 1], include_revoked: false, exclude_acme: false, recipients: []
   })
   
   // Selected category - read from URL param or default to 'general'

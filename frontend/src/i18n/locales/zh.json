@@ -2619,6 +2619,8 @@
     "alertRecipientsPlaceholder": "admin@example.com",
     "smtpRequiredForAlerts": "在启用邮件提醒之前，请先配置并测试上方的SMTP服务器。",
     "includeRevoked": "包含已吊销证书",
+    "excludeAcme": "跳过通过 ACME 签发的证书",
+    "excludeAcmeDesc": "它们由 ACME 客户端自行续期；其他所有证书仍会发出提醒",
     "checkNow": "立即检查",
     "checkFailed": "检查更新失败",
     "updateInitiated": "已启动v{{version}}更新...",

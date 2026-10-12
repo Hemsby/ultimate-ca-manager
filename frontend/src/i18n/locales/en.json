@@ -2620,6 +2620,8 @@
     "alertRecipientsPlaceholder": "admin@example.com",
     "smtpRequiredForAlerts": "Configure and test an SMTP server above before enabling email alerts.",
     "includeRevoked": "Include revoked certificates",
+    "excludeAcme": "Skip certificates issued over ACME",
+    "excludeAcmeDesc": "Their ACME clients renew them; alerts still cover every other certificate",
     "checkNow": "Check Now",
     "checkFailed": "Failed to check for updates",
     "updateInitiated": "Update to v{{version}} initiated...",
